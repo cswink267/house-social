@@ -160,6 +160,7 @@
 
     async function askAssist(action, misses) {
       const fields = { action: action, text: assistText() };
+      if (active && active.brand_id === brand.id) fields.piece_id = active.id;
       if (misses && misses.length) fields.misses = misses;
       if (action === "caption") {
         const ids = (active && active.asset_ids) || [];
@@ -682,6 +683,26 @@
               });
               if (saved) await refresh(brand.id);
             },
+            onHistory: async function (csv) {
+              const saved = await run(function () {
+                return SDK.fetchJSON("/api/plugins/house-social/brands/" + brand.id + "/history", {
+                  method: "POST",
+                  headers: { "Content-Type": "application/json" },
+                  body: JSON.stringify({ csv: csv }),
+                });
+              });
+              if (saved) await refresh(brand.id);
+            },
+            onGoal: async function (body) {
+              const saved = await run(function () {
+                return SDK.fetchJSON("/api/plugins/house-social/brands/" + brand.id + "/goals", {
+                  method: "POST",
+                  headers: { "Content-Type": "application/json" },
+                  body: JSON.stringify(body),
+                });
+              });
+              if (saved) await refresh(brand.id);
+            },
           }) : null,
           section === "hashtags" ? h(HashtagDesk, {
             studio: studio,
@@ -878,7 +899,7 @@
           h("button", { type: "button", className: "hs-button", disabled: props.busy, onClick: function () { props.onAccept(item.id); } }, "Accept"));
       }),
       h("div", { className: "hs-name" }, "Teach it from old posts"),
-      h("p", { className: "hs-note" }, (desk.imports || 0) + " pasted posts sit on this desk. A row counts toward a pattern only when it has text and an engagement number. These rows are not in Analytics yet."),
+      h("p", { className: "hs-note" }, (desk.imports || 0) + " pasted posts sit on this desk. A row with a date and an engagement count is also in Analytics. A row without a date stays out of the windows."),
       h("label", { className: "hs-note" }, "CSV",
         h("input", {
           className: "hs-field", type: "file", accept: ".csv,text/csv",
@@ -1737,7 +1758,8 @@
     const perf = (props.studio && props.studio.performance) || { page_days: [], recorded_days: [], hours: [], posts: [], source: "none", ranges: {} };
     const [range, setRange] = useState("7");
     const [campaign, setCampaign] = useState("");
-    const report = (perf.ranges && perf.ranges[range]) || { totals: {}, comparison: { lines: [] }, campaigns: [], formats: [], top: [] };
+    const report = (perf.ranges && perf.ranges[range]) || { totals: {}, comparison: { lines: [] }, campaigns: [], formats: [], top: [], bottom: [], patterns: [], alerts: [] };
+    const [goal, setGoal] = useState({ metric: "engagements", change: "20", start: "", end: "" });
     const totals = report.totals || {};
     const chosen = (report.campaigns || []).find(function (item) { return item.name === campaign; }) || (report.campaigns || [])[0] || null;
     const pageDays = perf.page_days || [];
@@ -1777,10 +1799,23 @@
         })),
       h("div", { className: "hs-previews" },
         tile("Reach", totals.reach, totals.reach_note),
+        tile("Impressions", totals.impressions, totals.impressions_note),
         tile("Engagements", totals.engagements, totals.posts + " posts"),
+        tile("Rate", totals.rate, totals.rate_note),
         tile("Saves", totals.saves, totals.saves_note),
         tile("Shares", totals.shares, ""),
+        tile("Comments", totals.comments, totals.comments_note),
+        tile("Clicks", totals.clicks, totals.clicks_note),
+        tile("Video completion", totals.video_completion, totals.video_note),
         tile("Follower change", totals.growth, totals.growth_note)),
+      h("div", { className: "hs-name" }, "Patterns"),
+      (report.patterns || []).map(function (item) {
+        return h("p", { key: item.id, className: item.clear ? "hs-ok" : "hs-note" }, item.title + ". " + item.detail);
+      }),
+      h("div", { className: "hs-name" }, "Outliers"),
+      (report.alerts || []).length ? report.alerts.map(function (item) {
+        return h("p", { key: item.id, className: "hs-note" }, item.detail);
+      }) : h("p", { className: "hs-note" }, "No post in this window is at least 3× the other posts."),
       h("div", { className: "hs-name" }, (report.comparison && report.comparison.label) || "Comparison"),
       ((report.comparison && report.comparison.lines) || []).map(function (line) {
         return h("p", { key: line, className: "hs-note" }, line);
@@ -1800,8 +1835,16 @@
         return h("div", { key: item.id, className: "hs-pillar" },
           h("div", { className: "hs-name" }, item.engagements + " engagements"),
           h("div", { className: "hs-note" }, [item.platform, item.format, item.shares + " shares", item.saves == null ? "" : item.saves + " saves", item.preview].filter(Boolean).join(" · ")),
+          (item.reasons || []).map(function (reason) { return h("p", { key: reason, className: "hs-note" }, reason); }),
           item.permalink ? h("a", { href: item.permalink, target: "_blank", rel: "noopener noreferrer" }, "Open the post") : null);
       }) : h("p", { className: "hs-note" }, "No posts in this window."),
+      h("div", { className: "hs-name" }, "Quiet posts"),
+      (report.bottom || []).length ? report.bottom.map(function (item) {
+        return h("div", { key: "low-" + item.id, className: "hs-pillar" },
+          h("div", { className: "hs-name" }, item.engagements + " engagements"),
+          h("div", { className: "hs-note" }, item.preview || "Untitled"),
+          (item.reasons || []).map(function (reason) { return h("p", { key: reason, className: "hs-note" }, reason); }));
+      }) : null,
       h("p", { className: "hs-note" }, usePage
         ? "Page totals from the Facebook ledger. A bar is a day. Click it. These are not estimated."
         : "No page ledger for this brand. Record a result and the bars are the posts you logged."),
@@ -1824,17 +1867,43 @@
         h("div", null, (post.reactions || 0) + " reactions · " + (post.comments || 0) + " comments · " + (post.shares || 0) + " shares"),
         post.permalink ? h("a", { href: post.permalink, target: "_blank", rel: "noopener noreferrer" }, "Open the post") : null,
       ) : null,
+      h("div", { className: "hs-name" }, "Goals"),
+      h("p", { className: "hs-note" }, (perf.imported || 0) + " imported posts with a date and an engagement count are in these numbers. A row without either stays stored and out of the window."),
+      (perf.goals || []).length ? perf.goals.map(function (item) {
+        return h("p", { key: item.id, className: "hs-note" }, item.detail);
+      }) : h("p", { className: "hs-note" }, "No goal yet."),
+      h("form", { className: "hs-row", onSubmit: function (event) {
+        event.preventDefault();
+        props.onGoal({ metric: goal.metric, change: Number(goal.change), start: goal.start, end: goal.end });
+      } },
+        h("select", { className: "hs-field", value: goal.metric, onChange: function (event) { setGoal(Object.assign({}, goal, { metric: event.target.value })); } },
+          ["engagements", "shares", "saves", "reach", "follows"].map(function (metric) { return h("option", { key: metric, value: metric }, metric); })),
+        h("input", { className: "hs-field", value: goal.change, placeholder: "Percent, such as 20", onChange: function (event) { setGoal(Object.assign({}, goal, { change: event.target.value })); } }),
+        h("input", { className: "hs-field", type: "date", value: goal.start, onChange: function (event) { setGoal(Object.assign({}, goal, { start: event.target.value })); } }),
+        h("input", { className: "hs-field", type: "date", value: goal.end, onChange: function (event) { setGoal(Object.assign({}, goal, { end: event.target.value })); } }),
+        h("button", { type: "submit", className: "hs-button", disabled: props.busy || !goal.start || !goal.end }, "Save goal")),
+      h("label", { className: "hs-note" }, "Past posts CSV",
+        h("input", {
+          className: "hs-field", type: "file", accept: ".csv,text/csv",
+          onChange: function (event) {
+            const file = event.target.files && event.target.files[0];
+            if (!file) return;
+            const reader = new FileReader();
+            reader.onload = function () { props.onHistory(String(reader.result || "")); };
+            reader.readAsText(file);
+          },
+        })),
       h(RecordForm, { busy: props.busy, onRecorded: props.onRecorded }),
     );
   }
 
   function RecordForm(props) {
-    const [form, setForm] = useState({ platform: "facebook", format: "unknown", published_at: "", local_hour: "", impressions: "", engagements: "", likes: "", comments: "", shares: "", saves: "", follows: "", note: "" });
+    const [form, setForm] = useState({ platform: "facebook", format: "unknown", published_at: "", local_hour: "", impressions: "", engagements: "", likes: "", comments: "", shares: "", saves: "", follows: "", clicks: "", video_completion: "", note: "" });
     function setField(field, value) { setForm(function (current) { return Object.assign({}, current, { [field]: value }); }); }
     async function submit(event) {
       event.preventDefault();
       const metrics = {};
-      ["impressions", "engagements", "likes", "comments", "shares", "saves", "follows"].forEach(function (key) {
+      ["impressions", "engagements", "likes", "comments", "shares", "saves", "follows", "clicks", "video_completion"].forEach(function (key) {
         if (form[key] !== "") metrics[key] = Number(form[key]);
       });
       const body = { platform: form.platform, format: form.format, metrics: metrics, note: form.note, preview: form.note };
@@ -1851,7 +1920,7 @@
           ["unknown"].concat(FORMATS).map(function (item) { return h("option", { key: item, value: item }, item); })),
         h("input", { className: "hs-field", type: "datetime-local", value: form.published_at, onChange: function (event) { setField("published_at", event.target.value); } }),
         h("input", { className: "hs-field", placeholder: "local hour 0-23", value: form.local_hour, onChange: function (event) { setField("local_hour", event.target.value); } }),
-        ["impressions", "engagements", "likes", "comments", "shares", "saves", "follows"].map(function (key) {
+        ["impressions", "engagements", "likes", "comments", "shares", "saves", "follows", "clicks", "video_completion"].map(function (key) {
           return h("input", { key: key, className: "hs-field", placeholder: key, value: form[key], onChange: function (event) { setField(key, event.target.value); } });
         })),
       h("input", { className: "hs-field", placeholder: "What the post was", value: form.note, onChange: function (event) { setField("note", event.target.value); } }),

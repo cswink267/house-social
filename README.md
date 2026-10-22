@@ -22,7 +22,7 @@ Each brand has the same desks.
 | Calendar | Month, week, and day. Planned, drafted, ready, scheduled, and published. Drag a piece onto a day. Filter by platform, format, pillar, or campaign. |
 | Queue | What is going out. Drafts stay on the making side. Pending approval, scheduled, and failed are the pipeline. Bulk actions move pieces. A suggested hour appears only when past performance shows a real gap. Platform rules block a schedule that is not allowed. Nothing is sent. |
 | Campaigns | A named effort with a kind, a goal, dates, the pieces, and the assets. Progress is how much of that work is in the campaign. Performance is what those pieces have already earned. |
-| Analytics | Reach, engagement, saves, shares, follower change, top posts, and format performance for 7, 28, or 90 days, or the whole history. This window sits beside the one before it. A campaign is compared with the other posts only when both sides have three and the gap is real. A missing number stays missing. |
+| Analytics | Reach, impressions, engagements, a rate only when impressions exist, saves, shares, comments, clicks, video completion, and follower change. 7, 28, or 90 days, or the whole history. Patterns for hour, day, format, pillar, hook, length, and assisted drafts appear only when both sides have three posts and the gap is real. A goal is the percent you set, measured against the stretch before it. Paste a CSV of old posts. A row counts when it has a date and an engagement count. |
 | Hashtags | Saved sets of up to five tags. Performance of tags that posts actually used. Notes for a topic, a sound, or a format. A tag or a format is only called ahead when the gap is real. |
 | Inbox | A short list of comments, mentions, and messages the page token can read. Questions and messages sit at the top. A suggested reply follows the brand voice and stays a draft. |
 | Reports | A week or a month for this brand. Key numbers, top posts, and a note you write. Download markdown or JSON. A missing number stays missing. The file does not include a token. |
@@ -30,7 +30,7 @@ Each brand has the same desks.
 
 Facebook and Instagram are one Meta app. A Page token can name the linked Instagram professional account, and that account is read with the same token. Threads is a separate login on `graph.threads.net`. The Facebook token cannot read it. The username often matches Instagram. The id does not.
 
-A pasted CSV on the voice desk teaches that desk. A row moves a pattern only when it has text and an engagement count, and only when both sides have three posts and the gap is real. Those rows are not part of Analytics yet.
+A pasted CSV on the voice desk teaches that desk. A row with a date and an engagement count is also in Analytics. A row without a date stays out of the windows. A pattern still needs three posts on both sides and a real gap.
 
 ## Install
 
@@ -95,6 +95,7 @@ voice.py                 the brand profile, the checklist, and lessons from post
 library.py               assets, versions, and use
 store.py                 state, connections, calendar, pulls
 learn.py                 performance and lessons
+analytics_desk.py        patterns, goals, and imported history
 meta.py                  Graph reads for Facebook, Instagram, and Threads
 dashboard/manifest.json  tab registration
 dashboard/plugin_api.py  HTTP routes

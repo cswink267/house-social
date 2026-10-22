@@ -85,8 +85,10 @@ def manual_posts(stats: list[dict]) -> list[dict]:
                 "published_at": stat.get("published_at") or "",
                 "local_hour": stat.get("local_hour"),
                 "reactions": int(metrics.get("likes", 0) or 0),
-                "comments": int(metrics.get("comments", 0) or 0),
+                "comments": int(metrics["comments"]) if "comments" in metrics and metrics.get("comments") is not None else None,
                 "shares": int(metrics.get("shares", 0) or 0),
+                "clicks": int(metrics["clicks"]) if "clicks" in metrics and metrics.get("clicks") is not None else None,
+                "video_completion": int(metrics["video_completion"]) if "video_completion" in metrics and metrics.get("video_completion") is not None else None,
                 "engagements": int(engagements or 0),
                 "impressions": int(metrics.get("impressions", 0) or 0),
                 "saves": int(metrics["saves"]) if "saves" in metrics and metrics.get("saves") is not None else None,
@@ -164,13 +166,19 @@ def analytics(
         previous_days = [day for day in page_days if _in_window(str(day.get("date") or ""), previous_start, previous_end)]
         previous = _totals(previous_posts, previous_days)
         comparison = _window_lines(current, previous, f"These {days} days against the {days} before")
+    from analytics_desk import annotate
+
+    extra = annotate(current_posts, pieces)
     return {
         "days": days,
         "totals": current,
         "comparison": comparison,
         "campaigns": _campaigns(current_posts, pieces),
         "formats": format_table([post for post in current_posts if post.get("format") not in (None, "", "unknown")]),
-        "top": _top(current_posts),
+        "top": extra["top"],
+        "bottom": extra["bottom"],
+        "patterns": extra["patterns"],
+        "alerts": extra["alerts"],
     }
 
 
@@ -232,17 +240,44 @@ def _totals(posts: list[dict], page_days: list[dict]) -> dict:
     else:
         growth = None
         growth_note = "Follower counts were not in this pull."
+    comments = _present_sum(posts, "comments")
+    clicks = _present_sum(posts, "clicks")
+    video_rows = [int(post["video_completion"]) for post in posts if isinstance(post.get("video_completion"), int)]
+    impressions = reach if reach else None
+    if impressions:
+        rate = round(sum(int(post.get("engagements") or 0) for post in posts) / impressions * 100, 1)
+        rate_note = "Engagements per 100 impressions." if reach_note == "Post impressions." else "Engagements per 100 page impressions."
+    else:
+        rate = None
+        rate_note = "No impression count, so there is no rate."
     return {
         "posts": len(posts),
         "engagements": sum(int(post.get("engagements") or 0) for post in posts),
         "shares": sum(int(post.get("shares") or 0) for post in posts),
+        "comments": comments,
+        "comments_note": "Comments on the posts." if comments is not None else "Comments were not in this pull.",
+        "clicks": clicks,
+        "clicks_note": "Clicks on the posts." if clicks is not None else "Click-throughs were not in this pull.",
+        "video_completion": round(sum(video_rows) / len(video_rows), 1) if video_rows else None,
+        "video_note": f"Mean completion on {len(video_rows)} posts." if video_rows else "Video completion was not in this pull.",
         "saves": sum(int(value) for value in save_rows) if save_rows else None,
         "saves_note": "Recorded saves." if save_rows else "Saves were not in this pull.",
         "reach": reach,
         "reach_note": reach_note,
+        "impressions": impressions,
+        "impressions_note": reach_note if impressions else "The pull did not include impressions.",
+        "rate": rate,
+        "rate_note": rate_note,
         "growth": growth,
         "growth_note": growth_note,
     }
+
+
+def _present_sum(posts: list[dict], key: str) -> int | None:
+    rows = [post.get(key) for post in posts if post.get(key) is not None]
+    if not rows:
+        return None
+    return sum(int(value) for value in rows)
 
 
 def _window_lines(current: dict, previous: dict, label: str) -> dict:
@@ -262,6 +297,12 @@ def _window_lines(current: dict, previous: dict, label: str) -> dict:
         lines.append(f"Follower change {current['growth']} against {previous['growth']}.")
     else:
         lines.append(current["growth_note"])
+    if current.get("comments") is not None and previous.get("comments") is not None:
+        lines.append(f"Comments {current['comments']} against {previous['comments']}.")
+    if current.get("clicks") is not None and previous.get("clicks") is not None:
+        lines.append(f"Clicks {current['clicks']} against {previous['clicks']}.")
+    if current.get("rate") is not None and previous.get("rate") is not None:
+        lines.append(f"Engagement rate {current['rate']} per 100 impressions against {previous['rate']}.")
     return {"label": label, "lines": lines}
 
 

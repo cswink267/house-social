@@ -60,6 +60,8 @@ def empty_state() -> dict:
         "reports": [],
         "voice_versions": {},
         "voice_imports": [],
+        "history": [],
+        "goals": [],
     }
 
 
@@ -89,6 +91,8 @@ def load(path: Path | None = None) -> dict:
     reports = raw.get("reports")
     voice_versions = raw.get("voice_versions")
     voice_imports = raw.get("voice_imports")
+    history = raw.get("history")
+    goals = raw.get("goals")
     return {
         "version": 1,
         "channels": channels if isinstance(channels, dict) else {},
@@ -110,6 +114,8 @@ def load(path: Path | None = None) -> dict:
         "reports": reports if isinstance(reports, list) else [],
         "voice_versions": voice_versions if isinstance(voice_versions, dict) else {},
         "voice_imports": voice_imports if isinstance(voice_imports, list) else [],
+        "history": history if isinstance(history, list) else [],
+        "goals": goals if isinstance(goals, list) else [],
     }
 
 
@@ -345,7 +351,142 @@ def brand_history(state: dict, brand_id: str, ledger: dict | None = None) -> tup
         ledger_posts = list(ledger.get("posts") or [])
         page_days = list(ledger.get("days") or [])
     recorded = manual_posts([stat for stat in state.get("stats", []) if stat.get("brand_id") == brand_id])
-    return combine_posts(ledger_posts, recorded), page_days
+    posts = combine_posts(ledger_posts, recorded)
+    return _with_history(state, brand_id, posts), page_days
+
+
+def import_history(state: dict, brand_id: str, csv_text: str, path: Path | None = None) -> dict:
+    from analytics_desk import parse_history_csv
+
+    resolve_brand(state, brand_id)
+    rows, undated = parse_history_csv(csv_text)
+    updated = _copy(state)
+    current = list(updated.get("history") or [])
+    others = [row for row in current if row.get("brand_id") != brand_id]
+    mine = [row for row in current if row.get("brand_id") == brand_id]
+    added = [_history_post(brand_id, item) for item in rows]
+    updated["history"] = others + (mine + added)[-500:]
+    save(updated, path)
+    used = len([row for row in added if row.get("published_at") and row.get("engagements") is not None])
+    return {"imported": len(added), "undated": undated, "used": used}
+
+
+def save_goal(state: dict, brand_id: str, spec: dict, path: Path | None = None) -> dict:
+    from analytics_desk import metric_allowed
+
+    resolve_brand(state, brand_id)
+    if not isinstance(spec, dict):
+        raise DraftError("A goal needs a metric and dates.")
+    metric = str(spec.get("metric") or "")
+    if not metric_allowed(metric):
+        raise DraftError("Goals cover engagements, shares, saves, reach, and follows.")
+    change = _goal_percent(spec.get("change"))
+    start = str(spec.get("start") or "")
+    end = str(spec.get("end") or "")
+    try:
+        start_day = datetime.strptime(start, "%Y-%m-%d").date()
+        end_day = datetime.strptime(end, "%Y-%m-%d").date()
+    except ValueError as exc:
+        raise DraftError("Goal dates are YYYY-MM-DD.") from exc
+    if end_day < start_day:
+        raise DraftError("The goal ends before it starts.")
+    goal = {"id": str(uuid.uuid4()), "brand_id": brand_id, "metric": metric, "change": change, "start": start, "end": end}
+    updated = _copy(state)
+    current = list(updated.get("goals") or [])
+    others = [row for row in current if row.get("brand_id") != brand_id]
+    mine = [goal, *[row for row in current if row.get("brand_id") == brand_id]][:12]
+    updated["goals"] = mine + others
+    save(updated, path)
+    return goal
+
+
+def mark_assisted(state: dict, piece_id: str, path: Path | None = None) -> dict:
+    updated = _copy(state)
+    index, piece = _find(updated, piece_id)
+    if piece.get("assisted"):
+        return piece
+    next_piece = {**piece, "assisted": True}
+    updated["pieces"][index] = next_piece
+    save(updated, path)
+    return next_piece
+
+
+def _history_post(brand_id: str, item: dict) -> dict:
+    return {
+        "id": "history:" + str(uuid.uuid4()),
+        "brand_id": brand_id,
+        "preview": item.get("text") or "",
+        "published_at": item.get("published_at") or "",
+        "local_hour": item.get("local_hour"),
+        "engagements": item.get("engagements"),
+        "impressions": item.get("impressions"),
+        "comments": item.get("comments"),
+        "shares": int(item.get("shares") or 0) if item.get("shares") is not None else 0,
+        "saves": item.get("saves"),
+        "clicks": item.get("clicks"),
+        "video_completion": item.get("video_completion"),
+        "platform": item.get("platform") or "",
+        "format": item.get("format") or "unknown",
+        "pillar": item.get("pillar") or "",
+        "source": "history",
+    }
+
+
+def _with_history(state: dict, brand_id: str, posts: list[dict]) -> list[dict]:
+    seen = {str(post.get("id") or "") for post in posts}
+    extra = []
+    for item in state.get("history") or []:
+        if item.get("brand_id") != brand_id or not item.get("published_at") or item.get("engagements") is None:
+            continue
+        row_id = str(item.get("id") or "")
+        if not row_id or row_id in seen:
+            continue
+        seen.add(row_id)
+        extra.append(item)
+    for item in state.get("voice_imports") or []:
+        if item.get("brand_id") != brand_id or not item.get("published_at") or item.get("engagements") is None:
+            continue
+        row_id = str(item.get("id") or "")
+        if not row_id or row_id in seen:
+            continue
+        seen.add(row_id)
+        extra.append(
+            {
+                "id": row_id,
+                "preview": item.get("preview") or "",
+                "published_at": item.get("published_at") or "",
+                "engagements": int(item.get("engagements") or 0),
+                "shares": int(item.get("shares") or 0),
+                "format": "unknown",
+                "source": "voice",
+            }
+        )
+    return list(posts) + extra
+
+
+def _goal_view(state: dict, brand_id: str, posts: list[dict], page_days: list[dict], today) -> list[dict]:
+    from analytics_desk import goal_line
+
+    rows = [goal for goal in state.get("goals") or [] if goal.get("brand_id") == brand_id]
+    return [goal_line(goal, posts, page_days, today) for goal in rows]
+
+
+def _imported_count(state: dict, brand_id: str) -> int:
+    return len(
+        [
+            row
+            for row in state.get("history") or []
+            if row.get("brand_id") == brand_id and row.get("published_at") and row.get("engagements") is not None
+        ]
+    )
+
+
+def _goal_percent(value: object) -> int:
+    if isinstance(value, str) and re.fullmatch(r"-?\d+", value.strip()):
+        value = int(value.strip())
+    if isinstance(value, bool) or not isinstance(value, int) or value == 0 or value < -90 or value > 500:
+        raise DraftError("The goal percent is a whole number from -90 to 500, and not zero.")
+    return value
 
 
 def studio(state: dict, brand_id: str, ledger: dict | None = None, today=None) -> dict:
@@ -378,11 +519,17 @@ def studio(state: dict, brand_id: str, ledger: dict | None = None, today=None) -
     found.append(next_step(found, len(unscheduled)))
     when = today or datetime.now(ZoneInfo("America/New_York")).date()
     row = next(item for item in roster(state) if item["id"] == brand_id)
+    desk = performance(posts, page_days, pieces, when)
+    desk = {
+        **desk,
+        "goals": _goal_view(state, brand_id, posts, page_days, when),
+        "imported": _imported_count(state, brand_id),
+    }
     return {
         "posting": False,
         "brand": row,
         "calendar": _calendar(pieces, posts, when),
-        "performance": performance(posts, page_days, pieces, when),
+        "performance": desk,
         "feed": sorted(posts, key=lambda post: str(post.get("published_at") or ""), reverse=True)[:50],
         "lessons": found,
         "experiments": open_experiments,
@@ -853,7 +1000,7 @@ def _format_name(brand_id: str, format_name: str) -> str:
 
 
 def _metrics(payload: dict) -> dict:
-    keys = ("impressions", "engagements", "likes", "comments", "shares", "saves", "follows", "clicks")
+    keys = ("impressions", "engagements", "likes", "comments", "shares", "saves", "follows", "clicks", "video_completion")
     metrics = {}
     for key in keys:
         if key not in payload or payload[key] in ("", None):
@@ -861,6 +1008,8 @@ def _metrics(payload: dict) -> dict:
         value = payload[key]
         if isinstance(value, bool) or not isinstance(value, int) or value < 0:
             raise DraftError("Metrics are whole numbers, zero or more.")
+        if key == "video_completion" and value > 100:
+            raise DraftError("Video completion is 0 through 100.")
         metrics[key] = value
     return metrics
 

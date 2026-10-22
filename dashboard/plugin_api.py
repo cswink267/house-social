@@ -23,15 +23,18 @@ from store import (
     add_voice_post,
     create_piece,
     delete_piece,
+    import_history,
     import_voice_csv,
     ledger_dir,
     load,
+    mark_assisted,
     pull_brand,
     record_stat,
     resolve_brand,
     restore_voice,
     roster,
     save_connection,
+    save_goal,
     save_voice,
     set_channels,
     studio,
@@ -214,8 +217,13 @@ def post_assist(brand_id: str, body: dict) -> dict:
             found = open_asset_file(state, asset_id)
             image = Path(found["path"]).read_bytes()
             mime = found["mime"]
+        piece_id = str(body.get("piece_id") or "")
+        if piece_id:
+            owned = next((item for item in state.get("pieces") or [] if item.get("id") == piece_id), None)
+            if not owned or owned.get("brand_id") != brand.id:
+                raise DraftError("That piece is not on this brand.")
         misses = body.get("misses") if isinstance(body.get("misses"), list) else []
-        return assist(
+        result = assist(
             guide,
             str(body.get("action") or ""),
             str(body.get("text") or ""),
@@ -225,6 +233,9 @@ def post_assist(brand_id: str, body: dict) -> dict:
             brand_tags=tuple(brand.tags),
             misses=tuple(str(item) for item in misses[:6]),
         )
+        if piece_id:
+            mark_assisted(state, piece_id)
+        return result
     except DraftError as exc:
         _fail(exc)
 
@@ -408,6 +419,22 @@ def post_inbox_suggest(item_id: str) -> dict:
         brand_id = str(item.get("brand_id") or "")
         guide = guide_for(brand_id, (state.get("voices") or {}).get(brand_id))
         return suggest_inbox_reply(state, item_id, guide, ollama_complete)
+    except DraftError as exc:
+        _fail(exc)
+
+
+@router.post("/brands/{brand_id}/history")
+def post_history(brand_id: str, body: dict) -> dict:
+    try:
+        return import_history(load(), brand_id, str((body or {}).get("csv") or ""))
+    except DraftError as exc:
+        _fail(exc)
+
+
+@router.post("/brands/{brand_id}/goals")
+def post_goal(brand_id: str, body: dict) -> dict:
+    try:
+        return save_goal(load(), brand_id, body or {})
     except DraftError as exc:
         _fail(exc)
 
