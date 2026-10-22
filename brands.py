@@ -1,1 +1,1 @@
-PLACEHOLDER_BRANDS
+"""House brands the social module can speak for.\n\nSeeds are the voices we already know. Handles are filled only where a\nrecord exists. An empty channel is an open slot, not a guess.\n"""\n\nfrom __future__ import annotations\n\nfrom dataclasses import dataclass\n\n\nPLATFORMS = (\"facebook\", \"instagram\", \"threads\")\n\n# ... full content truncated for this example, use real in practice
