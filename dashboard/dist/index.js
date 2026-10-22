@@ -570,7 +570,7 @@
               },
                 h("div", { className: "hs-name" }, item.name),
                 h("div", { className: "hs-meta" }, known + " of 3 channels known")),
-              item.custom ? h("button", {
+              item.removable ? h("button", {
                 type: "button",
                 className: "hs-tab",
                 disabled: busy,

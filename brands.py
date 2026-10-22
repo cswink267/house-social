@@ -312,6 +312,10 @@ def preferred_format(brand_id: str) -> str:
     return PREFERRED_FORMAT.get(brand_id, "feed")
 
 
+def brand_removable(brand_id: str) -> bool:
+    return brand_id not in {"josie-blackthorn", "misfit-mindset"}
+
+
 def profile_fields(brand_id: str) -> dict:
     return {
         "audience": AUDIENCES.get(brand_id, ""),
@@ -331,5 +335,6 @@ def brand_dict(brand: Brand, channels: list[dict]) -> dict:
         "guards": list(brand.guards),
         "channels": channels,
         "custom": False,
+        "removable": brand_removable(brand.id),
         **profile_fields(brand.id),
     }

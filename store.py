@@ -18,7 +18,7 @@ from pathlib import Path
 from zoneinfo import ZoneInfo
 
 from adapt import DraftError, issues, shape
-from brands import FORMATS, PLATFORMS, SECTIONS, Brand, Channel, brand_dict, preferred_format, seed_brand
+from brands import FORMATS, PLATFORMS, SECTIONS, Brand, Channel, brand_dict, brand_removable, preferred_format, seed_brand
 
 
 _ID = re.compile(r"^[a-z0-9]+(?:-[a-z0-9]+)*$")
@@ -44,6 +44,7 @@ def empty_state() -> dict:
         "version": 1,
         "channels": {},
         "custom_brands": [],
+        "hidden_brands": [],
         "pieces": [],
         "stats": [],
         "connections": [],
@@ -76,6 +77,7 @@ def load(path: Path | None = None) -> dict:
         raise DraftError("The house social queue is not a version 1 file.")
     channels = raw.get("channels")
     custom = raw.get("custom_brands")
+    hidden = raw.get("hidden_brands")
     pieces = raw.get("pieces")
     stats = raw.get("stats")
     connections = raw.get("connections")
@@ -100,6 +102,7 @@ def load(path: Path | None = None) -> dict:
         "version": 1,
         "channels": channels if isinstance(channels, dict) else {},
         "custom_brands": custom if isinstance(custom, list) else [],
+        "hidden_brands": [str(item) for item in hidden if str(item).strip()] if isinstance(hidden, list) else [],
         "pieces": pieces if isinstance(pieces, list) else [],
         "stats": stats if isinstance(stats, list) else [],
         "connections": connections if isinstance(connections, list) else [],
@@ -132,9 +135,11 @@ def save(state: dict, path: Path | None = None) -> None:
 
 
 def roster(state: dict) -> list[dict]:
+    hidden = set(state.get("hidden_brands") or [])
     rows = [
         brand_dict(brand, _merged_channels(brand.id, brand.channels, state))
         for brand in _seeds()
+        if brand.id not in hidden
     ]
     rows.extend(_custom_row(custom, state) for custom in state["custom_brands"])
     return rows
@@ -279,6 +284,12 @@ def add_brand(state: dict, spec: dict, path: Path | None = None) -> dict:
         raise DraftError("Brand id is lowercase words separated by hyphens.")
     if not name or len(name) > 80:
         raise DraftError("The brand needs a name.")
+    if seed_brand(brand_id) and brand_id in set(state.get("hidden_brands") or []):
+        updated = _copy(state)
+        updated["hidden_brands"] = [item for item in updated.get("hidden_brands") or [] if item != brand_id]
+        save(updated, path)
+        seed = seed_brand(brand_id)
+        return {"id": seed.id, "name": seed.name}
     if seed_brand(brand_id) or any(item.get("id") == brand_id for item in state["custom_brands"]):
         raise DraftError("That brand is already on the roster.")
     tags = []
@@ -302,9 +313,12 @@ def add_brand(state: dict, spec: dict, path: Path | None = None) -> dict:
 
 def remove_brand(state: dict, brand_id: str, path: Path | None = None, root: Path | None = None) -> dict:
     name = str(brand_id or "").strip()
-    if seed_brand(name):
-        raise DraftError("House brands stay on the roster.")
-    if not any(item.get("id") == name for item in state.get("custom_brands") or []):
+    if not brand_removable(name):
+        raise DraftError("Josie and Misfit stay on the roster.")
+    seed = seed_brand(name)
+    is_custom = any(item.get("id") == name for item in state.get("custom_brands") or [])
+    hidden = set(state.get("hidden_brands") or [])
+    if name in hidden or (seed is None and not is_custom):
         raise DraftError("That brand is not on the roster.")
     updated = _copy(state)
     updated["custom_brands"] = [item for item in updated["custom_brands"] if item.get("id") != name]
@@ -330,6 +344,8 @@ def remove_brand(state: dict, brand_id: str, path: Path | None = None, root: Pat
         current = dict(updated.get(key) or {})
         current.pop(name, None)
         updated[key] = current
+    if seed is not None:
+        updated["hidden_brands"] = [item for item in updated.get("hidden_brands") or [] if item != name] + [name]
     save(updated, path)
     _drop_asset_dir(name, root)
     return {"id": name, "removed": True}
@@ -1019,6 +1035,8 @@ def _reports_view(state: dict, brand_id: str) -> dict:
 def resolve_brand(state: dict, brand_id: str) -> Brand:
     seed = seed_brand(brand_id)
     if seed is not None:
+        if brand_id in set(state.get("hidden_brands") or []):
+            raise DraftError(f"Unknown brand: {brand_id}")
         return seed
     for custom in state["custom_brands"]:
         if custom.get("id") == brand_id:
@@ -1376,6 +1394,7 @@ def _custom_row(custom: dict, state: dict) -> dict:
         "guards": list(custom.get("guards") or []),
         "channels": channels,
         "custom": True,
+        "removable": True,
         "audience": "",
         "pillars": [],
         "preferred_format": "feed",

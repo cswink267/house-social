@@ -191,9 +191,19 @@ def test_a_custom_brand_can_be_removed_and_a_house_brand_cannot(tmp_path: Path, 
     assert all(item["id"] != piece["id"] for item in load(path)["pieces"])
     assert not files.exists()
     assert (kept / "stay.txt").read_text(encoding="utf-8") == "stay"
-    with pytest.raises(DraftError, match="House brands stay"):
+    with pytest.raises(DraftError, match="Josie and Misfit stay"):
         remove_brand(load(path), "josie-blackthorn", path)
-    assert any(item["id"] == "josie-blackthorn" for item in roster(load(path)))
+    with pytest.raises(DraftError, match="Josie and Misfit stay"):
+        remove_brand(load(path), "misfit-mindset", path)
+    assert any(item["id"] == "jamhaul" for item in roster(load(path)))
+    create_piece(load(path), "jamhaul", "What is a haul?", path)
+    remove_brand(load(path), "jamhaul", path)
+    assert all(item["id"] != "jamhaul" for item in roster(load(path)))
+    with pytest.raises(DraftError, match="Unknown brand"):
+        create_piece(load(path), "jamhaul", "What is a haul?", path)
+    restored = add_brand(load(path), {"id": "jamhaul", "name": "JamHaul"}, path)
+    assert restored["id"] == "jamhaul"
+    assert any(item["id"] == "jamhaul" for item in roster(load(path)))
     with pytest.raises(DraftError, match="not on the roster"):
         remove_brand(load(path), "north-room", path)
 
