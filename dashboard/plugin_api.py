@@ -45,7 +45,7 @@ from store import (
     voice_check_brand,
     brand_history,
 )
-from campaigns import attach_campaign, revise_campaign, save_campaign
+from campaigns import attach_campaign, clone_campaign, keep_retrospective, kind_lessons, revise_campaign, save_campaign
 from queue_desk import bulk_queue
 from voice import guide_for
 from hashtags import apply_set, save_set, save_trend
@@ -314,6 +314,34 @@ def patch_campaign(campaign_id: str, body: dict) -> dict:
         _fail(exc)
 
 
+@router.post("/campaigns/{campaign_id}/clone")
+def post_campaign_clone(campaign_id: str) -> dict:
+    try:
+        return clone_campaign(load(), campaign_id)
+    except DraftError as exc:
+        _fail(exc)
+
+
+@router.post("/campaigns/{campaign_id}/retrospective")
+def post_campaign_retrospective(campaign_id: str) -> dict:
+    state = load()
+    try:
+        _index, campaign = next(
+            ((index, item) for index, item in enumerate(state.get("campaigns") or []) if item.get("id") == campaign_id),
+            (None, None),
+        )
+        if campaign is None:
+            raise DraftError("That campaign is not on this brand.")
+        brand_id = campaign["brand_id"]
+        ledger = {"posts": [], "days": []}
+        if brand_id == "josie-blackthorn":
+            ledger = read_ledger(ledger_dir())
+        posts, _days = brand_history(state, brand_id, ledger)
+        return keep_retrospective(state, campaign_id, posts)
+    except DraftError as exc:
+        _fail(exc)
+
+
 @router.post("/campaigns/{campaign_id}/attach")
 def post_campaign_attach(campaign_id: str, body: dict) -> dict:
     try:
@@ -337,7 +365,13 @@ def post_idea_suggest(brand_id: str) -> dict:
     trends = [item for item in state.get("trends") or [] if item.get("brand_id") == brand.id]
     guide = guide_for(brand.id, (state.get("voices") or {}).get(brand.id))
     try:
-        result = assist(guide, "ideas", idea_brief(pillars, posts, trends), complete=ollama_complete, brand_tags=tuple(brand.tags))
+        result = assist(
+            guide,
+            "ideas",
+            idea_brief(pillars, posts, trends, kind_lessons(state, brand.id, posts)),
+            complete=ollama_complete,
+            brand_tags=tuple(brand.tags),
+        )
     except DraftError as exc:
         _fail(exc)
     return {"ideas": [item.get("text") or "" for item in result.get("options") or [] if item.get("text")]}

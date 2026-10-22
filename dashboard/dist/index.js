@@ -762,6 +762,18 @@
             onOpen: function (id) { setActiveId(id); setSection("create"); },
             onSave: saveCampaign,
             onAttach: attachCampaign,
+            onClone: async function (id) {
+              const saved = await run(function () {
+                return SDK.fetchJSON("/api/plugins/house-social/campaigns/" + encodeURIComponent(id) + "/clone", { method: "POST" });
+              });
+              if (saved) await refresh(brand.id);
+            },
+            onKeep: async function (id) {
+              const saved = await run(function () {
+                return SDK.fetchJSON("/api/plugins/house-social/campaigns/" + encodeURIComponent(id) + "/retrospective", { method: "POST" });
+              });
+              if (saved) await refresh(brand.id);
+            },
           }) : null,
           section === "performance" ? h(Performance, {
             brand: brand, studio: studio, busy: busy, pickedDay: pickedDay, pickedPost: pickedPost, pickedHour: pickedHour,
@@ -1660,9 +1672,9 @@
   }
 
   function CampaignsDesk(props) {
-    const board = (props.studio && props.studio.campaigns) || { campaigns: [], kinds: ["launch", "seasonal", "evergreen"] };
+    const board = (props.studio && props.studio.campaigns) || { campaigns: [], kinds: ["launch", "seasonal", "evergreen"], lessons: [] };
     const [openId, setOpenId] = useState("");
-    const [draft, setDraft] = useState({ name: "", kind: "launch", goal: "", goal_posts: "", start: "", end: "", note: "" });
+    const [draft, setDraft] = useState({ name: "", kind: "launch", goal: "", goal_posts: "", start: "", end: "", note: "", template: false });
     const open = (board.campaigns || []).find(function (item) { return item.id === openId; }) || null;
     function setField(field, value) {
       setDraft(function (current) { return Object.assign({}, current, { [field]: value }); });
@@ -1677,11 +1689,15 @@
         start: draft.start,
         end: draft.end,
         note: draft.note,
+        template: draft.template,
       });
-      setDraft({ name: "", kind: draft.kind, goal: "", goal_posts: "", start: "", end: "", note: "" });
+      setDraft({ name: "", kind: draft.kind, goal: "", goal_posts: "", start: "", end: "", note: "", template: false });
     }
     return h("div", { className: "hs-main" },
-      h("p", { className: "hs-note" }, "A campaign holds the posts, the assets, the goal, and the dates. Progress is how many pieces are in it. Performance is what those pieces already earned."),
+      h("p", { className: "hs-note" }, "A campaign holds the posts, the assets, the goal, and the dates. Clone keeps the shape and leaves the pieces. A kind is ahead only when both sides have three posts and the gap is real. Nothing is sent."),
+      (board.lessons || []).map(function (item) {
+        return h("p", { key: item.kind || item.detail, className: item.ahead ? "hs-ok" : "hs-note" }, item.detail + (item.approach ? " " + item.approach : ""));
+      }),
       h("form", { className: "hs-cols", onSubmit: save },
         h("input", { className: "hs-field", value: draft.name, placeholder: "Campaign name", onChange: function (event) { setField("name", event.target.value); } }),
         h("select", { className: "hs-field", value: draft.kind, onChange: function (event) { setField("kind", event.target.value); } },
@@ -1691,13 +1707,17 @@
         h("input", { className: "hs-field", type: "date", value: draft.start, onChange: function (event) { setField("start", event.target.value); } }),
         h("input", { className: "hs-field", type: "date", value: draft.end, onChange: function (event) { setField("end", event.target.value); } }),
         h("input", { className: "hs-field", value: draft.note, placeholder: "Note", onChange: function (event) { setField("note", event.target.value); } }),
+        h("label", { className: "hs-note" },
+          h("input", { type: "checkbox", checked: draft.template, onChange: function (event) { setField("template", event.target.checked); } }),
+          " Keep as a template"),
         h("button", { type: "submit", className: "hs-button", disabled: props.busy || !draft.name.trim() }, "Save campaign")),
       (board.campaigns || []).length ? board.campaigns.map(function (item) {
         const progress = item.progress || {};
         const performance = item.performance || {};
+        const retro = item.retrospective || {};
         return h("div", { key: item.id, className: "hs-pillar" },
           h("button", { type: "button", className: "hs-post", onClick: function () { setOpenId(item.id === openId ? "" : item.id); } },
-            h("div", { className: "hs-name" }, item.name + " · " + item.kind),
+            h("div", { className: "hs-name" }, item.name + " · " + item.kind + (item.template ? " · template" : "")),
             h("div", { className: "hs-meta" }, progress.phase + " · " + progress.posts + (progress.goal_posts ? " of " + progress.goal_posts : "") + " posts · " + progress.assets + " assets")),
           open && open.id === item.id ? h("div", null,
             item.goal ? h("p", { className: "hs-voice" }, item.goal) : null,
@@ -1705,6 +1725,7 @@
             h("p", { className: "hs-note" }, progress.making + " still being made · " + progress.out + " in the queue"),
             h("p", { className: "hs-note" }, performance.detail),
             performance.posts ? h("p", { className: "hs-note" }, performance.engagements + " engagements · " + performance.shares + " shares" + (performance.saves == null ? "" : " · " + performance.saves + " saves")) : null,
+            h("p", { className: "hs-note" }, retro.detail || ""),
             (item.pieces || []).map(function (piece) {
               return h("button", { key: piece.id, type: "button", className: "hs-post", onClick: function () { props.onOpen(piece.id); } }, piece.status + " · " + piece.idea);
             }),
@@ -1712,6 +1733,8 @@
               return h("div", { key: asset.id, className: "hs-note" }, asset.kind + " · " + asset.name);
             }),
             h("div", { className: "hs-row" },
+              h("button", { type: "button", className: "hs-tab", disabled: props.busy, onClick: function () { props.onClone(item.id); } }, "Clone"),
+              retro.ready && retro.ahead ? h("button", { type: "button", className: "hs-tab", disabled: props.busy, onClick: function () { props.onKeep(item.id); } }, "Keep the lesson") : null,
               h("select", {
                 className: "hs-field",
                 value: "",

@@ -179,7 +179,7 @@ def keep_shape(state: dict, brand_id: str, post_id: str, path: Path | None = Non
     )
 
 
-def idea_brief(pillars: list[dict], posts: list[dict], trends: list[dict]) -> str:
+def idea_brief(pillars: list[dict], posts: list[dict], trends: list[dict], lessons: list[dict] | None = None) -> str:
     from analytics_desk import _alerts
 
     lines = ["Pillars: " + ", ".join(item.get("name") or "" for item in pillars if item.get("name")) or "No pillars saved."]
@@ -197,6 +197,13 @@ def idea_brief(pillars: list[dict], posts: list[dict], trends: list[dict]) -> st
             lines.append(f"- {item.get('name')}: {item.get('note') or ''}".strip())
     else:
         lines.append("No trend note is saved.")
+    winning = [item for item in lessons or [] if item.get("ahead") and item.get("approach")]
+    if winning:
+        lines.append("Campaign kinds that are ahead:")
+        for item in winning:
+            lines.append(f"- {item.get('detail')} {item.get('approach')}".strip())
+    else:
+        lines.append("No campaign kind is clearly ahead.")
     lines.append("Do not invent a metric or a result.")
     return "\n".join(lines)
 

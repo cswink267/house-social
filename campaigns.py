@@ -1,8 +1,8 @@
 """Named campaigns for one brand.
 
 A campaign groups the pieces and assets that belong to it, plus a goal
-and the dates. Performance is the posts those pieces already earned.
-Nothing here is sent.
+and the dates. A kind is called ahead only when both sides have three
+posts and the gap is real. Nothing here is sent.
 """
 
 from __future__ import annotations
@@ -24,13 +24,15 @@ _OUT = {"pending", "scheduled", "failed"}
 def campaigns_for(state: dict, brand_id: str, posts: list[dict] | None = None, today: date | None = None) -> dict:
     brand = resolve_brand(state, brand_id)
     when = today or datetime.now().date()
+    history = list(posts or [])
+    lessons = kind_lessons(state, brand.id, history)
     rows = [
-        _view(state, campaign, posts or [], when)
+        _view(state, campaign, history, when, lessons)
         for campaign in state.get("campaigns") or []
         if campaign.get("brand_id") == brand.id
     ]
     rows.sort(key=lambda item: (item.get("start") or "9999", item.get("name") or ""))
-    return {"campaigns": rows, "kinds": list(KINDS)}
+    return {"campaigns": rows, "kinds": list(KINDS), "lessons": lessons}
 
 
 def save_campaign(state: dict, brand_id: str, spec: dict, path: Path | None = None) -> dict:
@@ -114,11 +116,97 @@ def _new(brand_id: str, spec: dict, state: dict, campaign_id: str = "") -> dict:
         "start": start,
         "end": end,
         "note": _label(spec.get("note") or "", 240),
+        "template": spec.get("template") is True,
         "created_at": datetime.now().isoformat(),
     }
 
 
-def _view(state: dict, campaign: dict, posts: list[dict], today: date) -> dict:
+def clone_campaign(state: dict, campaign_id: str, path: Path | None = None) -> dict:
+    _index, current = _campaign(state, campaign_id)
+    return save_campaign(
+        state,
+        current["brand_id"],
+        {
+            "name": _clone_name(current, state),
+            "kind": current.get("kind") or "",
+            "goal": current.get("goal") or "",
+            "goal_posts": current.get("goal_posts") or "",
+            "start": "",
+            "end": "",
+            "note": current.get("note") or "",
+            "template": False,
+        },
+        path,
+    )
+
+
+def keep_retrospective(state: dict, campaign_id: str, posts: list[dict] | None, path: Path | None = None) -> dict:
+    from ideas import save_idea
+    from store import add_voice_post, load
+
+    _index, campaign = _campaign(state, campaign_id)
+    history = list(posts or [])
+    view = _view(state, campaign, history, datetime.now().date(), kind_lessons(state, campaign["brand_id"], history))
+    retro = view["retrospective"]
+    if not retro["ready"]:
+        raise DraftError(retro["detail"])
+    if not retro["ahead"]:
+        raise DraftError("Nothing in this retrospective is clear enough to keep.")
+    piece_ids = {piece.get("id") for piece in view["pieces"]}
+    measured = [post for post in history if str(post.get("piece_id") or "") in piece_ids and str(post.get("preview") or "").strip()]
+    if not measured:
+        raise DraftError("No post tied to this campaign has words to keep.")
+    best = max(measured, key=lambda post: int(post.get("engagements") or 0))
+    voiced = add_voice_post(
+        state,
+        campaign["brand_id"],
+        {
+            "text": str(best.get("preview") or ""),
+            "kind": "on",
+            "title": campaign["name"],
+            "engagements": int(best.get("engagements") or 0),
+        },
+        path,
+    )
+    fresh = load(path) if path else load()
+    saved = save_idea(
+        fresh,
+        campaign["brand_id"],
+        {"text": retro["lesson"], "source": "spark", "note": f"Kept from the {campaign['name']} retrospective."},
+        path,
+    )
+    return {"voice": voiced["voice"], "idea": saved}
+
+
+def kind_lessons(state: dict, brand_id: str, posts: list[dict]) -> list[dict]:
+    brand = resolve_brand(state, brand_id)
+    campaigns = [item for item in state.get("campaigns") or [] if item.get("brand_id") == brand.id]
+    pieces = [item for item in state.get("pieces") or [] if item.get("brand_id") == brand.id]
+    grouped = {kind: [] for kind in KINDS}
+    for post in posts:
+        kind = _kind_of(post, pieces, campaigns)
+        if kind in grouped:
+            grouped[kind].append(post)
+    present = [kind for kind, rows in grouped.items() if rows]
+    if len(present) < 2:
+        return [{
+            "kind": "",
+            "clear": False,
+            "ahead": False,
+            "detail": "Not enough posts are tied to campaign kinds to compare them.",
+            "approach": "",
+        }]
+    found = []
+    for kind in present:
+        inside = grouped[kind]
+        outside = [post for other, rows in grouped.items() if other != kind for post in rows]
+        compared = _compare(kind, inside, outside)
+        approach = f"A similar approach is another {kind} campaign." if compared["ahead"] else ""
+        found.append({"kind": kind, **compared, "approach": approach})
+    return found
+
+
+def _view(state: dict, campaign: dict, posts: list[dict], today: date, lessons: list[dict] | None = None) -> dict:
     pieces = _linked_pieces(state, campaign)
     assets = [
         asset for asset in state.get("assets") or []
@@ -138,6 +226,7 @@ def _view(state: dict, campaign: dict, posts: list[dict], today: date) -> dict:
         "start": campaign.get("start") or "",
         "end": campaign.get("end") or "",
         "note": campaign.get("note") or "",
+        "template": campaign.get("template") is True,
         "pieces": [
             {"id": piece.get("id"), "idea": str(piece.get("idea") or "")[:120], "status": piece.get("status") or "draft"}
             for piece in pieces
@@ -162,7 +251,95 @@ def _view(state: dict, campaign: dict, posts: list[dict], today: date) -> dict:
             "clear": bool(compared and compared.get("clear")),
             "detail": (compared or {}).get("detail") or "No measured posts for this campaign yet.",
         },
+        "retrospective": _retrospective(campaign, (compared or {}), today, lessons or [], campaign.get("kind") or ""),
     }
+
+
+def _retrospective(campaign: dict, compared: dict, today: date, lessons: list[dict], kind: str) -> dict:
+    detail = compared.get("detail") or "No measured posts for this campaign yet."
+    if not campaign.get("end"):
+        return {"ready": False, "ahead": False, "detail": "Set an end date before a retrospective.", "lesson": ""}
+    if _phase(campaign, today) != "Closed":
+        return {"ready": False, "ahead": False, "detail": "The retrospective waits until the end date has passed.", "lesson": ""}
+    ahead = bool(compared.get("clear")) and "averaged less" not in detail and "too close" not in detail and "waits for" not in detail
+    match = next((item for item in lessons if item.get("kind") == kind and item.get("ahead")), None)
+    lesson = f"{detail} {match['approach']}" if ahead and match and match.get("approach") else detail
+    return {"ready": True, "ahead": ahead, "detail": detail, "lesson": lesson}
+
+
+def _compare(name: str, inside: list[dict], outside: list[dict]) -> dict:
+    from learn import MIN_SAMPLE, _mean
+
+    mean_in = _mean(inside)
+    mean_out = _mean(outside)
+    clear = (
+        len(inside) >= MIN_SAMPLE
+        and len(outside) >= MIN_SAMPLE
+        and abs(mean_in - mean_out) >= 3
+        and max(mean_in, mean_out) >= min(mean_in, mean_out) * 1.5
+        and mean_in != mean_out
+    )
+    if len(inside) < MIN_SAMPLE or len(outside) < MIN_SAMPLE:
+        return {
+            "clear": False,
+            "ahead": False,
+            "detail": (
+                f"{name} has {len(inside)} posts. "
+                f"A comparison waits for {MIN_SAMPLE} of this kind and {MIN_SAMPLE} of the other kinds."
+            ),
+        }
+    if not clear:
+        return {
+            "clear": False,
+            "ahead": False,
+            "detail": (
+                f"{name} is too close to call. {mean_in:.1f} engagements (n={len(inside)}) "
+                f"against {mean_out:.1f} on the other kinds (n={len(outside)})."
+            ),
+        }
+    if mean_in > mean_out:
+        return {
+            "clear": True,
+            "ahead": True,
+            "detail": (
+                f"{name} averaged {mean_in:.1f} engagements (n={len(inside)}). "
+                f"The other kinds averaged {mean_out:.1f} (n={len(outside)})."
+            ),
+        }
+    return {
+        "clear": True,
+        "ahead": False,
+        "detail": (
+            f"{name} averaged less: {mean_in:.1f} (n={len(inside)}) "
+            f"against {mean_out:.1f} on the other kinds (n={len(outside)})."
+        ),
+    }
+
+
+def _kind_of(post: dict, pieces: list[dict], campaigns: list[dict]) -> str:
+    from learn import _campaign_name
+
+    name = _campaign_name(post, pieces).lower()
+    if not name:
+        return ""
+    found = next((item for item in campaigns if str(item.get("name") or "").lower() == name), None)
+    return str((found or {}).get("kind") or "")
+
+
+def _clone_name(campaign: dict, state: dict) -> str:
+    base = str(campaign.get("name") or "").strip()
+    taken = {
+        str(item.get("name") or "").lower()
+        for item in state.get("campaigns") or []
+        if item.get("brand_id") == campaign.get("brand_id")
+    }
+    for number in range(1, 21):
+        suffix = " copy" if number == 1 else f" copy {number}"
+        stem = base[: 48 - len(suffix)].rstrip()
+        candidate = f"{stem}{suffix}"
+        if candidate.lower() not in taken:
+            return candidate
+    raise DraftError("That campaign has too many copies.")
 
 
 def _linked_pieces(state: dict, campaign: dict) -> list[dict]:
