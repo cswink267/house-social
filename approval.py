@@ -13,6 +13,7 @@ from pathlib import Path
 
 from adapt import DraftError
 from brands import PLATFORMS
+from meta import redact
 from store import _find, _label, load, resolve_brand, save, update_piece
 
 
@@ -23,7 +24,7 @@ def approval_for(state: dict, brand_id: str) -> dict:
     for piece in state.get("pieces") or []:
         if piece.get("brand_id") != brand.id:
             continue
-        if (piece.get("status") or "draft") not in {"draft", "planned", "ready", "pending", "approved"}:
+        if (piece.get("status") or "draft") not in {"draft", "planned", "ready", "pending", "approved", "scheduled", "failed"}:
             continue
         pieces.append(_piece(piece, steps))
     notices = [
@@ -61,7 +62,8 @@ def add_comment(state: dict, piece_id: str, spec: dict, path: Path | None = None
     _index, piece = _find(state, piece_id)
     comment = {"id": str(uuid.uuid4()), "at": _now(), "author": author, "text": text}
     approval = _approval(piece)
-    approval["comments"] = [*(approval.get("comments") or []), comment][-40:]
+    approval["comments"] = [*(approval.get("comments") or []), {**comment, "text": redact(text)}][-40:]
+    _remember(approval, author, "comment", redact(text))
     updated = _with_piece(state, piece_id, lambda item: {**item, "approval": approval})
     updated = _notify(updated, piece, f"{author} commented on {_title(piece)}.")
     save(updated, path)
@@ -91,7 +93,8 @@ def decide(state: dict, piece_id: str, spec: dict, path: Path | None = None) -> 
         {"id": str(uuid.uuid4()), "at": _now(), "step": step, "name": steps[step], "decision": choice, "comment": note},
     ][-20:]
     if note:
-        approval["comments"] = [*(approval.get("comments") or []), {"id": str(uuid.uuid4()), "at": _now(), "author": author, "text": note}][-40:]
+        approval["comments"] = [*(approval.get("comments") or []), {"id": str(uuid.uuid4()), "at": _now(), "author": author, "text": redact(note)}][-40:]
+    _remember(approval, author, choice, redact(note) or ("Approved." if choice == "approved" else "Asked for changes."))
     if choice == "changes":
         approval["complete"] = False
         approval["step"] = 0
@@ -140,17 +143,32 @@ def mark_notice(state: dict, notice_id: str, path: Path | None = None) -> dict:
     return approval_for(updated, brand_id)
 
 
-def compare_piece(piece: dict) -> dict:
+def compare_piece(piece: dict, earlier: int | None = None, later: int | None = None) -> dict:
     versions = _approval(piece).get("versions") or []
-    if len(versions) < 2:
+    pair = _pair(versions, earlier, later)
+    if pair is None:
         return {"ready": False, "detail": "Nothing earlier to compare.", "platforms": []}
-    before, after = versions[-2], versions[-1]
+    before, after = versions[pair[0]], versions[pair[1]]
     platforms = []
     for platform in PLATFORMS:
         left = str((before.get("bodies") or {}).get(platform) or "")
         right = str((after.get("bodies") or {}).get(platform) or "")
-        platforms.append({"platform": platform, "before": left, "after": right, "same": left == right})
-    return {"ready": True, "detail": "", "platforms": platforms}
+        removed, added = _changed_lines(left, right)
+        platforms.append({
+            "platform": platform,
+            "before": left,
+            "after": right,
+            "same": left == right,
+            "removed": removed,
+            "added": added,
+        })
+    return {
+        "ready": True,
+        "earlier": pair[0],
+        "later": pair[1],
+        "detail": "Lines only in the earlier version are removed. Lines only in the later version are added.",
+        "platforms": platforms,
+    }
 
 
 def _submit(piece: dict) -> dict:
@@ -161,6 +179,7 @@ def _submit(piece: dict) -> dict:
     approval["complete"] = False
     approval["step"] = 0
     approval["decisions"] = []
+    _remember(approval, "Desk", "submitted", "Sent for review.")
     return {**piece, "approval": approval, "status": "pending"}
 
 
@@ -175,7 +194,12 @@ def _piece(piece: dict, steps: list[str]) -> dict:
         "waiting": waiting,
         "complete": bool(approval.get("complete")),
         "comments": list(approval.get("comments") or []),
-        "versions": len(approval.get("versions") or []),
+        "signed": [item.get("name") or "" for item in approval.get("decisions") or [] if item.get("decision") == "approved"],
+        "trail": list(approval.get("trail") or []),
+        "versions": [
+            {"index": index, "at": item.get("at") or ""}
+            for index, item in enumerate(approval.get("versions") or [])
+        ],
         "compare": compare_piece(piece),
     }
 
@@ -188,7 +212,43 @@ def _approval(piece: dict) -> dict:
         "decisions": list(raw.get("decisions") or []),
         "versions": list(raw.get("versions") or []),
         "comments": list(raw.get("comments") or []),
+        "trail": list(raw.get("trail") or []),
     }
+
+
+def _remember(approval: dict, author: str, action: str, text: str) -> None:
+    approval["trail"] = [
+        *(approval.get("trail") or []),
+        {
+            "id": str(uuid.uuid4()),
+            "at": _now(),
+            "author": author,
+            "action": action,
+            "text": redact(text)[:240],
+        },
+    ][-40:]
+
+
+def _pair(versions: list, earlier: int | None, later: int | None) -> tuple[int, int] | None:
+    if earlier is None and later is None:
+        if len(versions) < 2:
+            return None
+        return len(versions) - 2, len(versions) - 1
+    if earlier is None or later is None or isinstance(earlier, bool) or isinstance(later, bool):
+        raise DraftError("Pick two versions.")
+    if not isinstance(earlier, int) or not isinstance(later, int) or earlier == later:
+        raise DraftError("Pick two different versions.")
+    if min(earlier, later) < 0 or max(earlier, later) >= len(versions):
+        raise DraftError("That version is not on this piece.")
+    return min(earlier, later), max(earlier, later)
+
+
+def _changed_lines(before: str, after: str) -> tuple[list[str], list[str]]:
+    left = before.splitlines()
+    right = after.splitlines()
+    removed = [line for line in left if line and line not in right][:8]
+    added = [line for line in right if line and line not in left][:8]
+    return removed, added
 
 
 def _bodies(piece: dict) -> dict:

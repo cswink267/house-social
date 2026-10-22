@@ -1553,7 +1553,7 @@
     const open = (desk.pieces || []).find(function (item) { return item.id === openId; }) || null;
     const waiting = open && open.waiting ? open.waiting : (desk.steps || ["Approver"])[0];
     return h("div", { className: "hs-main" },
-      h("p", { className: "hs-note" }, "Draft, then needs review, then approved, then scheduled. One name is enough. More names go in order. Notices stay on this desk."),
+      h("p", { className: "hs-note" }, "Draft, then needs review, then approved, then scheduled. One name is a single step. Extra names are optional and go in order. The trail stays after a notice is marked read. Nothing is mailed and nothing is sent."),
       (desk.notices || []).length ? h("div", null,
         h("div", { className: "hs-name" }, "Notices"),
         desk.notices.map(function (notice) {
@@ -1576,13 +1576,22 @@
             (item.comments || []).map(function (note) {
               return h("p", { key: note.id, className: "hs-note" }, note.author + ": " + note.text);
             }),
+            (item.signed || []).length ? h("p", { className: "hs-note" }, "Signed: " + item.signed.join(", ")) : null,
+            (item.trail || []).length ? h("div", null,
+              h("div", { className: "hs-name" }, "Trail"),
+              item.trail.map(function (event) {
+                return h("p", { key: event.id, className: "hs-note" }, event.author + " · " + event.action + (event.text ? " · " + event.text : ""));
+              })) : null,
             item.compare && item.compare.ready ? h("div", null,
               h("div", { className: "hs-name" }, "Last two versions"),
+              h("p", { className: "hs-note" }, item.compare.detail || ""),
               item.compare.platforms.map(function (platform) {
                 return h("div", { key: platform.platform, className: "hs-preview" },
                   h("div", { className: "hs-name" }, platform.platform + (platform.same ? " · unchanged" : "")),
-                  h("p", { className: "hs-note" }, platform.before || "Empty"),
-                  h("p", { className: "hs-voice" }, platform.after || "Empty"));
+                  (platform.removed || []).map(function (line, index) { return h("p", { key: "r" + index, className: "hs-bad" }, "Removed: " + line); }),
+                  (platform.added || []).map(function (line, index) { return h("p", { key: "a" + index, className: "hs-ok" }, "Added: " + line); }),
+                  platform.same ? null : h("p", { className: "hs-note" }, platform.before || "Empty"),
+                  platform.same ? null : h("p", { className: "hs-voice" }, platform.after || "Empty"));
               })) : h("p", { className: "hs-note" }, (item.compare && item.compare.detail) || "Nothing earlier to compare."),
             h("div", { className: "hs-cols" },
               h("input", { className: "hs-field", value: author, placeholder: waiting || "Your name", onChange: function (event) { setAuthor(event.target.value); } }),

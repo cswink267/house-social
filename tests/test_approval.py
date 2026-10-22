@@ -53,3 +53,15 @@ def test_two_steps_compare_and_a_notice(tmp_path: Path):
     sent_back = decide(load(path), changes["id"], {"author": "First", "decision": "changes", "comment": "Cut the second line."}, path)
     assert sent_back["status"] == "draft"
     assert any(section["id"] == "approval" for section in roster(empty_state())[0]["sections"])
+    kept = next(item for item in load(path)["pieces"] if item["id"] == piece["id"])
+    actions = [item["action"] for item in kept["approval"]["trail"]]
+    assert actions.count("submitted") == 2
+    assert "approved" in actions
+    assert "comment" in actions
+    facebook = next(item for item in compare_piece(kept, 0, 1)["platforms"] if item["platform"] == "facebook")
+    assert "A second pass." in facebook["added"]
+    assert "A second pass." not in facebook["removed"]
+    sent = next(item for item in load(path)["pieces"] if item["id"] == changes["id"])
+    assert any(item["action"] == "changes" for item in sent["approval"]["trail"])
+    assert all(item["id"] != notice_id for item in mark_notice(load(path), notice_id, path)["notices"])
+    assert any(item["action"] == "submitted" for item in next(item for item in load(path)["pieces"] if item["id"] == piece["id"])["approval"]["trail"])
