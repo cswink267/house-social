@@ -398,3 +398,92 @@ Implementation notes:
 - Empty-state text stays factual and does not invent a next step the data does not support.
 
 These additions are progressive. The activity log, teach-from-rejection, dry-run, and brand health summary most directly support the three modes. The rest can follow. A brand can use any of them while remaining in Manual mode; none of them force a piece to be sent.
+
+## 9. Graphical Engagement Map
+
+A set of detailed, visual dashboards that surface the engagement metrics Facebook, Instagram, and Threads actually return. These are display-only. They do not invent rates, confidence scores, or demographics the platforms did not supply. A missing number stays missing. Nothing is sent from these views.
+
+The four views below match the mockups. They can be built as tabs or sub-views inside the existing Analytics desk, or as a dedicated Engagement Map desk. All numbers come from stored posts and insights; no external estimation.
+
+### Brand overview — cross-platform engagement map
+
+A single screen that shows daily engagement trends and summary cards for all three platforms.
+
+What it shows:
+- Multi-line chart of daily total engagements (or the closest available engagement count) for Facebook, Instagram, and Threads over a selectable window (7 / 28 / 90 days).
+- Three summary cards:
+  - Facebook: Reach, Engagements, Reactions, Comments, Shares, Link clicks (and any other fields the pull returned).
+  - Instagram: Reach, Likes, Comments, Saves, Shares, Reel plays (and average watch time when present).
+  - Threads: Views, Likes, Replies, Reposts.
+- A follower-change row showing net change for each platform when the data exists.
+- Small sparklines or percent-change indicators only when both the current and prior windows have real numbers.
+
+Why:
+- Gives an at-a-glance picture of how the three platforms are moving together.
+- Makes gaps obvious (a platform with no recent data simply shows “no numbers in this window”).
+
+Implementation notes:
+- Reads from the same post and insight store used by Analytics.
+- Colors stay consistent (Facebook warm, Instagram teal, Threads gold, or the existing palette).
+- If a metric was not returned by the platform, the cell is omitted or shows “—”. Do not substitute zero.
+
+### Deep post-level breakdown
+
+A focused view of one post with its full engagement composition and early performance curve.
+
+What it shows:
+- Post preview (caption excerpt, platform badges, publish time).
+- Donut or stacked breakdown of total engagements into Reactions/Likes, Comments/Replies, Shares/Reposts, Saves, Clicks (only the types that exist for that post).
+- Horizontal bars of engagement rate or raw engagements by hour for the first 48 hours, when hourly data exists.
+- Three-column metric grid repeating the platform-specific numbers for that post.
+- Cumulative engagements line from publish time to 48 hours (or to the latest available point).
+
+Why:
+- Lets the user see exactly why a post performed the way it did.
+- Supports the “similar past posts” and prediction features by making the composition visible.
+
+Implementation notes:
+- Opened from any post list (Analytics, Queue, Calendar).
+- Hourly breakdown appears only when the stored data contains it; otherwise the section is hidden.
+- All percentages are calculated only from the numbers present on that post.
+
+### Content-type and format performance map
+
+A view organized by format (feed, quote-image, carousel, reel, story, thread, text) with a time heatmap.
+
+What it shows:
+- Row of format cards with average engagements (and a tiny distribution) for the selected window. A format appears only when it has posts.
+- Heatmap of average engagements by day-of-week and hour, using only posts that have a local hour.
+- Side-by-side bars of average reach and average engagements by format, split by platform where the data exists.
+- Top posts table (platform, format, truncated caption, engagements, saves/shares, engagement rate when reach exists, posted time).
+
+Why:
+- Makes the “which formats work” question visual instead of a list of numbers.
+- Feeds the Formats Library and the recurring series planner with evidence.
+
+Implementation notes:
+- Averages are shown only when a format has at least three posts in the window; otherwise the card says the count is thin.
+- The heatmap uses America/New_York local hour already stored on posts.
+- Engagement rate column appears only for rows that have both engagements and reach/impressions.
+
+### Audience and growth view
+
+Follower trends and the engagement-quality metrics the platforms return.
+
+What it shows:
+- Area or line chart of follower count (or net change) over 90 days for each platform that has the data.
+- Simple rate displays for engagement rate, save rate, and reply rate, each calculated only when the denominator exists, with a comparison to the prior period when both sides have numbers.
+- Cards for profile visits, follows from content, and unfollows when those fields were returned.
+- Optional top cities or age bands only if the platform actually supplied them for this brand; otherwise the panel is omitted.
+- Table of organic reach vs engaged users by platform.
+
+Why:
+- Separates “how many people saw it” from “how many people did something.”
+- Gives a clean place to watch follower trajectory without mixing it into post-level numbers.
+
+Implementation notes:
+- Every rate names its numerator and denominator in a tooltip or caption.
+- If a demographic panel has no data, it is not rendered.
+- Export of the current view (markdown or CSV of the visible numbers) is allowed; the export stays redacted.
+
+These four views are display-only. They consume the same stored metrics the rest of Analytics already uses. They do not create posts, send email, or change mode. A missing metric stays missing. Build them after the historical ingest and the basic Analytics desk are solid, so the charts have real posts to draw from.
