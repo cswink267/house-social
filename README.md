@@ -15,6 +15,7 @@ Each brand has the same desks.
 | Brief | Audience, voice line, guards, pillars, and the public handles. |
 | Voice | Tone, personality, do and don't, visual notes, banned lines, required lines, and an example. Create can score a draft against that guide. |
 | Pages | The Meta app id, the page or account id, and a token. The token is written to a vault. The saved record stores the vault name. |
+| Ideas | A board or a list of sparks, competitor notes, trends, and questions. Tag them, set a priority, and turn one into a draft. A link is only a link. The board does not fetch it. |
 | Composer | The creation hub. Facebook, Instagram, and Threads each get a preview, a character count, a first comment, and media from the library. Hashtags are suggested from the brand and the draft. The assistant can rewrite, shorten, expand, vary, hook, or caption an image, and the brand voice guide is the rule. |
 | Library | Images, video, carousels, templates, logos, and copy blocks. Tags, search, folders, and version history. Use on a piece or a live post, and the card shows the engagements that use actually earned. |
 | Calendar | Month, week, and day. Planned, drafted, ready, scheduled, and published. Drag a piece onto a day. Filter by platform, format, pillar, or campaign. |
@@ -79,6 +80,7 @@ adapt.py                 one idea, three different drafts
 assist.py                voice-bound rewrites, variations, hooks, and captions
 queue_desk.py            the publishing queue, still local
 campaigns.py             named efforts, goals, and dates
+ideas.py                 sparks, notes, and the draft they become
 voice.py                 guides and the voice checklist
 library.py               assets, versions, and use
 store.py                 state, connections, calendar, pulls

@@ -154,9 +154,10 @@
 }
 .hs-post.is-on { color: var(--primary, #cc4400); }
 @media (max-width: 900px) {
-  .hs-layout, .hs-cols, .hs-cal, .hs-pillars, .hs-lib, .hs-previews { grid-template-columns: 1fr; }
+  .hs-layout, .hs-cols, .hs-cal, .hs-pillars, .hs-lib, .hs-previews, .hs-board { grid-template-columns: 1fr; }
   .hs-cal-board { grid-template-columns: repeat(7, minmax(0, 1fr)); }
 }
+.hs-board { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 10px; align-items: start; }
 .hs-previews { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 10px; }
 .hs-preview { border: 1px solid #8aa4b5; background: #2a2c30; border-radius: 10px; padding: 8px; }
 .hs-lib { display: grid; grid-template-columns: minmax(220px, 320px) 1fr; gap: 12px; align-items: start; }

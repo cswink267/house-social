@@ -50,6 +50,7 @@ def empty_state() -> dict:
         "voices": {},
         "assets": [],
         "campaigns": [],
+        "ideas": [],
     }
 
 
@@ -69,6 +70,7 @@ def load(path: Path | None = None) -> dict:
     voices = raw.get("voices")
     assets = raw.get("assets")
     campaigns = raw.get("campaigns")
+    ideas = raw.get("ideas")
     return {
         "version": 1,
         "channels": channels if isinstance(channels, dict) else {},
@@ -80,6 +82,7 @@ def load(path: Path | None = None) -> dict:
         "voices": voices if isinstance(voices, dict) else {},
         "assets": assets if isinstance(assets, list) else [],
         "campaigns": campaigns if isinstance(campaigns, list) else [],
+        "ideas": ideas if isinstance(ideas, list) else [],
     }
 
 
@@ -363,6 +366,7 @@ def studio(state: dict, brand_id: str, ledger: dict | None = None, today=None) -
         "voice": _voice_view(state, brand_id),
         "queue": _queue_view(state, brand_id, posts),
         "campaigns": _campaigns_view(state, brand_id, posts, when),
+        "ideas": _ideas_view(state, brand_id),
     }
 
 
@@ -600,6 +604,12 @@ def _campaigns_view(state: dict, brand_id: str, posts: list[dict], today) -> dic
     from campaigns import campaigns_for
 
     return campaigns_for(state, brand_id, posts, today)
+
+
+def _ideas_view(state: dict, brand_id: str) -> dict:
+    from ideas import ideas_for
+
+    return ideas_for(state, brand_id)
 
 
 def resolve_brand(state: dict, brand_id: str) -> Brand:

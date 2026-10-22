@@ -37,6 +37,7 @@ from store import (
 from campaigns import attach_campaign, revise_campaign, save_campaign
 from queue_desk import bulk_queue
 from voice import guide_for
+from ideas import draft_idea, revise_idea, save_idea
 from learn import read_ledger
 
 router = APIRouter()
@@ -229,6 +230,30 @@ def patch_campaign(campaign_id: str, body: dict) -> dict:
 def post_campaign_attach(campaign_id: str, body: dict) -> dict:
     try:
         return attach_campaign(load(), campaign_id, body)
+    except DraftError as exc:
+        _fail(exc)
+
+
+@router.post("/brands/{brand_id}/ideas")
+def post_idea(brand_id: str, body: dict) -> dict:
+    try:
+        return save_idea(load(), brand_id, body)
+    except DraftError as exc:
+        _fail(exc)
+
+
+@router.patch("/ideas/{idea_id}")
+def patch_idea(idea_id: str, body: dict) -> dict:
+    try:
+        return revise_idea(load(), idea_id, body)
+    except DraftError as exc:
+        _fail(exc)
+
+
+@router.post("/ideas/{idea_id}/draft")
+def post_idea_draft(idea_id: str) -> dict:
+    try:
+        return draft_idea(load(), idea_id)
     except DraftError as exc:
         _fail(exc)
 

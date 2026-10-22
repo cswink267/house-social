@@ -239,6 +239,29 @@
       if (saved) await refresh(brand.id);
     }
 
+    async function saveIdea(body) {
+      const saved = await run(function () {
+        return SDK.fetchJSON("/api/plugins/house-social/brands/" + brand.id + "/ideas", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify(body),
+        });
+      });
+      if (saved) await refresh(brand.id);
+    }
+
+    async function draftIdea(id) {
+      const saved = await run(function () {
+        return SDK.fetchJSON("/api/plugins/house-social/ideas/" + id + "/draft", { method: "POST" });
+      });
+      if (!saved) return;
+      if (saved.piece_id) {
+        setActiveId(saved.piece_id);
+        setSection("create");
+      }
+      await refresh(brand.id);
+    }
+
     async function saveCampaign(body) {
       const saved = await run(function () {
         return SDK.fetchJSON("/api/plugins/house-social/brands/" + brand.id + "/campaigns", {
@@ -421,6 +444,12 @@
               if (pulled) await refresh(brand.id);
               return pulled;
             },
+          }) : null,
+          section === "ideas" ? h(IdeasBoard, {
+            studio: studio,
+            busy: busy,
+            onSave: saveIdea,
+            onDraft: draftIdea,
           }) : null,
           section === "create" ? h(CreatePanel, {
             brand: brand, idea: idea, setIdea: setIdea, pillar: pillar, setPillar: setPillar,
@@ -988,6 +1017,71 @@
                 onClick: function () { props.onRevise(open.id, { restore: version.id }); },
               }, "Bring this version back"));
           })) : h("p", { className: "hs-note" }, "Choose an asset to see its versions and where it has been used.")),
+    );
+  }
+
+  function IdeasBoard(props) {
+    const board = (props.studio && props.studio.ideas) || { ideas: [], sources: ["spark", "competitor", "trend", "question"], priorities: ["low", "normal", "high"] };
+    const [mode, setMode] = useState("board");
+    const [source, setSource] = useState("all");
+    const [draft, setDraft] = useState({ text: "", source: "spark", priority: "normal", tags: "", note: "", link: "" });
+    const ideas = (board.ideas || []).filter(function (item) {
+      return source === "all" || item.source === source;
+    });
+    function setField(field, value) {
+      setDraft(function (current) { return Object.assign({}, current, { [field]: value }); });
+    }
+    function save(event) {
+      event.preventDefault();
+      props.onSave({
+        text: draft.text,
+        source: draft.source,
+        priority: draft.priority,
+        tags: draft.tags.split(",").map(function (item) { return item.trim(); }).filter(Boolean),
+        note: draft.note,
+        link: draft.link,
+      });
+      setDraft({ text: "", source: draft.source, priority: draft.priority, tags: "", note: "", link: "" });
+    }
+    function card(item) {
+      return h("div", { key: item.id, className: "hs-pillar" },
+        h("div", { className: "hs-name" }, item.source_label + " · " + item.priority),
+        h("p", { className: "hs-voice" }, item.text),
+        item.note ? h("p", { className: "hs-note" }, item.note) : null,
+        (item.tags || []).length ? h("p", { className: "hs-note" }, item.tags.join(", ")) : null,
+        item.link ? h("a", { href: item.link, target: "_blank", rel: "noopener noreferrer" }, "Open the link") : null,
+        h("button", {
+          type: "button", className: "hs-button", disabled: props.busy,
+          onClick: function () { props.onDraft(item.id); },
+        }, item.status === "drafted" ? "Open the draft" : "Make this a draft"));
+    }
+    const columns = (board.sources || []).map(function (name) {
+      return { id: name, items: ideas.filter(function (item) { return item.source === name; }) };
+    });
+    return h("div", { className: "hs-main" },
+      h("p", { className: "hs-note" }, "Sparks, competitor notes, trends, and questions. The board keeps them until you turn one into a draft. It does not fetch the page you link."),
+      h("form", { className: "hs-cols", onSubmit: save },
+        h("textarea", { className: "hs-area", value: draft.text, placeholder: "The idea, still rough", onChange: function (event) { setField("text", event.target.value); } }),
+        h("select", { className: "hs-field", value: draft.source, onChange: function (event) { setField("source", event.target.value); } },
+          (board.sources || []).map(function (item) { return h("option", { key: item, value: item }, item); })),
+        h("select", { className: "hs-field", value: draft.priority, onChange: function (event) { setField("priority", event.target.value); } },
+          (board.priorities || []).map(function (item) { return h("option", { key: item, value: item }, item); })),
+        h("input", { className: "hs-field", value: draft.tags, placeholder: "Tags, comma separated", onChange: function (event) { setField("tags", event.target.value); } }),
+        h("input", { className: "hs-field", value: draft.link, placeholder: "Link, if you have one", onChange: function (event) { setField("link", event.target.value); } }),
+        h("input", { className: "hs-field", value: draft.note, placeholder: "Note", onChange: function (event) { setField("note", event.target.value); } }),
+        h("button", { type: "submit", className: "hs-button", disabled: props.busy || !draft.text.trim() }, "Save idea")),
+      h("div", { className: "hs-row" },
+        h("button", { type: "button", className: "hs-tab" + (mode === "board" ? " is-on" : ""), onClick: function () { setMode("board"); } }, "Board"),
+        h("button", { type: "button", className: "hs-tab" + (mode === "list" ? " is-on" : ""), onClick: function () { setMode("list"); } }, "List"),
+        h("button", { type: "button", className: "hs-tab" + (source === "all" ? " is-on" : ""), onClick: function () { setSource("all"); } }, "All"),
+        (board.sources || []).map(function (item) {
+          return h("button", { key: item, type: "button", className: "hs-tab" + (source === item ? " is-on" : ""), onClick: function () { setSource(item); } }, item);
+        })),
+      mode === "board" ? h("div", { className: "hs-board" }, columns.map(function (column) {
+        return h("div", { key: column.id },
+          h("div", { className: "hs-name" }, column.id),
+          column.items.length ? column.items.map(card) : h("p", { className: "hs-note" }, "Empty"));
+      })) : h("div", null, ideas.length ? ideas.map(card) : h("p", { className: "hs-note" }, "No ideas yet.")),
     );
   }
 
