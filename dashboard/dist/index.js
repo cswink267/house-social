@@ -1739,14 +1739,16 @@
   }
 
   function QueueDesk(props) {
-    const queue = (props.studio && props.studio.queue) || { items: [], suggestion: {}, rules: [] };
+    const queue = (props.studio && props.studio.queue) || { items: [], suggestion: {}, rules: [], formats: [], stages: [], pace: "" };
     const [mode, setMode] = useState("list");
     const [status, setStatus] = useState("all");
     const [picked, setPicked] = useState([]);
     const suggestion = queue.suggestion || {};
+    const stages = queue.stages || [];
     const items = (queue.items || []).filter(function (item) {
       if (status === "all") return true;
-      if (status === "draft") return item.label === "Draft";
+      if (status === "draft") return item.stage === "draft";
+      if (status === "recorded") return item.stage === "recorded";
       return item.status === status;
     });
     function toggle(id) {
@@ -1756,42 +1758,54 @@
     }
     function row(item) {
       const tone = item.status === "pending" ? "pending" : item.status === "scheduled" ? "scheduled" : item.status === "failed" ? "failed" : item.status === "ready" ? "ready" : "draft";
+      const record = item.record || {};
+      const weak = item.slot && item.slot.indexOf("underperformed") >= 0;
       return h("div", { key: item.id, className: "hs-q hs-q-" + tone },
         h("input", { type: "checkbox", checked: picked.indexOf(item.id) >= 0, onChange: function () { toggle(item.id); } }),
-        h("button", { type: "button", className: "hs-post", onClick: function () { props.onOpen(item.id); } },
-          h("div", { className: "hs-name" }, item.label + (item.time ? " · " + item.date + " " + item.time : "")),
-          h("div", { className: "hs-meta" }, item.idea),
-          item.failure ? h("div", { className: "hs-bad" }, item.failure) : null,
-          (item.problems || []).length && item.status !== "failed" ? h("div", { className: "hs-note" }, item.problems[0]) : null));
+        h("div", null,
+          h("button", { type: "button", className: "hs-post", onClick: function () { props.onOpen(item.id); } },
+            h("div", { className: "hs-name" }, item.label + (item.format ? " · " + item.format : "") + (item.time ? " · " + item.date + " " + item.time : "")),
+            h("div", { className: "hs-meta" }, item.idea),
+            item.failure ? h("div", { className: "hs-bad" }, item.failure) : null,
+            item.slot ? h("div", { className: weak ? "hs-bad" : "hs-note" }, item.slot) : null,
+            record.linked ? h("div", { className: "hs-note" }, record.detail) : null,
+            (item.problems || []).length && item.status !== "failed" ? h("div", { className: "hs-note" }, item.problems[0]) : null),
+          record.permalink ? h("a", { href: record.permalink, target: "_blank", rel: "noopener" }, "The post") : null));
     }
-    const making = items.filter(function (item) { return item.lane === "making"; });
-    const going = items.filter(function (item) { return item.lane === "out"; });
-    const dates = going.reduce(function (map, item) {
+    const dated = items.filter(function (item) { return item.date; }).reduce(function (map, item) {
       const key = item.date || "No day";
       map[key] = (map[key] || []).concat([item]);
       return map;
     }, {});
+    const formatLine = (queue.formats || []).length
+      ? (queue.formats || []).map(function (entry) { return entry.format + " is ahead at " + entry.label + "."; }).join(" ")
+      : "No format has a clear hour yet.";
     return h("div", { className: "hs-main" },
-      h("p", { className: "hs-note" }, "Making stays on the left of this split. Needs review, approved, scheduled, and failed are what is going out. This desk does not send."),
-      suggestion.clear ? h("p", { className: "hs-note" }, suggestion.label + " is ahead. " + suggestion.detail + " Schedule uses that hour when you do not pick a time.") : h("p", { className: "hs-note" }, suggestion.detail || "Not enough hours to suggest a time."),
+      h("p", { className: "hs-note" }, "Draft, needs approval, approved, scheduled, on the record, or failed. On the record means a post is already tied to this draft. This desk does not send."),
+      suggestion.clear ? h("p", { className: "hs-note" }, suggestion.label + " is ahead across the posts. " + suggestion.detail + " A format hour wins when that format is clearly ahead.") : h("p", { className: "hs-note" }, suggestion.detail || "Not enough hours to suggest a time."),
+      h("p", { className: "hs-note" }, formatLine),
+      h("p", { className: "hs-note" }, queue.pace || ""),
       h("ul", { className: "hs-guard" }, (queue.rules || []).map(function (rule) { return h("li", { key: rule }, rule); })),
       h("div", { className: "hs-row" },
         ["list", "timeline"].map(function (name) {
           return h("button", { key: name, type: "button", className: "hs-tab" + (mode === name ? " is-on" : ""), onClick: function () { setMode(name); } }, name);
         }),
-        [["all", "All"], ["draft", "Draft"], ["pending", "Needs review"], ["approved", "Approved"], ["scheduled", "Scheduled"], ["failed", "Failed"]].map(function (pair) {
+        [["all", "All"], ["draft", "Draft"], ["pending", "Needs review"], ["approved", "Approved"], ["scheduled", "Scheduled"], ["recorded", "On the record"], ["failed", "Failed"]].map(function (pair) {
           return h("button", { key: pair[0], type: "button", className: "hs-tab" + (status === pair[0] ? " is-on" : ""), onClick: function () { setStatus(pair[0]); } }, pair[1]);
         })),
       picked.length ? h("div", { className: "hs-row" },
         h("button", { type: "button", className: "hs-button", disabled: props.busy, onClick: function () { props.onBulk("pending", picked); setPicked([]); } }, "Send for approval"),
-        h("button", { type: "button", className: "hs-button", disabled: props.busy, onClick: function () { props.onBulk("schedule", picked); setPicked([]); } }, suggestion.clear ? "Schedule at " + suggestion.label : "Schedule"),
+        h("button", { type: "button", className: "hs-button", disabled: props.busy, onClick: function () { props.onBulk("schedule", picked); setPicked([]); } }, suggestion.clear ? "Schedule at the clear hour" : "Schedule"),
         h("button", { type: "button", className: "hs-tab", disabled: props.busy, onClick: function () { props.onBulk("retry", picked); setPicked([]); } }, "Retry failed"),
         h("button", { type: "button", className: "hs-tab", disabled: props.busy, onClick: function () { props.onBulk("draft", picked); setPicked([]); } }, "Back to draft")) : null,
-      mode === "timeline" ? h("div", null, Object.keys(dates).sort().map(function (day) {
-        return h("div", { key: day }, h("div", { className: "hs-name" }, day), dates[day].map(row));
-      })) : h("div", { className: "hs-lib" },
-        h("div", null, h("div", { className: "hs-name" }, "Making"), making.length ? making.map(row) : h("p", { className: "hs-note" }, "Nothing still being made.")),
-        h("div", null, h("div", { className: "hs-name" }, "Going out"), going.length ? going.map(row) : h("p", { className: "hs-note" }, "Nothing in the pipeline."))),
+      mode === "timeline" ? h("div", null, Object.keys(dated).sort().map(function (day) {
+        return h("div", { key: day }, h("div", { className: "hs-name" }, day), dated[day].map(row));
+      })) : h("div", null, stages.map(function (stage) {
+        const rows = items.filter(function (item) { return item.stage === stage.id; });
+        return h("div", { key: stage.id },
+          h("div", { className: "hs-name" }, stage.label),
+          rows.length ? rows.map(row) : h("p", { className: "hs-note" }, "Nothing in this stage."));
+      })),
     );
   }
 
