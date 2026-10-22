@@ -830,6 +830,12 @@
             studio: studio,
             busy: busy,
             onGenerate: generateReport,
+            onInsight: async function (id) {
+              const saved = await run(function () {
+                return SDK.fetchJSON("/api/plugins/house-social/reports/" + encodeURIComponent(id) + "/insight", { method: "POST" });
+              });
+              if (saved) await refresh(brand.id);
+            },
           }) : null,
           section === "learning" ? h(Learning, { studio: studio }) : null,
         ) : null,
@@ -2323,8 +2329,13 @@
     const [note, setNote] = useState("");
     const [copied, setCopied] = useState("");
     const rows = desk.reports || [];
+    function copy(id, text) {
+      if (navigator.clipboard && navigator.clipboard.writeText) {
+        navigator.clipboard.writeText(text).then(function () { setCopied(id); });
+      }
+    }
     return h("div", { className: "hs-main" },
-      h("p", { className: "hs-note" }, "A week or a month of this brand, with the numbers the pull actually returned and a note you write. Download it. Nothing here is mailed, and the file does not include a token."),
+      h("p", { className: "hs-note" }, "A week or a month, set against the period before it. A next-period line appears only when a pattern is already clear. Write the insight uses that brief. The report id is for this desk. It is not a public link. Nothing is mailed."),
       h("div", { className: "hs-row" },
         [["week", "Week"], ["month", "Month"]].map(function (pair) {
           return h("button", {
@@ -2345,6 +2356,7 @@
       }, "Generate"),
       rows.length ? rows.map(function (row) {
         const totals = (row.document && row.document.totals) || {};
+        const recommendations = (row.document && row.document.recommendations) || [];
         return h("div", { key: row.id, className: "hs-pillar" },
           h("div", { className: "hs-name" }, row.title),
           h("p", { className: "hs-note" }, row.note || "No note."),
@@ -2352,8 +2364,13 @@
             "Engagements " + (totals.engagements == null ? "—" : totals.engagements) +
             " · Shares " + (totals.shares == null ? "—" : totals.shares) +
             " · Reach " + (totals.reach == null ? (totals.reach_note || "Not in the pull") : totals.reach)),
+          recommendations.length ? h("p", { className: "hs-note" }, recommendations[0]) : null,
           h("pre", { className: "hs-report" }, row.markdown || ""),
           h("div", { className: "hs-row" },
+            h("button", {
+              type: "button", className: "hs-tab", disabled: props.busy,
+              onClick: function () { props.onInsight(row.id); },
+            }, "Write the insight"),
             h("button", {
               type: "button", className: "hs-tab",
               onClick: function () { downloadText(reportFileName(row.title, "md"), row.markdown || "", "text/markdown"); },
@@ -2371,13 +2388,12 @@
             }, "Download JSON"),
             h("button", {
               type: "button", className: "hs-tab",
-              onClick: function () {
-                const text = row.markdown || "";
-                if (navigator.clipboard && navigator.clipboard.writeText) {
-                  navigator.clipboard.writeText(text).then(function () { setCopied(row.id); });
-                }
-              },
-            }, copied === row.id ? "Copied" : "Copy")));
+              onClick: function () { copy(row.id + ":md", row.markdown || ""); },
+            }, copied === row.id + ":md" ? "Copied" : "Copy"),
+            h("button", {
+              type: "button", className: "hs-tab",
+              onClick: function () { copy(row.id + ":id", row.id); },
+            }, copied === row.id + ":id" ? "Id copied" : "Copy the report id")));
       }) : h("p", { className: "hs-note" }, "No report yet. Generate a week or a month."),
     );
   }

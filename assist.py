@@ -18,7 +18,7 @@ from adapt import DraftError, suggest_hashtags
 from voice import voice_check
 
 
-ACTIONS = ("rewrite", "shorten", "expand", "variations", "hooks", "caption", "hashtags", "reply", "tags", "draft", "comment", "remix", "ideas")
+ACTIONS = ("rewrite", "shorten", "expand", "variations", "hooks", "caption", "hashtags", "reply", "tags", "draft", "comment", "remix", "ideas", "report")
 _COUNTS = {"variations": 3, "hooks": 5, "tags": 5, "draft": 3, "ideas": 3}
 _FENCE = re.compile(r"```(?:json)?\s*(.*?)```", re.S)
 _NUMBERED = re.compile(r"^\s*\d+[\).\]]\s*")
@@ -37,7 +37,7 @@ def assist(
 ) -> dict:
     name = (action or "").strip().lower()
     if name not in ACTIONS:
-        raise DraftError("Ask for a draft, a rewrite, a shorter line, a longer line, variations, hooks, a caption, a comment, hashtags, or a remix.")
+        raise DraftError("Ask for a draft, a rewrite, a shorter line, a longer line, variations, hooks, a caption, a comment, hashtags, a remix, or a report insight.")
     body = (text or "").strip()
     if name == "hashtags":
         options = suggest_hashtags(body, brand_tags)
@@ -107,6 +107,7 @@ def _messages(guide: dict, action: str, text: str, image: bytes | None, mime: st
         "comment": "Write a first comment in the brand voice for this post. Do not repeat the post. Do not say it is going live.\n\n{text}",
         "remix": "Write a new post in the brand voice. Keep what made the shape useful. Do not copy the sentences.\n\n{text}",
         "ideas": "Suggest three different post ideas in the brand voice. Use only the brief. Do not invent a metric or a winner that the brief does not state.\n\n{text}",
+        "report": "Write one insight for the next period in the brand voice. Use only the brief. Do not invent a metric, a percent, or a winner the brief does not state.\n\n{text}",
         "reply": "Draft a short reply in the brand voice. Do not say a post is going live.\n\n{text}",
     }
     prompt = prompts[action].format(text=text or "Use the image.")

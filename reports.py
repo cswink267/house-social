@@ -46,6 +46,7 @@ def generate_report(state: dict, brand_id: str, period: str, note: str = "", pat
         body = _between(posts, page_days, pieces, start, when, previous_start, previous_end, "This month against last month")
         title = f"{when.strftime('%B %Y')} through {when.isoformat()}"
     written = _label(note or "", 1000)
+    body = _with_learning(body, state, brand.id, posts, page_days, when)
     body = _redact_tree(body)
     markdown = redact(_markdown(brand.name, title, written, body))
     row = {
@@ -87,6 +88,32 @@ def report_export(state: dict, report_id: str, fmt: str) -> tuple[str, str, str]
     raise DraftError("Export is markdown or json.")
 
 
+def write_insight(state: dict, report_id: str, complete, path: Path | None = None) -> dict:
+    from assist import assist
+    from voice import guide_for
+
+    index, row = _report(state, report_id)
+    brief = _brief(row.get("document") or {})
+    guide = guide_for(row["brand_id"], (state.get("voices") or {}).get(row["brand_id"]))
+    try:
+        result = assist(guide, "report", brief, complete=complete)
+    except DraftError:
+        raise
+    except (OSError, TimeoutError) as exc:
+        raise DraftError("The assistant is offline.") from exc
+    text = _label(result.get("text") or "", 1000)
+    if "%" in text and "%" not in brief:
+        raise DraftError("The assistant added a percent the report does not have.")
+    document = {**(row.get("document") or {}), "insight": text}
+    brand = resolve_brand(state, row["brand_id"])
+    markdown = redact(_markdown(brand.name, row.get("title") or "", row.get("note") or "", document))
+    updated = {**row, "document": document, "markdown": markdown}
+    reports = list(state.get("reports") or [])
+    reports[index] = updated
+    save({**state, "reports": reports}, path)
+    return _public(updated)
+
+
 def _between(posts, page_days, pieces, start, end, previous_start, previous_end, label) -> dict:
     current_posts = [post for post in posts if _in_window(_local_day(str(post.get("published_at") or "")), start, end)]
     current_days = [day for day in page_days if _in_window(str(day.get("date") or ""), start, end)]
@@ -101,6 +128,7 @@ def _between(posts, page_days, pieces, start, end, previous_start, previous_end,
         "campaigns": _campaigns(current_posts, pieces),
         "formats": format_table([post for post in current_posts if post.get("format") not in (None, "", "unknown")]),
         "top": _top(current_posts),
+        **_annotate(current_posts, pieces),
     }
 
 
@@ -136,13 +164,31 @@ def _markdown(brand: str, title: str, note: str, body: dict) -> str:
         lines.append("- No format in this window.")
     for item in formats:
         lines.append(f"- {item.get('label')}: mean {item.get('mean')} (n={item.get('n')})")
+    lines.extend(["", "## What worked"])
+    worked = body.get("worked") or ["Nothing in this window is clear enough to call what worked."]
+    lines.extend(f"- {line}" for line in worked)
+    lines.extend(["", "## What did not"])
+    missed = body.get("missed") or ["Nothing in this window is clear enough to call what did not."]
+    lines.extend(f"- {line}" for line in missed)
+    lines.extend(["", "## Goals"])
+    lines.extend(f"- {line}" for line in body.get("goals") or ["No goal is set for this brand."])
+    lines.extend(["", "## Next period"])
+    lines.extend(f"- {line}" for line in body.get("recommendations") or ["No recommendation is clear enough for the next period."])
+    lines.extend(["", "## Insight", body.get("insight") or "The assistant has not written this yet.", ""])
     lines.extend(["", "## Campaigns"])
     campaigns = body.get("campaigns") or []
     if not campaigns:
         lines.append("- No campaign in this window.")
     for item in campaigns:
         lines.append(f"- {item.get('detail')}")
-    lines.extend(["", "This report does not include account tokens.", ""])
+    lines.extend(
+        [
+            "",
+            "This report stays on the desk. It is not a public link, and nothing is mailed.",
+            "This report does not include account tokens.",
+            "",
+        ]
+    )
     return "\n".join(lines)
 
 
@@ -154,6 +200,72 @@ def _redact_tree(value):
     if isinstance(value, dict):
         return {key: _redact_tree(item) for key, item in value.items()}
     return value
+
+
+def _with_learning(body: dict, state: dict, brand_id: str, posts: list[dict], page_days: list[dict], today: date) -> dict:
+    learned = dict(body)
+    learned["goals"] = _goal_lines(state, brand_id, posts, page_days, today)
+    learned["worked"], learned["missed"] = _sides(learned)
+    learned["recommendations"] = _recommendations(learned)
+    learned["insight"] = "The assistant has not written this yet."
+    return learned
+
+
+def _goal_lines(state: dict, brand_id: str, posts: list[dict], page_days: list[dict], today: date) -> list[str]:
+    from analytics_desk import goal_line
+
+    goals = [goal for goal in state.get("goals") or [] if goal.get("brand_id") == brand_id]
+    if not goals:
+        return ["No goal is set for this brand."]
+    return [goal_line(goal, posts, page_days, today)["detail"] for goal in goals[:6]]
+
+
+def _sides(body: dict) -> tuple[list[str], list[str]]:
+    clear = [item.get("detail") for item in body.get("patterns") or [] if item.get("clear") and item.get("detail")]
+    alerts = [item.get("detail") for item in body.get("alerts") or [] if item.get("detail")]
+    worked = [*clear, *alerts]
+    if not worked:
+        return (
+            ["Nothing in this window is clear enough to call what worked."],
+            ["Nothing in this window is clear enough to call what did not."],
+        )
+    missed = []
+    for post in (body.get("bottom") or [])[:3]:
+        preview = str(post.get("preview") or "Untitled").replace("\n", " ")
+        missed.append(f"Lowest in this window: {preview} — {int(post.get('engagements') or 0)} engagements.")
+    if not missed:
+        missed = ["Nothing in this window is clear enough to call what did not."]
+    return worked, missed
+
+
+def _recommendations(body: dict) -> list[str]:
+    lines = [item.get("detail") for item in body.get("patterns") or [] if item.get("clear") and item.get("detail")]
+    lines.extend(item.get("detail") for item in body.get("alerts") or [] if item.get("detail"))
+    if not lines:
+        return ["No recommendation is clear enough for the next period."]
+    return [f"Next period: {line}" for line in lines[:6]]
+
+
+def _brief(body: dict) -> str:
+    lines = ["Use only these lines. Do not invent a metric."]
+    lines.extend(body.get("recommendations") or [])
+    lines.extend(body.get("goals") or [])
+    lines.extend((body.get("comparison") or {}).get("lines") or [])
+    return "\n".join(str(line) for line in lines if line)
+
+
+def _annotate(posts: list[dict], pieces: list[dict]) -> dict:
+    from analytics_desk import annotate
+
+    extra = annotate(posts, pieces)
+    return {"patterns": extra["patterns"], "alerts": extra["alerts"], "bottom": extra["bottom"]}
+
+
+def _report(state: dict, report_id: str) -> tuple[int, dict]:
+    for index, row in enumerate(state.get("reports") or []):
+        if row.get("id") == report_id:
+            return index, row
+    raise DraftError("That report is not on this brand.")
 
 
 def _shown(value, note: str) -> str:

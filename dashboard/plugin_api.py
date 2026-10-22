@@ -50,7 +50,7 @@ from queue_desk import bulk_queue
 from voice import guide_for
 from hashtags import apply_set, save_set, save_trend
 from inbox import refresh_inbox, save_inbox_reply, suggest_inbox_reply
-from reports import generate_report, report_export
+from reports import generate_report, report_export, write_insight
 from ideas import draft_idea, idea_brief, keep_shape, revise_idea, save_idea
 from learn import read_ledger
 
@@ -514,6 +514,14 @@ def post_apply_recurrence(recurrence_id: str) -> dict:
 def post_report(brand_id: str, body: dict) -> dict:
     try:
         return generate_report(load(), brand_id, str((body or {}).get("period") or ""), str((body or {}).get("note") or ""))
+    except DraftError as exc:
+        _fail(exc)
+
+
+@router.post("/reports/{report_id}/insight")
+def post_report_insight(report_id: str) -> dict:
+    try:
+        return write_insight(load(), report_id, ollama_complete)
     except DraftError as exc:
         _fail(exc)
 

@@ -99,3 +99,84 @@ def test_week_and_month_reports_keep_missing_numbers_and_drop_tokens(tmp_path: P
         raise AssertionError("a year is not a report")
     assert len(load(path)["reports"]) == 2
     assert any(section["id"] == "reports" for section in roster(empty_state())[0]["sections"])
+    assert "No recommendation is clear enough" in week["markdown"]
+    assert "No goal is set" in week["markdown"]
+    assert "not a public link" in week["markdown"]
+
+
+def test_report_recommends_a_clear_hour_and_refuses_an_invented_percent(tmp_path: Path):
+    path = tmp_path / "state.json"
+    posts = []
+    for index in range(3):
+        posts.append(
+            {
+                "id": f"early{index}",
+                "preview": "Earlier",
+                "published_at": "2026-10-08T16:00:00+00:00",
+                "engagements": 10,
+                "shares": 1,
+                "format": "feed",
+                "local_hour": 9,
+                "impressions": 0,
+            }
+        )
+        posts.append(
+            {
+                "id": f"best{index}",
+                "preview": "You felt that dread.",
+                "published_at": "2026-10-20T16:00:00+00:00",
+                "engagements": 30,
+                "shares": 2,
+                "format": "feed",
+                "local_hour": 10,
+                "impressions": 0,
+            }
+        )
+        posts.append(
+            {
+                "id": f"late{index}",
+                "preview": "A quiet evening.",
+                "published_at": "2026-10-20T20:00:00+00:00",
+                "engagements": 4,
+                "shares": 0,
+                "format": "text",
+                "local_hour": 16,
+                "impressions": 0,
+            }
+        )
+    state = {**empty_state(), "pulls": {"misfit-mindset": {"posts": posts}}}
+    from store import save_goal
+
+    save_goal(
+        state,
+        "misfit-mindset",
+        {"metric": "engagements", "change": 10, "start": "2026-10-15", "end": "2026-10-21"},
+        path,
+    )
+    week = generate_report(load(path), "misfit-mindset", "week", "", path=path, today=TODAY)
+    assert "10:00" in week["markdown"]
+    assert "Next period:" in week["markdown"]
+    assert "meets the goal" in week["markdown"]
+    assert "%" not in "\n".join(week["document"]["recommendations"])
+    assert "The assistant has not written this yet." in week["markdown"]
+    assert "Lowest in this window" in week["markdown"]
+
+    from reports import write_insight
+
+    def complete(_messages):
+        return json.dumps({"text": "Hold the hour the report already named."})
+
+    written = write_insight(load(path), week["id"], complete, path)
+    assert "Hold the hour the report already named." in written["markdown"]
+    assert "access_token=" not in written["markdown"] or "REDACTED" in written["markdown"]
+
+    def invented(_messages):
+        return json.dumps({"text": "Up 28%."})
+
+    try:
+        write_insight(load(path), week["id"], invented, path)
+    except DraftError as exc:
+        assert "percent" in str(exc)
+    else:
+        raise AssertionError("an invented percent was kept")
+    assert "28%" not in load(path)["reports"][0]["markdown"]
