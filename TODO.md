@@ -171,3 +171,213 @@ Implementation notes:
 - Nothing in this mode bypasses the “three posts and a real gap” rule for any learned recommendation.
 
 The three modes are progressive. Manual is the starting point. Autonomous-with-approval builds the trust and the feedback data. Fully Autonomous is available only after that data exists and the user chooses it. A brand can move between modes at any time. Nothing is sent until the active mode and the approval rules allow it.
+
+## 8. Additional features that support the modes and the learning loop
+
+These are optional. None of them are started. They can be built after the three modes exist, or alongside them when they make a mode safer or clearer. A missing number stays missing. Nothing is sent until the active mode and the approval rules allow it. Tokens stay in the vault. A comparison still needs three on both sides and a real gap.
+
+### Mode-specific activity log
+
+A filterable log per brand that shows what Hermes did or proposed under the current mode.
+
+How it works:
+- Every generation, email, approval, rejection, schedule, hold, or mode switch is written as a line.
+- The line names the piece (if any), the action, the mode at the time, and the timestamp.
+- The user can filter by mode, by action, or by date range.
+- The log is readable from the Brief desk or from a small panel on every desk.
+
+Why:
+- Makes the progression from Manual to Autonomous-with-approval to Fully Autonomous visible.
+- Gives the user a single place to audit what changed when they switched modes.
+- Supports later exports and confidence checks.
+
+Implementation notes:
+- Store the log in the same state as the pieces. Do not invent a confidence score; show the raw counts.
+- Keep the log redacted: no token, no vault name, no machine path.
+- The log is append-only. A user can clear it, but the clear is itself logged.
+
+### Approval email preferences
+
+Per-brand settings for the emails sent in Autonomous-with-approval mode.
+
+How it works:
+- The user chooses digest (one email per day or per batch) or immediate.
+- Quiet hours can be set; emails wait until the quiet period ends.
+- The user can choose a short preview plus a link, or the full draft text in the email.
+- Approve and Reject actions remain available either way.
+
+Why:
+- The email is the main control surface in mode 2. Tuning it reduces noise and increases the chance the user reviews.
+- Different brands may need different cadences.
+
+Implementation notes:
+- Preferences are stored with the brand.
+- The email never contains a token or a machine path.
+- If the mail path is unavailable, the pieces stay unscheduled and a notice appears on the Brief desk.
+
+### Teach-from-rejection shortcut
+
+When a user rejects a piece (from email or dashboard), offer a one-click way to turn the rejection into a lasting rule.
+
+How it works:
+- After Reject, the user can choose: add a banned phrase, demote a format, add a voice note, or just discard.
+- The choice is written immediately to the voice guide or the formats library.
+- The rejection is also stored as explicit feedback.
+
+Why:
+- Rejections are the highest-quality signal. Making them immediately actionable tightens the learning loop faster than waiting for post performance.
+- Reduces the chance the same mistake is repeated in the next autonomous batch.
+
+Implementation notes:
+- The shortcut is available on both the email action and the dashboard.
+- A deleted or demoted pattern stays deleted until the user restores it (same rule as the Memory panel).
+- The action is logged in the mode-specific activity log.
+
+### Content mix guardrails
+
+User-set targets for pillars or formats so Hermes does not over-optimize for engagement.
+
+How it works:
+- The user sets soft targets (for example, “at least two educational posts per week” or “no more than one promotional post per week”).
+- In Autonomous modes, Hermes warns or holds a piece that would break a target.
+- The warning names the target and the current count for the window. It does not invent a percent.
+
+Why:
+- Prevents the system from drifting toward whatever has historically performed well at the expense of brand balance.
+- Gives the user a lever that is clearer than editing the voice guide.
+
+Implementation notes:
+- Targets are stored with the brand.
+- A hold is not a rejection; the user can still approve the piece.
+- The three-post rule still applies to any learned recommendation that influences the mix.
+
+### Dry-run / preview week
+
+Generate a full week of proposed content under the current mode without scheduling or emailing.
+
+How it works:
+- The user clicks “Preview next week.”
+- Hermes generates the same batch it would generate in the active mode and shows the pieces in the Calendar and Queue marked as preview.
+- Nothing is emailed. Nothing is scheduled.
+- The user can promote a preview piece to a real draft, discard it, or discard the whole preview.
+
+Why:
+- Lets the user inspect what Autonomous-with-approval or Fully Autonomous would actually produce before turning it on or leaving it on.
+- Safe way to test voice and format changes.
+
+Implementation notes:
+- Preview pieces are stored separately or flagged so they cannot be scheduled by accident.
+- The preview respects the same guards and the three-post rule as a real run.
+- A preview can be re-run; the previous preview is replaced.
+
+### Brand health summary on Brief
+
+A compact card on the Brief desk that shows whether the brand is ready for a more autonomous mode.
+
+How it works:
+- Shows the current mode.
+- Shows the date of the last successful ingest (or “none”).
+- Shows the number of posts the learning is based on.
+- Shows the recent approval rate from mode 2 if that mode has been used and the numbers exist; otherwise it says the history is thin.
+- Lists any hard guards that are active for the brand.
+
+Why:
+- Gives a single place to decide whether to move from Manual to Autonomous-with-approval or from Autonomous-with-approval to Fully Autonomous.
+- Surfaces missing history before the user expects the system to act.
+
+Implementation notes:
+- The card reads only from data that already exists. It does not invent a confidence score.
+- It links to the Ingest desk if no history is present and to the activity log if mode 2 has been used.
+
+### Recurring series planner
+
+Extend the Formats Library so a user can lock a repeating structure and let Hermes fill the topics.
+
+How it works:
+- The user defines a series (for example, “Monday tip, Wednesday story”) and links it to a format.
+- In Autonomous modes, Hermes proposes topics that fit the locked structure and the voice guide.
+- The user can still edit or reject any instance.
+
+Why:
+- Many brands succeed by repeating a small number of strong formats. This makes that deliberate instead of accidental.
+- Reduces blank-page decisions once the structure is trusted.
+
+Implementation notes:
+- A series is stored with the brand and can be paused.
+- Hermes does not invent a new format; it only fills topics inside formats the user has already saved or that already meet the three-post rule.
+- The series respects content-mix guardrails if they are set.
+
+### Cross-post adaptation rules
+
+Explicit, per-brand rules for how a piece should differ across Facebook, Instagram, and Threads.
+
+How it works:
+- The user sets rules such as maximum length, whether a first comment is required, whether a quote image is required, or which hashtag set to prefer.
+- In Autonomous modes, Hermes applies the rules when it creates the three variants.
+- The rules are visible on the Voice or Composer desk.
+
+Why:
+- The system already creates three variants. Making the adaptation rules editable reduces off-brand output once Hermes acts on its own.
+- Hard guards (quote-image on Josie, jamhaul.com on JamHaul, etc.) remain non-negotiable.
+
+Implementation notes:
+- Rules are stored with the brand.
+- A rule that conflicts with a hard guard is refused.
+- The Composer still shows the three previews so the user can override.
+
+### Pause / vacation mode
+
+A temporary override that freezes generation and scheduling for a date range without changing the underlying mode.
+
+How it works:
+- The user sets a start and end date.
+- During that window, Hermes does not generate, email, or schedule for the brand.
+- Already-scheduled pieces stay scheduled unless the user removes them.
+- When the window ends, the previous mode resumes.
+
+Why:
+- Practical for real use. The user should not have to switch to Manual and remember to switch back.
+- Keeps the learning and approval history intact.
+
+Implementation notes:
+- The pause is stored with the brand and is visible on the Brief health card.
+- A pause does not delete drafts or history.
+- The activity log records the start and end of the pause.
+
+### Exportable decision record
+
+A markdown or JSON export of every autonomous decision for a date range.
+
+How it works:
+- The user chooses a date range and downloads a file.
+- The file lists each piece, the mode, the action taken, the pattern or pillar matched (if any), and the final status.
+- The export is redacted.
+
+Why:
+- Useful for the user’s own review or for an agency client.
+- Makes the audit trail portable.
+
+Implementation notes:
+- The export reads from the mode-specific activity log.
+- No token, vault name, or machine path is included.
+- The export can be re-run; it does not change state.
+
+### Layout and clarity options
+
+Small UI changes that make the modes and the learning state easier to see.
+
+- Collapsible group headers in the desk list (Setup / Create / Plan / Review / Learn) so the sidebar stays scannable as desks are added.
+- A persistent “current mode” indicator in the header of every desk.
+- Empty-state hints that name the next useful action (“No history yet — start with Ingest” or “Mode is Manual — switch to Autonomous with approval when you are ready”).
+- On the Brief desk, the health summary card is the first thing shown.
+
+Why:
+- The three modes and the learning loop are only useful if the user can see the current state without hunting.
+- These changes do not alter behavior; they only surface what already exists.
+
+Implementation notes:
+- Group headers read the `group` field already added to the section list.
+- The mode indicator reads the brand’s current mode.
+- Empty-state text stays factual and does not invent a next step the data does not support.
+
+These additions are progressive. The activity log, teach-from-rejection, dry-run, and brand health summary most directly support the three modes. The rest can follow. A brand can use any of them while remaining in Manual mode; none of them force a piece to be sent.
