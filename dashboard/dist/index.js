@@ -239,6 +239,53 @@
       if (saved) await refresh(brand.id);
     }
 
+    async function saveApprovalSteps(steps) {
+      const saved = await run(function () {
+        return SDK.fetchJSON("/api/plugins/house-social/brands/" + brand.id + "/approval-steps", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ steps: steps }),
+        });
+      });
+      if (saved) await refresh(brand.id);
+    }
+
+    async function sendReview(id) {
+      const saved = await run(function () {
+        return SDK.fetchJSON("/api/plugins/house-social/pieces/" + id + "/review", { method: "POST" });
+      });
+      if (saved) await refresh(brand.id);
+    }
+
+    async function decidePiece(id, body) {
+      const saved = await run(function () {
+        return SDK.fetchJSON("/api/plugins/house-social/pieces/" + id + "/decision", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify(body),
+        });
+      });
+      if (saved) await refresh(brand.id);
+    }
+
+    async function commentPiece(id, body) {
+      const saved = await run(function () {
+        return SDK.fetchJSON("/api/plugins/house-social/pieces/" + id + "/comments", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify(body),
+        });
+      });
+      if (saved) await refresh(brand.id);
+    }
+
+    async function readNotice(id) {
+      const saved = await run(function () {
+        return SDK.fetchJSON("/api/plugins/house-social/notices/" + id + "/read", { method: "POST" });
+      });
+      if (saved) await refresh(brand.id);
+    }
+
     async function saveIdea(body) {
       const saved = await run(function () {
         return SDK.fetchJSON("/api/plugins/house-social/brands/" + brand.id + "/ideas", {
@@ -496,6 +543,16 @@
             busy: busy,
             onOpen: function (id) { setActiveId(id); setSection("create"); },
             onBulk: runQueue,
+          }) : null,
+          section === "approval" ? h(ApprovalDesk, {
+            studio: studio,
+            busy: busy,
+            onOpen: function (id) { setActiveId(id); setSection("create"); },
+            onSteps: saveApprovalSteps,
+            onReview: sendReview,
+            onDecide: decidePiece,
+            onComment: commentPiece,
+            onRead: readNotice,
           }) : null,
           section === "campaigns" ? h(CampaignsDesk, {
             studio: studio,
@@ -1020,6 +1077,57 @@
     );
   }
 
+  function ApprovalDesk(props) {
+    const desk = (props.studio && props.studio.approval) || { steps: ["Approver"], pieces: [], notices: [] };
+    const [openId, setOpenId] = useState("");
+    const [steps, setSteps] = useState((desk.steps || ["Approver"]).join(", "));
+    const [author, setAuthor] = useState("");
+    const [comment, setComment] = useState("");
+    const open = (desk.pieces || []).find(function (item) { return item.id === openId; }) || null;
+    const waiting = open && open.waiting ? open.waiting : (desk.steps || ["Approver"])[0];
+    return h("div", { className: "hs-main" },
+      h("p", { className: "hs-note" }, "Draft, then needs review, then approved, then scheduled. One name is enough. More names go in order. Notices stay on this desk."),
+      (desk.notices || []).length ? h("div", null,
+        h("div", { className: "hs-name" }, "Notices"),
+        desk.notices.map(function (notice) {
+          return h("div", { key: notice.id, className: "hs-row" },
+            h("span", { className: "hs-note" }, notice.text),
+            h("button", { type: "button", className: "hs-tab", disabled: props.busy, onClick: function () { props.onRead(notice.id); } }, "Mark read"));
+        })) : null,
+      h("form", { className: "hs-row", onSubmit: function (event) { event.preventDefault(); props.onSteps(steps.split(",").map(function (item) { return item.trim(); }).filter(Boolean)); } },
+        h("input", { className: "hs-field", value: steps, placeholder: "Approver names, in order", onChange: function (event) { setSteps(event.target.value); } }),
+        h("button", { type: "submit", className: "hs-button", disabled: props.busy }, "Save steps")),
+      (desk.pieces || []).length ? desk.pieces.map(function (item) {
+        return h("div", { key: item.id, className: "hs-pillar" },
+          h("button", { type: "button", className: "hs-post", onClick: function () { setOpenId(item.id === openId ? "" : item.id); setAuthor(item.waiting || ""); } },
+            h("div", { className: "hs-name" }, item.status + (item.waiting ? " · waiting on " + item.waiting : "")),
+            h("div", { className: "hs-meta" }, item.idea)),
+          open && open.id === item.id ? h("div", null,
+            h("div", { className: "hs-row" },
+              h("button", { type: "button", className: "hs-tab", onClick: function () { props.onOpen(item.id); } }, "Open in the composer"),
+              item.status !== "pending" && item.status !== "approved" ? h("button", { type: "button", className: "hs-button", disabled: props.busy, onClick: function () { props.onReview(item.id); } }, "Send for review") : null),
+            (item.comments || []).map(function (note) {
+              return h("p", { key: note.id, className: "hs-note" }, note.author + ": " + note.text);
+            }),
+            item.compare && item.compare.ready ? h("div", null,
+              h("div", { className: "hs-name" }, "Last two versions"),
+              item.compare.platforms.map(function (platform) {
+                return h("div", { key: platform.platform, className: "hs-preview" },
+                  h("div", { className: "hs-name" }, platform.platform + (platform.same ? " · unchanged" : "")),
+                  h("p", { className: "hs-note" }, platform.before || "Empty"),
+                  h("p", { className: "hs-voice" }, platform.after || "Empty"));
+              })) : h("p", { className: "hs-note" }, (item.compare && item.compare.detail) || "Nothing earlier to compare."),
+            h("div", { className: "hs-cols" },
+              h("input", { className: "hs-field", value: author, placeholder: waiting || "Your name", onChange: function (event) { setAuthor(event.target.value); } }),
+              h("input", { className: "hs-field", value: comment, placeholder: "Comment", onChange: function (event) { setComment(event.target.value); } })),
+            h("div", { className: "hs-row" },
+              h("button", { type: "button", className: "hs-tab", disabled: props.busy || !author.trim() || !comment.trim(), onClick: function () { props.onComment(item.id, { author: author, text: comment }); setComment(""); } }, "Comment"),
+              item.status === "pending" ? h("button", { type: "button", className: "hs-button", disabled: props.busy || !author.trim(), onClick: function () { props.onDecide(item.id, { author: author || waiting, decision: "approved", comment: comment }); setComment(""); } }, "Approve") : null,
+              item.status === "pending" ? h("button", { type: "button", className: "hs-tab", disabled: props.busy || !author.trim(), onClick: function () { props.onDecide(item.id, { author: author || waiting, decision: "changes", comment: comment }); setComment(""); } }, "Ask for changes") : null)) : null);
+      }) : h("p", { className: "hs-note" }, "No pieces waiting on this desk."),
+    );
+  }
+
   function IdeasBoard(props) {
     const board = (props.studio && props.studio.ideas) || { ideas: [], sources: ["spark", "competitor", "trend", "question"], priorities: ["low", "normal", "high"] };
     const [mode, setMode] = useState("board");
@@ -1198,14 +1306,14 @@
       return map;
     }, {});
     return h("div", { className: "hs-main" },
-      h("p", { className: "hs-note" }, "Making stays on the left of this split. Pending approval, scheduled, and failed are what is going out. This desk does not send."),
+      h("p", { className: "hs-note" }, "Making stays on the left of this split. Needs review, approved, scheduled, and failed are what is going out. This desk does not send."),
       suggestion.clear ? h("p", { className: "hs-note" }, suggestion.label + " is ahead. " + suggestion.detail + " Schedule uses that hour when you do not pick a time.") : h("p", { className: "hs-note" }, suggestion.detail || "Not enough hours to suggest a time."),
       h("ul", { className: "hs-guard" }, (queue.rules || []).map(function (rule) { return h("li", { key: rule }, rule); })),
       h("div", { className: "hs-row" },
         ["list", "timeline"].map(function (name) {
           return h("button", { key: name, type: "button", className: "hs-tab" + (mode === name ? " is-on" : ""), onClick: function () { setMode(name); } }, name);
         }),
-        [["all", "All"], ["draft", "Draft"], ["pending", "Pending approval"], ["scheduled", "Scheduled"], ["failed", "Failed"]].map(function (pair) {
+        [["all", "All"], ["draft", "Draft"], ["pending", "Needs review"], ["approved", "Approved"], ["scheduled", "Scheduled"], ["failed", "Failed"]].map(function (pair) {
           return h("button", { key: pair[0], type: "button", className: "hs-tab" + (status === pair[0] ? " is-on" : ""), onClick: function () { setStatus(pair[0]); } }, pair[1]);
         })),
       picked.length ? h("div", { className: "hs-row" },

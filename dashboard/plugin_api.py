@@ -13,6 +13,7 @@ if str(ROOT) not in sys.path:
     sys.path.insert(0, str(ROOT))
 
 from adapt import DraftError, LIMITS, JOSIE_CARD
+from approval import add_comment, decide, mark_notice, save_steps, submit_review
 from assist import assist, ollama_complete
 from brands import PLATFORMS
 from library import library_for, open_asset_file, record_use, revise_asset, save_asset
@@ -254,6 +255,47 @@ def patch_idea(idea_id: str, body: dict) -> dict:
 def post_idea_draft(idea_id: str) -> dict:
     try:
         return draft_idea(load(), idea_id)
+    except DraftError as exc:
+        _fail(exc)
+
+
+@router.post("/brands/{brand_id}/approval-steps")
+def post_approval_steps(brand_id: str, body: dict) -> dict:
+    try:
+        return save_steps(load(), brand_id, (body or {}).get("steps") or [])
+    except DraftError as exc:
+        _fail(exc)
+
+
+@router.post("/pieces/{piece_id}/review")
+def post_review(piece_id: str) -> dict:
+    try:
+        submit_review(load(), piece_id)
+        return {"ok": True}
+    except DraftError as exc:
+        _fail(exc)
+
+
+@router.post("/pieces/{piece_id}/decision")
+def post_decision(piece_id: str, body: dict) -> dict:
+    try:
+        return decide(load(), piece_id, body)
+    except DraftError as exc:
+        _fail(exc)
+
+
+@router.post("/pieces/{piece_id}/comments")
+def post_comment(piece_id: str, body: dict) -> dict:
+    try:
+        return add_comment(load(), piece_id, body)
+    except DraftError as exc:
+        _fail(exc)
+
+
+@router.post("/notices/{notice_id}/read")
+def post_notice_read(notice_id: str) -> dict:
+    try:
+        return mark_notice(load(), notice_id)
     except DraftError as exc:
         _fail(exc)
 

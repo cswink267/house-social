@@ -43,6 +43,8 @@ def test_queue_blocks_a_broken_piece_and_suggests_only_a_clear_hour(tmp_path: Pa
     assert any("500" in rule for rule in view["rules"])
     assert any(section["id"] == "queue" for section in roster(empty_state())[0]["sections"])
 
+    from approval import decide
+    decide(load(path), haul["id"], {"author": "Approver", "decision": "approved"}, path)
     scheduled = bulk_queue(load(path), "jamhaul", [haul["id"]], "schedule", path=path, posts=clear)
     assert scheduled["results"][0]["ok"] is True
     saved = next(item for item in load(path)["pieces"] if item["id"] == haul["id"])

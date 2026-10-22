@@ -17,13 +17,14 @@ from learn import suggest_hour
 from store import _find, _local_date_time, load, resolve_brand, update_piece
 
 
-_OUT = {"pending", "scheduled", "failed"}
+_OUT = {"pending", "approved", "scheduled", "failed"}
 _ACTIONS = {"pending", "schedule", "draft", "retry"}
 _LABELS = {
     "draft": "Draft",
     "planned": "Draft",
     "ready": "Ready",
-    "pending": "Pending approval",
+    "pending": "Needs review",
+    "approved": "Approved",
     "scheduled": "Scheduled",
     "failed": "Failed",
 }
@@ -105,7 +106,9 @@ def _one(state: dict, brand_id: str, piece_id: str, action: str, when: str, path
         if action == "draft":
             saved = update_piece(state, piece_id, status="draft", clear_schedule=True, path=path)
         elif action == "pending":
-            saved = update_piece(state, piece_id, status="pending", path=path)
+            from approval import submit_review
+
+            saved = submit_review(state, piece_id, path=path)
         elif action == "retry" and piece.get("status") != "failed":
             raise DraftError("Retry is for a failed piece.")
         else:

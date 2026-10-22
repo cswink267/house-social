@@ -104,6 +104,9 @@ def test_jamhaul_requires_the_site_and_a_real_question(tmp_path: Path):
     assert len(set(bodies)) == 3
     ready = update_piece(load(path), piece["id"], status="ready", path=path)
     assert ready["status"] == "ready"
+    from approval import decide, submit_review
+    submit_review(load(path), piece["id"], path)
+    decide(load(path), piece["id"], {"author": "Approver", "decision": "approved"}, path)
     scheduled = update_piece(
         load(path),
         piece["id"],
@@ -537,6 +540,9 @@ def test_calendar_holds_a_plan_and_counts_the_open_days(tmp_path: Path):
 def test_taking_a_scheduled_piece_off_the_day_keeps_it_ready(tmp_path: Path):
     path = tmp_path / "state.json"
     piece = create_piece(empty_state(), "jamhaul", "What is a haul?", path=path)
+    from approval import decide, submit_review
+    submit_review(load(path), piece["id"], path)
+    decide(load(path), piece["id"], {"author": "Approver", "decision": "approved"}, path)
     update_piece(
         load(path),
         piece["id"],

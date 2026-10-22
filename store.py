@@ -21,7 +21,7 @@ from brands import FORMATS, PLATFORMS, SECTIONS, Brand, Channel, brand_dict, pre
 
 
 _ID = re.compile(r"^[a-z0-9]+(?:-[a-z0-9]+)*$")
-STATUSES = ("draft", "planned", "ready", "pending", "scheduled", "failed")
+STATUSES = ("draft", "planned", "ready", "pending", "approved", "scheduled", "failed")
 
 
 def state_path() -> Path:
@@ -51,6 +51,8 @@ def empty_state() -> dict:
         "assets": [],
         "campaigns": [],
         "ideas": [],
+        "notices": [],
+        "approval_steps": {},
     }
 
 
@@ -71,6 +73,8 @@ def load(path: Path | None = None) -> dict:
     assets = raw.get("assets")
     campaigns = raw.get("campaigns")
     ideas = raw.get("ideas")
+    notices = raw.get("notices")
+    approval_steps = raw.get("approval_steps")
     return {
         "version": 1,
         "channels": channels if isinstance(channels, dict) else {},
@@ -83,6 +87,8 @@ def load(path: Path | None = None) -> dict:
         "assets": assets if isinstance(assets, list) else [],
         "campaigns": campaigns if isinstance(campaigns, list) else [],
         "ideas": ideas if isinstance(ideas, list) else [],
+        "notices": notices if isinstance(notices, list) else [],
+        "approval_steps": approval_steps if isinstance(approval_steps, dict) else {},
     }
 
 
@@ -185,11 +191,13 @@ def update_piece(
         next_piece["campaign_id"] = match["id"] if match and next_piece["campaign"] else ""
     if status is not None:
         if status not in STATUSES:
-            raise DraftError("Status must be draft, planned, ready, pending, scheduled, or failed.")
-        if status in {"ready", "pending", "scheduled"}:
+            raise DraftError("Status must be draft, planned, ready, pending, approved, scheduled, or failed.")
+        if status in {"ready", "pending", "approved", "scheduled"}:
             problems = issues(brand, next_piece["variants"])
             if problems:
                 raise DraftError(" ".join(problems))
+        if status == "scheduled" and not (next_piece.get("approval") or {}).get("complete"):
+            raise DraftError("Schedule waits until the piece is approved.")
         if status == "scheduled" and not next_piece.get("scheduled_for"):
             raise DraftError("A scheduled piece needs a time.")
         next_piece["status"] = status
@@ -367,6 +375,7 @@ def studio(state: dict, brand_id: str, ledger: dict | None = None, today=None) -
         "queue": _queue_view(state, brand_id, posts),
         "campaigns": _campaigns_view(state, brand_id, posts, when),
         "ideas": _ideas_view(state, brand_id),
+        "approval": _approval_view(state, brand_id),
     }
 
 
@@ -610,6 +619,12 @@ def _ideas_view(state: dict, brand_id: str) -> dict:
     from ideas import ideas_for
 
     return ideas_for(state, brand_id)
+
+
+def _approval_view(state: dict, brand_id: str) -> dict:
+    from approval import approval_for
+
+    return approval_for(state, brand_id)
 
 
 def resolve_brand(state: dict, brand_id: str) -> Brand:
