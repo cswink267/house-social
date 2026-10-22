@@ -817,6 +817,16 @@
             busy: busy,
             onSaveSet: saveHashtagSet,
             onApply: applyHashtagSet,
+            onUse: async function (pieceId, pillar) {
+              const saved = await run(function () {
+                return SDK.fetchJSON("/api/plugins/house-social/brands/" + brand.id + "/hashtags/use", {
+                  method: "POST",
+                  headers: { "Content-Type": "application/json" },
+                  body: JSON.stringify({ piece_id: pieceId, pillar: pillar || "" }),
+                });
+              });
+              if (saved) await refresh(brand.id);
+            },
             onTrend: saveTrendNote,
           }) : null,
           section === "inbox" ? h(InboxDesk, {
@@ -2211,34 +2221,53 @@
   }
 
   function HashtagDesk(props) {
-    const desk = (props.studio && props.studio.hashtags) || { sets: [], tags: [], formats: { rows: [], detail: "" }, trends: [], kinds: ["topic", "sound", "format"] };
+    const desk = (props.studio && props.studio.hashtags) || { sets: [], tags: [], formats: { rows: [], detail: "" }, trends: [], feed: [], outside: [], kinds: ["topic", "sound", "format"], suggestion: { tags: [], detail: "" }, pillars: [], campaigns: [] };
     const [setName, setSetName] = useState("");
     const [setTags, setSetTags] = useState("");
+    const [pillar, setPillar] = useState("");
+    const [campaign, setCampaign] = useState("");
     const [trend, setTrend] = useState({ kind: "topic", name: "", note: "" });
     const formats = desk.formats || { rows: [], detail: "" };
+    const suggestion = desk.suggestion || { tags: [], detail: "" };
     return h("div", { className: "hs-main" },
-      h("p", { className: "hs-note" }, "Five tags in a set. A tag is only called ahead when three posts used it, three did not, and the gap is real. Trend notes are what you wrote down. They are not a live chart."),
+      h("p", { className: "hs-note" }, "Five tags in a set, for a pillar or a campaign when you want one. A tag is suggested only when this brand's posts already show it ahead. Notes are filtered by this brand's own words. They are not a popularity chart."),
+      h("p", { className: "hs-note" }, suggestion.detail || "No hashtag is clearly ahead for this brand."),
+      suggestion.tags && suggestion.tags.length ? h("p", { className: "hs-ok" }, suggestion.tags.map(function (tag) { return "#" + tag; }).join(" ")) : null,
+      props.piece ? h("button", {
+        type: "button", className: "hs-tab", disabled: props.busy || !(suggestion.tags || []).length,
+        onClick: function () { props.onUse(props.piece.id, props.piece.pillar || ""); },
+      }, "Use these on the open draft") : h("p", { className: "hs-note" }, "Open a draft to use the tags that are ahead."),
       h("form", { className: "hs-row", onSubmit: function (event) {
         event.preventDefault();
-        props.onSaveSet({ name: setName, tags: setTags.split(/[,\s]+/).filter(Boolean) });
+        props.onSaveSet({ name: setName, tags: setTags.split(/[,\s]+/).filter(Boolean), pillar: pillar, campaign: campaign });
         setSetName("");
         setSetTags("");
       } },
         h("input", { className: "hs-field", value: setName, placeholder: "Set name", onChange: function (event) { setSetName(event.target.value); } }),
         h("input", { className: "hs-field", value: setTags, placeholder: "Tags, up to five", onChange: function (event) { setSetTags(event.target.value); } }),
+        h("select", { className: "hs-field", value: pillar, onChange: function (event) { setPillar(event.target.value); } },
+          h("option", { value: "" }, "No pillar"),
+          (desk.pillars || []).map(function (item) { return h("option", { key: item.id, value: item.id }, item.name); })),
+        h("select", { className: "hs-field", value: campaign, onChange: function (event) { setCampaign(event.target.value); } },
+          h("option", { value: "" }, "No campaign"),
+          (desk.campaigns || []).map(function (name) { return h("option", { key: name, value: name }, name); })),
         h("button", { type: "submit", className: "hs-button", disabled: props.busy || !setName.trim() || !setTags.trim() }, "Save set")),
       (desk.sets || []).length ? desk.sets.map(function (item) {
-        return h("div", { key: item.id, className: "hs-row" },
-          h("span", { className: "hs-name" }, item.name),
-          h("span", { className: "hs-note" }, item.tags.map(function (tag) { return "#" + tag; }).join(" ")),
-          h("button", {
-            type: "button", className: "hs-tab", disabled: props.busy || !props.piece,
-            onClick: function () { props.onApply(item.id); },
-          }, props.piece ? "Use on the open draft" : "Open a draft to use this"));
+        const performance = item.performance || {};
+        const where = [item.pillar, item.campaign].filter(Boolean).join(" · ");
+        return h("div", { key: item.id, className: "hs-pillar" },
+          h("div", { className: "hs-row" },
+            h("span", { className: "hs-name" }, item.name + (where ? " · " + where : "")),
+            h("span", { className: "hs-note" }, item.tags.map(function (tag) { return "#" + tag; }).join(" ")),
+            h("button", {
+              type: "button", className: "hs-tab", disabled: props.busy || !props.piece,
+              onClick: function () { props.onApply(item.id); },
+            }, props.piece ? "Use on the open draft" : "Open a draft to use this")),
+          performance.detail ? h("p", { className: performance.ahead ? "hs-ok" : "hs-note" }, performance.detail) : null);
       }) : h("p", { className: "hs-note" }, "No saved sets yet."),
       h("div", { className: "hs-name" }, "Tags these posts used"),
       (desk.tags || []).length ? desk.tags.map(function (item) {
-        return h("p", { key: item.tag, className: item.clear ? "hs-ok" : "hs-note" }, item.detail);
+        return h("p", { key: item.tag, className: item.ahead ? "hs-ok" : "hs-note" }, item.detail);
       }) : h("p", { className: "hs-note" }, "No hashtags on the posts in this window."),
       h("div", { className: "hs-name" }, "Formats"),
       h("p", { className: "hs-note" }, formats.detail),
@@ -2246,6 +2275,7 @@
         return h("p", { key: item.id, className: "hs-note" }, item.label + " · " + item.mean + " · n=" + item.n);
       }),
       h("div", { className: "hs-name" }, "Notes"),
+      h("p", { className: "hs-note" }, desk.niche || ""),
       h("form", { className: "hs-row", onSubmit: function (event) {
         event.preventDefault();
         props.onTrend(trend);
@@ -2256,10 +2286,14 @@
         h("input", { className: "hs-field", value: trend.name, placeholder: "Topic, sound, or format", onChange: function (event) { setTrend(Object.assign({}, trend, { name: event.target.value })); } }),
         h("input", { className: "hs-field", value: trend.note, placeholder: "Where you noticed it", onChange: function (event) { setTrend(Object.assign({}, trend, { note: event.target.value })); } }),
         h("button", { type: "submit", className: "hs-button", disabled: props.busy || !trend.name.trim() }, "Save note")),
-      (desk.trends || []).length ? desk.trends.map(function (item) {
-        return h("p", { key: item.id, className: "hs-note" }, item.kind + " · " + item.name + (item.note ? " · " + item.note : ""));
-      }) : h("p", { className: "hs-note" }, "No notes yet."),
+      h("div", { className: "hs-name" }, "In this brand's words"),
+      (desk.feed || []).length ? desk.feed.map(noteRow) : h("p", { className: "hs-note" }, "No saved note uses this brand's pillar or tag words."),
+      h("div", { className: "hs-name" }, "Saved, outside those words"),
+      (desk.outside || []).length ? desk.outside.map(noteRow) : h("p", { className: "hs-note" }, "Nothing saved outside those words."),
     );
+    function noteRow(item) {
+      return h("p", { key: item.id, className: "hs-note" }, item.kind + " · " + item.name + (item.note ? " · " + item.note : "") + (item.result ? " · " + item.result : ""));
+    }
   }
 
   function InboxDesk(props) {

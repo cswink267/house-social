@@ -50,3 +50,57 @@ def test_sets_are_capped_and_used_tags_need_a_real_gap(tmp_path: Path):
     assert note["rising"] is False
     assert hashtags_for(load(path), "josie-blackthorn")["sets"] == []
     assert any(section["id"] == "hashtags" for section in roster(empty_state())[0]["sections"])
+
+
+def test_sets_follow_a_pillar_and_suggestions_stay_on_this_brand(tmp_path: Path):
+    path = tmp_path / "state.json"
+    saved = save_set(
+        empty_state(),
+        "misfit-mindset",
+        {"name": "Campfire", "tags": ["ember", "camp"], "pillar": "campfire", "campaign": "October"},
+        path,
+    )
+    assert saved["pillar"] == "campfire"
+    assert saved["campaign"] == "October"
+    yes = [_post(f"y{i}", 20, "#ember #camp", format="feed") for i in range(3)]
+    no = [_post(f"n{i}", 4, "quiet night", format="text") for i in range(3)]
+    banned = [_post(f"g{i}", 30, "#good", format="feed") for i in range(3)]
+    quiet = [_post(f"q{i}", 4, "no tag", format="text") for i in range(3)]
+    view = hashtags_for(load(path), "misfit-mindset", yes + no)
+    card = view["sets"][0]
+    assert card["performance"]["ahead"] is True
+    assert "20.0" in card["performance"]["detail"]
+    assert "%" not in card["performance"]["detail"]
+    assert "ember" in view["suggestion"]["tags"]
+    assert "popularity chart" in view["suggestion"]["detail"]
+    held = hashtags_for(load(path), "misfit-mindset", banned + quiet)
+    assert "good" not in held["suggestion"]["tags"]
+    assert held["suggestion"]["tags"] == []
+    pillar = hashtags_for(load(path), "misfit-mindset", yes + no)
+    music = next(item for item in pillar["by_pillar"] if item["pillar"] == "music")
+    assert music["tags"] == []
+    fire = next(item for item in pillar["by_pillar"] if item["pillar"] == "campfire")
+    assert "ember" in fire["tags"]
+
+    inside = save_trend(load(path), "misfit-mindset", {"kind": "topic", "name": "campfire night", "note": "From the pillar."}, path)
+    outside = save_trend(load(path), "misfit-mindset", {"kind": "sound", "name": "the low drone", "note": "Heard it on a reel."}, path)
+    shaped = save_trend(load(path), "misfit-mindset", {"kind": "format", "name": "feed", "note": "Our own posts."}, path)
+    shown = hashtags_for(load(path), "misfit-mindset", yes + no)
+    assert any(item["id"] == inside["id"] for item in shown["feed"])
+    assert any(item["id"] == outside["id"] for item in shown["outside"])
+    form = next(item for item in shown["trends"] if item["id"] == shaped["id"])
+    assert form["rising"] is False
+    assert "ahead" in form["result"]
+    assert "popularity chart" in form["result"]
+    assert "%" not in form["result"]
+
+    from hashtags import use_ahead
+
+    piece = create_piece(load(path), "misfit-mindset", "The fire held. The night did not.", path=path)
+    used = use_ahead(load(path), "misfit-mindset", piece["id"], yes + no, path=path)
+    stored = next(item for item in load(path)["pieces"] if item["id"] == piece["id"])
+    assert "ember" in stored["variants"]["instagram"]["hashtags"]
+    assert "#ember" not in stored["variants"]["instagram"]["body"]
+    assert used["tags"]
+    with pytest.raises(DraftError, match="clearly ahead"):
+        use_ahead(load(path), "misfit-mindset", piece["id"], yes + no, pillar="music", path=path)

@@ -48,7 +48,7 @@ from store import (
 from campaigns import attach_campaign, clone_campaign, keep_retrospective, kind_lessons, revise_campaign, save_campaign
 from queue_desk import bulk_queue
 from voice import guide_for
-from hashtags import apply_set, save_set, save_trend
+from hashtags import apply_set, save_set, save_trend, use_ahead
 from inbox import refresh_inbox, save_inbox_reply, suggest_inbox_reply
 from reports import generate_report, report_export, write_insight
 from ideas import draft_idea, idea_brief, keep_shape, revise_idea, save_idea
@@ -462,6 +462,25 @@ def post_hashtag_set(brand_id: str, body: dict) -> dict:
 def post_apply_set(set_id: str, body: dict) -> dict:
     try:
         return apply_set(load(), set_id, str((body or {}).get("piece_id") or ""))
+    except DraftError as exc:
+        _fail(exc)
+
+
+@router.post("/brands/{brand_id}/hashtags/use")
+def post_use_hashtags(brand_id: str, body: dict) -> dict:
+    state = load()
+    ledger = {"posts": [], "days": []}
+    if brand_id == "josie-blackthorn":
+        ledger = read_ledger(ledger_dir())
+    posts, _days = brand_history(state, brand_id, ledger)
+    try:
+        return use_ahead(
+            state,
+            brand_id,
+            str((body or {}).get("piece_id") or ""),
+            posts,
+            pillar=str((body or {}).get("pillar") or ""),
+        )
     except DraftError as exc:
         _fail(exc)
 
