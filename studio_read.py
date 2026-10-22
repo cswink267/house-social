@@ -10,6 +10,7 @@ from __future__ import annotations
 
 import json
 import os
+import re
 import urllib.error
 import urllib.request
 from datetime import datetime, timezone
@@ -18,8 +19,9 @@ from pathlib import Path
 from adapt import DraftError
 from meta import redact
 
-STUDIO_URL = os.environ.get("HOUSE_SOCIAL_STUDIO_URL", "https://studio.misfitmindset.com").rstrip("/")
-_GETS = ("/api/schedule", "/api/meta")
+STUDIO_SITE = "https://studio.misfitmindset.com"
+STUDIO_READ = os.environ.get("HOUSE_SOCIAL_STUDIO_URL", "http://127.0.0.1:3317").rstrip("/")
+_WEEK = re.compile(r"/api/weeks/[0-9]+")
 _BRAND = "misfit-mindset"
 
 
@@ -40,13 +42,15 @@ def pull_studio(state: dict, brand_id: str, path: Path | None = None, getter=Non
     try:
         schedule = get("/api/schedule")
         meta_body = get("/api/meta")
+        week_id = _week_id(meta_body)
+        week = get(f"/api/weeks/{week_id}") if week_id else {}
     except DraftError:
         raise
     except (OSError, TimeoutError, urllib.error.URLError, json.JSONDecodeError) as exc:
         raise DraftError("Studio did not answer. Nothing was written there.") from exc
     if not isinstance(schedule, dict) or not isinstance(meta_body, dict):
         raise DraftError("Studio did not answer. Nothing was written there.")
-    snap = _shape(schedule, meta_body)
+    snap = _shape(schedule, meta_body, week if isinstance(week, dict) else {})
     from store import save
 
     updated = {**state, "studio_reads": {**(state.get("studio_reads") or {}), _BRAND: snap}}
@@ -58,10 +62,11 @@ def _shell() -> dict:
     return {
         "linked": True,
         "writing": False,
-        "url": STUDIO_URL,
-        "cards_url": STUDIO_URL + "/cards",
+        "url": STUDIO_SITE,
+        "cards_url": STUDIO_SITE + "/cards",
         "pulled_at": "",
         "queue": [],
+        "week": {"cycle": "", "number": None, "arc": "", "posts": [], "peaks": []},
         "quotes": [],
         "cards": [],
         "tracks": [],
@@ -75,16 +80,36 @@ def _shell() -> dict:
     }
 
 
-def _shape(schedule: dict, meta_body: dict) -> dict:
+def _week_id(meta_body: dict) -> int | None:
+    cycle = meta_body.get("cycle") if isinstance(meta_body.get("cycle"), dict) else {}
+    name = str(cycle.get("cycle_name") or "").strip().lower()
+    number = cycle.get("current_week")
+    weeks = [item for item in meta_body.get("weeks") or [] if isinstance(item, dict) and isinstance(item.get("id"), int)]
+    for item in weeks:
+        if isinstance(number, int) and item.get("week_number") == number and str(item.get("cycle_name") or "").strip().lower() == name:
+            return int(item["id"])
+    return int(weeks[0]["id"]) if weeks else None
+
+
+def _post_line(post: dict) -> dict:
+    return {
+        "day": _clean(post.get("day"), 16),
+        "title": _clean(post.get("title") or post.get("header"), 120),
+        "quote_card": _clean(post.get("quote_card"), 240),
+        "when": _clean(post.get("when"), 40),
+    }
+
+
+def _shape(schedule: dict, meta_body: dict, week: dict) -> dict:
     quotes = [_clean(item, 240) for item in list(meta_body.get("quotes") or []) if str(item or "").strip()]
     cards = []
     published = []
-    for week in list(meta_body.get("published") or [])[:4]:
-        if not isinstance(week, dict):
+    for item in list(meta_body.get("published") or [])[:4]:
+        if not isinstance(item, dict):
             continue
-        cycle = _clean(week.get("cycle_name"), 80)
-        number = week.get("week_number")
-        for post in list(week.get("posts") or [])[:8]:
+        cycle = _clean(item.get("cycle_name"), 80)
+        number = item.get("week_number")
+        for post in list(item.get("posts") or [])[:8]:
             if not isinstance(post, dict):
                 continue
             card = _clean(post.get("quote_card"), 240)
@@ -99,6 +124,11 @@ def _shape(schedule: dict, meta_body: dict) -> dict:
                     "quote_card": card,
                 }
             )
+    for post in list(week.get("posts") or []) + list(week.get("peak_posts") or []):
+        if isinstance(post, dict):
+            card = _clean(post.get("quote_card"), 240)
+            if card and card not in cards:
+                cards.append(card)
     tracks = []
     for track in list(meta_body.get("tracks") or [])[-8:]:
         if not isinstance(track, dict):
@@ -131,19 +161,27 @@ def _shape(schedule: dict, meta_body: dict) -> dict:
         )
         if len(queue) == 24:
             break
+    held = {
+        "cycle": _clean(week.get("cycle_name"), 80),
+        "number": week.get("week_number") if isinstance(week.get("week_number"), int) else None,
+        "arc": _clean(week.get("theme_arc"), 160),
+        "posts": [_post_line(post) for post in list(week.get("posts") or [])[:8] if isinstance(post, dict)],
+        "peaks": [_post_line(post) for post in list(week.get("peak_posts") or [])[:6] if isinstance(post, dict)],
+    }
     detail = (
         f"{len(quotes)} used quotes and {len(published)} published posts are on Studio. "
         "This desk reads them. It does not write back, and it does not send the queue."
     )
-    if not quotes and not published and not queue:
+    if not quotes and not published and not queue and not held["posts"] and not held["peaks"]:
         detail = "Studio answered, and it has no queue, quotes, or published posts yet."
     return {
         "linked": True,
         "writing": False,
-        "url": STUDIO_URL,
-        "cards_url": STUDIO_URL + "/cards",
+        "url": STUDIO_SITE,
+        "cards_url": STUDIO_SITE + "/cards",
         "pulled_at": datetime.now(timezone.utc).isoformat(),
         "queue": queue,
+        "week": held,
         "quotes": quotes[-12:],
         "cards": cards[:12],
         "tracks": tracks,
@@ -161,10 +199,14 @@ def _clean(value, limit: int) -> str:
     return redact(" ".join(str(value or "").split()))[:limit]
 
 
+def _allowed(path: str) -> bool:
+    return path in {"/api/schedule", "/api/meta"} or bool(_WEEK.fullmatch(path))
+
+
 def _http_get(path: str) -> dict:
-    if path not in _GETS:
+    if not _allowed(path):
         raise DraftError("That Studio path is not read.")
-    request = urllib.request.Request(STUDIO_URL + path, method="GET")
+    request = urllib.request.Request(STUDIO_READ + path, method="GET")
     try:
         with urllib.request.urlopen(request, timeout=20) as response:
             body = json.loads(response.read().decode())

@@ -1188,7 +1188,15 @@
       (read.queue || []).length ? (read.queue || []).map(function (job, index) {
         return h("p", { key: String(job.id || index) + (job.platform || ""), className: "hs-note" },
           [job.when, job.day, job.platform, job.status, job.caption].filter(Boolean).join(" · "));
-      }) : h("p", { className: "hs-note" }, "No queued Studio posts in the last read."),
+      }) : h("p", { className: "hs-note" }, "Nothing is waiting in Studio's publish queue."),
+      (read.week && ((read.week.posts || []).length || (read.week.peaks || []).length)) ? h("div", null,
+        h("div", { className: "hs-name" }, "This week" + (read.week.arc ? " · " + read.week.arc : "")),
+        (read.week.posts || []).map(function (post, index) {
+          return h("p", { key: "p" + index, className: "hs-note" }, [post.day, post.title, post.quote_card].filter(Boolean).join(" · "));
+        }),
+        (read.week.peaks || []).map(function (post, index) {
+          return h("p", { key: "k" + index, className: "hs-voice" }, ["Peak", post.when, post.title, post.quote_card].filter(Boolean).join(" · "));
+        })) : null,
       (read.cards || []).length ? h("div", null,
         h("div", { className: "hs-name" }, "Quote cards"),
         read.cards.map(function (card, index) { return h("p", { key: index, className: "hs-voice" }, card); })) : null,

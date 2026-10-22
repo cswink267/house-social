@@ -37,28 +37,41 @@ def test_studio_read_keeps_the_queue_and_does_not_write(tmp_path: Path):
                     {"id": 5, "post_day": "tue", "platform": "instagram", "status": "posted", "caption": "Already up."},
                 ]
             }
-        return {
-            "quotes": ["You felt that dread."],
-            "day_names": {"mon": "Mindset Monday"},
-            "tracks": [{"artist": "A band", "title": "A song", "volume": 3}],
-            "published": [
-                {
-                    "cycle_name": "October",
-                    "week_number": 2,
-                    "posts": [{"day": "mon", "title": "The fire", "quote_card": "Stay with it.", "body": "A long post."}],
-                }
-            ],
-        }
+        if route == "/api/meta":
+            return {
+                "quotes": ["You felt that dread."],
+                "day_names": {"mon": "Mindset Monday"},
+                "tracks": [{"artist": "A band", "title": "A song", "volume": 3}],
+                "weeks": [{"id": 26, "week_number": 1, "cycle_name": "October"}],
+                "cycle": {"current_week": 1, "cycle_name": "October"},
+                "published": [
+                    {
+                        "cycle_name": "October",
+                        "week_number": 2,
+                        "posts": [{"day": "mon", "title": "The fire", "quote_card": "Stay with it.", "body": "A long post."}],
+                    }
+                ],
+            }
+        if route == "/api/weeks/26":
+            return {
+                "cycle_name": "October",
+                "week_number": 1,
+                "theme_arc": "The fire",
+                "posts": [{"day": "mon", "title": "The fire", "quote_card": "Stay with it."}],
+                "peak_posts": [{"day": "peak1", "title": "The peak", "quote_card": "Hold the line.", "when": "Wed 14:00"}],
+            }
+        raise AssertionError(route)
 
     snap = pull_studio(empty_state(), "misfit-mindset", path, getter)
-    assert calls == ["/api/schedule", "/api/meta"]
+    assert calls == ["/api/schedule", "/api/meta", "/api/weeks/26"]
     assert snap["writing"] is False
     assert snap["queue"][0]["status"] == "queued"
     assert snap["queue"][0]["caption"].endswith("REDACTED")
     assert "SECRET" not in snap["queue"][0]["caption"]
     assert "remote_id" not in snap["queue"][0]
     assert len(snap["queue"]) == 1
-    assert snap["cards"] == ["Stay with it."]
+    assert snap["week"]["posts"][0]["title"] == "The fire"
+    assert snap["week"]["peaks"][0]["quote_card"] == "Hold the line."
     assert snap["learning"]["quotes"] == 1
     assert "does not write back" in snap["learning"]["detail"]
     assert "Mindset Monday" in snap["learning"]["days"][0]
