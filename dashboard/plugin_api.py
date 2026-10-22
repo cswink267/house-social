@@ -16,7 +16,7 @@ from adapt import DraftError, LIMITS, JOSIE_CARD
 from approval import add_comment, decide, mark_notice, save_steps, submit_review
 from assist import assist, ollama_complete
 from brands import PLATFORMS
-from library import library_for, open_asset_file, record_use, revise_asset, save_asset
+from library import library_for, open_asset_file, read_asset_tags, record_use, revise_asset, save_asset
 from store import (
     accept_voice_suggestion,
     add_brand,
@@ -178,6 +178,15 @@ def post_asset(brand_id: str, body: dict) -> dict:
 def patch_asset(asset_id: str, body: dict) -> dict:
     try:
         return revise_asset(load(), asset_id, body)
+    except DraftError as exc:
+        _fail(exc)
+
+
+@router.post("/assets/{asset_id}/tags")
+def post_asset_tags(asset_id: str) -> dict:
+    state = load()
+    try:
+        return read_asset_tags(state, asset_id, ollama_complete)
     except DraftError as exc:
         _fail(exc)
 

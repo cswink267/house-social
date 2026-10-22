@@ -18,8 +18,8 @@ from adapt import DraftError, suggest_hashtags
 from voice import voice_check
 
 
-ACTIONS = ("rewrite", "shorten", "expand", "variations", "hooks", "caption", "hashtags", "reply")
-_COUNTS = {"variations": 3, "hooks": 5}
+ACTIONS = ("rewrite", "shorten", "expand", "variations", "hooks", "caption", "hashtags", "reply", "tags")
+_COUNTS = {"variations": 3, "hooks": 5, "tags": 5}
 _FENCE = re.compile(r"```(?:json)?\s*(.*?)```", re.S)
 _NUMBERED = re.compile(r"^\s*\d+[\).\]]\s*")
 
@@ -37,18 +37,18 @@ def assist(
 ) -> dict:
     name = (action or "").strip().lower()
     if name not in ACTIONS:
-        raise DraftError("Ask for a rewrite, a shorter line, a longer line, variations, hooks, a caption, or hashtags.")
+        raise DraftError("Ask for a rewrite, a shorter line, a longer line, variations, hooks, a caption, hashtags, or tags.")
     body = (text or "").strip()
     if name == "hashtags":
         options = suggest_hashtags(body, brand_tags)
         return {"action": name, "text": "", "options": [_option(guide, item) for item in options], "source": "brand"}
-    if name == "caption":
+    if name in {"caption", "tags"}:
         if not image:
-            raise DraftError("Attach an image before asking for a caption.")
+            raise DraftError("Attach an image before asking for a caption." if name == "caption" else "Tag reading runs on an image.")
         if mime.startswith("video/"):
-            raise DraftError("Caption runs on a still image. Save a frame as an image.")
+            raise DraftError("Caption runs on a still image. Save a frame as an image." if name == "caption" else "Tag reading runs on a still image.")
         if mime and not mime.startswith("image/"):
-            raise DraftError("Caption runs on an image.")
+            raise DraftError("Caption runs on an image." if name == "caption" else "Tag reading runs on an image.")
     elif not body:
         raise DraftError("Write something first.")
     raw = complete(_messages(guide, name, body, image, mime, misses))
@@ -100,6 +100,7 @@ def _messages(guide: dict, action: str, text: str, image: bytes | None, mime: st
         "variations": "Write three variations in the brand voice. They must not be the same sentence.\n\n{text}",
         "hooks": "Write five opening hooks in the brand voice for this idea.\n\n{text}",
         "caption": "Write a caption for the attached image in the brand voice. Describe only what is visible.\n\n{text}",
+        "tags": "Name up to five one-word tags for what is visible in the image. Do not write a sentence.\n\n{text}",
         "reply": "Draft a short reply in the brand voice. Do not say a post is going live.\n\n{text}",
     }
     prompt = prompts[action].format(text=text or "Use the image.")

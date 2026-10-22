@@ -18,6 +18,7 @@ from store import _copy, _find, _label, resolve_brand, save
 
 
 KINDS = ("image", "video", "carousel", "template", "logo", "copy")
+ROLES = ("copy", "hook", "cta", "hashtags", "bio")
 _TEXT = {"template", "copy"}
 _IMAGE = {"image/png", "image/jpeg", "image/gif", "image/webp"}
 _VIDEO = {"video/mp4", "video/webm"}
@@ -91,7 +92,8 @@ def save_asset(state: dict, brand_id: str, spec: dict, path: Path | None = None,
         "kind": version["kind"],
         "name": name,
         "folder": _folder(spec.get("folder") or ""),
-        "tags": _tags(spec.get("tags") or []),
+        "tags": _tags([*(spec.get("tags") or []), *similar_tags(state, brand.id, name)]),
+        "role": _role(version["kind"], spec.get("role")),
         "note": _label(spec.get("note") or "", 240),
         "body": version["body"],
         "file": version["file"],
@@ -141,6 +143,8 @@ def revise_asset(state: dict, asset_id: str, spec: dict, path: Path | None = Non
         asset["folder"] = _folder(spec.get("folder") or "")
     if "tags" in spec:
         asset["tags"] = _tags(spec.get("tags") or [])
+    if "role" in spec:
+        asset["role"] = _role(asset.get("kind") or "", spec.get("role"))
     if "note" in spec and not spec.get("restore"):
         asset["note"] = _label(spec.get("note") or "", 240)
     asset["updated_at"] = datetime.now(timezone.utc).isoformat()
@@ -165,6 +169,20 @@ def record_use(state: dict, asset_id: str, spec: dict, path: Path | None = None)
         if piece.get("brand_id") != asset.get("brand_id"):
             raise DraftError("That piece belongs to another brand.")
     uses = list(asset.get("uses") or [])
+    version_id = ((asset.get("versions") or [])[-1].get("id") if asset.get("versions") else "") or ""
+    pillar = ""
+    preview = ""
+    if piece_id:
+        _, piece = _find(updated, piece_id)
+        pillar = str(piece.get("pillar") or "")
+        preview = str(piece.get("idea") or "")[:140]
+    elif post_id:
+        from store import brand_history
+
+        posts, _days = brand_history(updated, str(asset.get("brand_id") or ""))
+        post = next((row for row in posts if str(row.get("id") or "") == post_id), None)
+        preview = str((post or {}).get("preview") or "")[:140]
+        pillar = str((post or {}).get("pillar") or "")
     already = any(
         (piece_id and item.get("piece_id") == piece_id) or (post_id and not piece_id and item.get("post_id") == post_id)
         for item in uses
@@ -177,6 +195,9 @@ def record_use(state: dict, asset_id: str, spec: dict, path: Path | None = None)
                 "at": datetime.now(timezone.utc).isoformat(),
                 "piece_id": piece_id,
                 "post_id": post_id,
+                "version_id": version_id,
+                "pillar": pillar[:40],
+                "preview": preview,
             },
         ]
     asset = dict(asset)
@@ -367,6 +388,7 @@ def _public(state: dict, asset: dict) -> dict:
         "name": asset.get("name") or "",
         "folder": asset.get("folder") or "",
         "tags": list(asset.get("tags") or []),
+        "role": asset.get("role") or "",
         "note": asset.get("note") or "",
         "body": asset.get("body") or "",
         "mime": asset.get("mime") or "",
@@ -383,33 +405,166 @@ def _public(state: dict, asset: dict) -> dict:
 
 
 def _performance(state: dict, asset: dict) -> dict:
-    piece_ids = {item.get("piece_id") for item in asset.get("uses") or [] if item.get("piece_id")}
-    post_ids = {item.get("post_id") for item in asset.get("uses") or [] if item.get("post_id")}
+    from store import brand_history
+
+    posts, _days = brand_history(state, str(asset.get("brand_id") or ""))
+    uses = list(asset.get("uses") or [])
+    totals = _numbers(_posts_for_uses(posts, uses))
+    versions = []
+    for version in asset.get("versions") or []:
+        numbers = _numbers(_posts_for_uses(posts, [item for item in uses if item.get("version_id") == version.get("id")]))
+        versions.append({"id": version.get("id") or "", "samples": numbers["samples"], "mean": numbers["mean"]})
+    best_id, best_detail = _best_version(versions)
+    pairings, pairing_detail = _pairings(posts, uses)
+    last_used = max((str(item.get("at") or "") for item in uses), default="")
+    return {
+        "uses": len(uses),
+        "samples": totals["samples"],
+        "engagements": totals["engagements"],
+        "impressions": totals["impressions"],
+        "mean": totals["mean"],
+        "rate": totals["rate"],
+        "last_used": last_used,
+        "versions": versions,
+        "best_version": best_id,
+        "best_detail": best_detail,
+        "pairings": pairings,
+        "pairing_detail": pairing_detail,
+    }
+
+
+def read_asset_tags(state: dict, asset_id: str, complete, path: Path | None = None, root: Path | None = None) -> dict:
+    from assist import assist
+    from voice import guide_for
+
+    _, asset = _asset(_copy(state), asset_id)
+    if asset.get("kind") not in {"image", "logo", "carousel"}:
+        raise DraftError("Tag reading runs on an image.")
+    frame = 0 if asset.get("kind") == "carousel" else None
+    opened = open_asset_file(state, asset_id, frame=frame, root=root)
+    image = Path(opened["path"]).read_bytes()
+    guide = guide_for(str(asset.get("brand_id") or ""), (state.get("voices") or {}).get(asset.get("brand_id")))
+    result = assist(guide, "tags", "", complete=complete, image=image, mime=opened["mime"])
+    found = []
+    for option in result.get("options") or []:
+        text = option.get("text") if isinstance(option, dict) else option
+        word = _one_tag(text)
+        if word and word.lower() not in {item.lower() for item in found}:
+            found.append(word)
+    if not found:
+        raise DraftError("The assistant did not return tags.")
+    tags = _tags([*(asset.get("tags") or []), *similar_tags(state, str(asset.get("brand_id") or ""), asset.get("name") or ""), *found])
+    return revise_asset(state, asset_id, {"tags": tags}, path, root)
+
+
+def similar_tags(state: dict, brand_id: str, name: str) -> list[str]:
+    owned = [asset for asset in state.get("assets") or [] if asset.get("brand_id") == brand_id]
+    hay = str(name or "").lower()
+    found: list[str] = []
+    for asset in owned:
+        for tag in asset.get("tags") or []:
+            if tag.lower() in hay and tag.lower() not in {item.lower() for item in found}:
+                found.append(tag)
+    return found[:8]
+
+
+def _posts_for_uses(posts: list[dict], uses: list[dict]) -> list[dict]:
+    piece_ids = {item.get("piece_id") for item in uses if item.get("piece_id")}
+    post_ids = {item.get("post_id") for item in uses if item.get("post_id")}
+    return [
+        post
+        for post in posts
+        if post.get("piece_id") in piece_ids or post.get("id") in post_ids or post.get("external_id") in post_ids
+    ]
+
+
+def _numbers(posts: list[dict]) -> dict:
     engagements = 0
     impressions = 0
-    samples = 0
-    for stat in state.get("stats") or []:
-        if stat.get("brand_id") != asset.get("brand_id"):
-            continue
-        if stat.get("piece_id") not in piece_ids and stat.get("external_id") not in post_ids:
-            continue
-        metrics = stat.get("metrics") if isinstance(stat.get("metrics"), dict) else {}
-        engagements += int(metrics.get("engagements") or 0)
-        impressions += int(metrics.get("impressions") or 0)
-        samples += 1
-    posts = ((state.get("pulls") or {}).get(asset.get("brand_id")) or {}).get("posts") or []
-    seen = {stat.get("external_id") for stat in state.get("stats") or [] if stat.get("external_id")}
+    rated = 0
     for post in posts:
-        if post.get("id") not in post_ids or post.get("id") in seen:
-            continue
         engagements += int(post.get("engagements") or 0)
-        samples += 1
+        seen = int(post.get("impressions") or 0)
+        if seen > 0:
+            impressions += seen
+            rated += int(post.get("engagements") or 0)
+    samples = len(posts)
     return {
-        "uses": len(asset.get("uses") or []),
         "samples": samples,
         "engagements": engagements,
         "impressions": impressions,
+        "mean": round(engagements / samples, 1) if samples else None,
+        "rate": round(rated / impressions * 100, 1) if impressions else None,
     }
+
+
+def _best_version(rows: list[dict]) -> tuple[str, str]:
+    ready = [row for row in rows if row.get("samples", 0) >= 3 and row.get("mean") is not None]
+    if len(ready) < 2:
+        if len(ready) == 1:
+            only = ready[0]
+            return "", f"One version averages {only['mean']} engagements (n={only['samples']}). Nothing else has three uses to compare."
+        return "", "No version has three uses with numbers."
+    ready.sort(key=lambda row: row["mean"], reverse=True)
+    best, second = ready[0], ready[1]
+    if best["mean"] >= second["mean"] * 1.5 and (best["mean"] - second["mean"]) >= 3:
+        return best["id"], f"This version averages {best['mean']} engagements (n={best['samples']}). The next averages {second['mean']} (n={second['samples']})."
+    return "", f"Versions are too close to call. {best['mean']} (n={best['samples']}) against {second['mean']} (n={second['samples']})."
+
+
+def _pairings(posts: list[dict], uses: list[dict]) -> tuple[list[dict], str]:
+    names = []
+    for item in uses:
+        name = str(item.get("pillar") or "")
+        if name and name not in names:
+            names.append(name)
+    if not names:
+        return [], "No pairing is clear yet."
+    grouped = []
+    for name in names:
+        chosen = [item for item in uses if item.get("pillar") == name]
+        others = [item for item in uses if item.get("pillar") != name]
+        left = _numbers(_posts_for_uses(posts, chosen))
+        right = _numbers(_posts_for_uses(posts, others))
+        grouped.append((name, left, right))
+    winner = None
+    for name, left, right in grouped:
+        if left["samples"] < 3 or right["samples"] < 3 or left["mean"] is None or right["mean"] is None:
+            continue
+        if left["mean"] <= right["mean"] or left["mean"] < right["mean"] * 1.5 or (left["mean"] - right["mean"]) < 3:
+            continue
+        if winner is None or left["mean"] - right["mean"] > winner[0]:
+            winner = (
+                left["mean"] - right["mean"],
+                {
+                    "name": name,
+                    "clear": True,
+                    "detail": (
+                        f"{name} averaged {left['mean']} engagements (n={left['samples']}). "
+                        f"The other uses averaged {right['mean']} (n={right['samples']})."
+                    ),
+                },
+            )
+    if not winner:
+        return [], "No pairing is clear yet."
+    return [winner[1]], winner[1]["detail"]
+
+
+def _role(kind: str, value: object) -> str:
+    if kind not in _TEXT:
+        return ""
+    text = str(value or "copy").strip().lower()
+    return text if text in ROLES else "copy"
+
+
+def _one_tag(value: object) -> str:
+    text = str(value or "").strip().lstrip("#")
+    if not text or " " in text or len(text) < 2 or len(text) > 24:
+        return ""
+    cleaned = text.replace("-", "").replace("_", "")
+    if not cleaned.isalnum():
+        return ""
+    return text[:24]
 
 
 def _asset(state: dict, asset_id: str) -> tuple[int, dict]:

@@ -609,8 +609,25 @@
             busy: busy, onShape: shapeIdea, onCheck: checkVoice, voiceCheck: voiceCheck, active: active, pieces: pieces, onEdit: editVariant,
             onSave: savePiece, onDelete: removePiece, onOpen: function (piece) { setActiveId(piece.id); },
             library: library,
-            onInsert: function (text) {
-              setIdea(function (current) { return current ? current + "\n\n" + text : text; });
+            onInsert: function (asset) {
+              if (!asset || typeof asset === "string") {
+                const text = String(asset || "");
+                setIdea(function (current) { return current ? current + "\n\n" + text : text; });
+                return;
+              }
+              if (asset.role === "hashtags") {
+                const tags = String(asset.body || "").split(/[#,\s]+/).filter(Boolean).slice(0, 5);
+                if (active) editVariant("instagram", "hashtags", tags);
+                return;
+              }
+              const text = String(asset.body || "");
+              if (!text) return;
+              if (assistTarget === "idea" || !active) {
+                setIdea(function (current) { return current ? current + "\n\n" + text : text; });
+                return;
+              }
+              const variant = (active.variants && active.variants[assistTarget]) || {};
+              editVariant(assistTarget, "body", variant.body ? variant.body + "\n\n" + text : text);
             },
             onAttach: function (assetId) {
               if (active && active.brand_id === brand.id) useAsset(assetId, { piece_id: active.id });
@@ -633,6 +650,12 @@
             onSave: saveAsset,
             onRevise: reviseAsset,
             onUse: useAsset,
+            onTags: async function (id) {
+              const saved = await run(function () {
+                return SDK.fetchJSON("/api/plugins/house-social/assets/" + encodeURIComponent(id) + "/tags", { method: "POST" });
+              });
+              if (saved) await refresh(brand.id);
+            },
             onFail: function (text) { setError(text); },
           }) : null,
           section === "calendar" ? h(Calendar, {
@@ -1055,14 +1078,18 @@
         })) : null,
       (props.library && (props.library.assets || []).length) ? h("div", null,
         h("div", { className: "hs-name" }, "From the library"),
-        h("div", { className: "hs-row" }, (props.library.assets || []).slice(0, 8).map(function (asset) {
+        props.pillar ? h("p", { className: "hs-note" }, provenLine(props.library.assets, props.pillar)) : null,
+        h("div", { className: "hs-row" }, (props.library.assets || []).filter(function (asset) {
+          return asset.kind === "copy" || asset.kind === "template" || asset.kind === "image" || asset.kind === "logo";
+        }).slice(0, 8).map(function (asset) {
+          const textual = asset.kind === "copy" || asset.kind === "template";
           return h("button", {
             key: asset.id, type: "button", className: "hs-tab",
             onClick: function () {
-              if (asset.body && props.onInsert) props.onInsert(asset.body);
-              if (props.onAttach) props.onAttach(asset.id);
+              if (textual && props.onInsert) props.onInsert(asset);
+              else if (props.onAttach) props.onAttach(asset.id);
             },
-          }, asset.kind + " · " + asset.name);
+          }, (textual ? (asset.role || "copy") : asset.kind) + " · " + asset.name);
         }))) : null,
       props.voiceCheck ? h(VoiceScore, {
         report: props.voiceCheck,
@@ -1213,12 +1240,26 @@
     return "/api/plugins/house-social/assets/" + id + "/file" + query;
   }
 
+  function provenLine(assets, pillar) {
+    const found = (assets || []).filter(function (asset) {
+      return ((asset.performance && asset.performance.pairings) || []).some(function (row) {
+        return row.clear && row.name === pillar;
+      });
+    });
+    if (!found.length) return "No proven asset for this pillar yet.";
+    const first = found[0];
+    const pairing = (first.performance.pairings || []).find(function (row) { return row.clear && row.name === pillar; });
+    return first.name + ". " + ((pairing && pairing.detail) || "");
+  }
+
   function performanceLine(asset) {
     const perf = asset.performance || {};
     if (!perf.uses) return "Not used yet.";
-    if (!perf.samples) return "Used " + perf.uses + ". No numbers yet.";
-    let line = "Used " + perf.uses + " · " + perf.engagements + " engagements";
-    if (perf.impressions) line += " · " + perf.impressions + " impressions";
+    let line = "Used " + perf.uses;
+    if (perf.last_used) line += " · last " + String(perf.last_used).slice(0, 10);
+    if (perf.mean == null) return line + ". No numbers yet.";
+    line += " · mean " + perf.mean;
+    if (perf.rate != null) line += " · " + perf.rate + " per 100 impressions";
     return line;
   }
 
@@ -1230,13 +1271,23 @@
     const [folder, setFolder] = useState("all");
     const [tag, setTag] = useState("all");
     const [openId, setOpenId] = useState("");
-    const [draft, setDraft] = useState({ kind: "copy", name: "", folder: "", tags: "", body: "", note: "" });
+    const [draft, setDraft] = useState({ kind: "copy", role: "copy", name: "", folder: "", tags: "", body: "", note: "" });
+    const [sort, setSort] = useState("updated");
     const visible = assets.filter(function (asset) {
       if (kind !== "all" && asset.kind !== kind) return false;
       if (folder !== "all" && asset.folder !== folder && asset.folder.indexOf(folder + "/") !== 0) return false;
       if (tag !== "all" && (asset.tags || []).indexOf(tag) < 0) return false;
       const hay = [asset.name, asset.folder, asset.note, asset.body, (asset.tags || []).join(" ")].join(" ").toLowerCase();
       return !q.trim() || hay.indexOf(q.trim().toLowerCase()) >= 0;
+    });
+    const shown = visible.slice().sort(function (left, right) {
+      if (sort === "mean") return (right.performance && right.performance.mean || 0) - (left.performance && left.performance.mean || 0);
+      if (sort === "quiet") {
+        const leftUsed = (left.performance && left.performance.last_used) || "";
+        const rightUsed = (right.performance && right.performance.last_used) || "";
+        return leftUsed < rightUsed ? -1 : leftUsed > rightUsed ? 1 : 0;
+      }
+      return (right.updated_at || "") < (left.updated_at || "") ? -1 : 1;
     });
     const open = assets.find(function (asset) { return asset.id === openId; }) || null;
 
@@ -1256,6 +1307,7 @@
           tags: draft.tags.split(",").map(function (item) { return item.trim(); }).filter(Boolean),
           note: draft.note,
           body: draft.body,
+          role: draft.kind === "copy" || draft.kind === "template" ? draft.role : "",
         };
         if (draft.kind === "carousel") body.files = packed;
         else if (packed[0]) {
@@ -1263,7 +1315,7 @@
           body.file_name = packed[0].name;
         }
         props.onSave(body);
-        setDraft({ kind: draft.kind, name: "", folder: draft.folder, tags: "", body: "", note: "" });
+        setDraft({ kind: draft.kind, role: draft.role, name: "", folder: draft.folder, tags: "", body: "", note: "" });
         if (input) input.value = "";
       }).catch(function (err) { if (props.onFail) props.onFail(messageOf(err)); });
     }
@@ -1280,11 +1332,17 @@
           (shelf.folders || []).map(function (item) { return h("option", { key: item, value: item }, item); })),
         h("select", { className: "hs-field", value: tag, onChange: function (event) { setTag(event.target.value); } },
           h("option", { value: "all" }, "All tags"),
-          (shelf.tags || []).map(function (item) { return h("option", { key: item, value: item }, item); }))),
+          (shelf.tags || []).map(function (item) { return h("option", { key: item, value: item }, item); })),
+        h("select", { className: "hs-field", value: sort, onChange: function (event) { setSort(event.target.value); } },
+          h("option", { value: "updated" }, "Newest"),
+          h("option", { value: "mean" }, "Highest mean"),
+          h("option", { value: "quiet" }, "Least recently used"))),
       h("form", { className: "hs-cols", onSubmit: save },
         h("select", { className: "hs-field", value: draft.kind, onChange: function (event) { setField("kind", event.target.value); } },
           ASSET_KINDS.map(function (item) { return h("option", { key: item, value: item }, item); })),
         h("input", { className: "hs-field", value: draft.name, placeholder: "Name", onChange: function (event) { setField("name", event.target.value); } }),
+        draft.kind === "copy" || draft.kind === "template" ? h("select", { className: "hs-field", value: draft.role, onChange: function (event) { setField("role", event.target.value); } },
+          ["copy", "hook", "cta", "hashtags", "bio"].map(function (item) { return h("option", { key: item, value: item }, item); })) : null,
         h("input", { className: "hs-field", value: draft.folder, placeholder: "Folder, such as cards/ember", onChange: function (event) { setField("folder", event.target.value); } }),
         h("input", { className: "hs-field", value: draft.tags, placeholder: "Tags, comma separated", onChange: function (event) { setField("tags", event.target.value); } }),
         h("textarea", { className: "hs-area", value: draft.body, placeholder: "Copy, template, or a note on the file", onChange: function (event) { setField("body", event.target.value); } }),
@@ -1292,7 +1350,7 @@
         h("button", { type: "submit", className: "hs-button", disabled: props.busy || !draft.name.trim() }, "Save to the library")),
       h("div", { className: "hs-lib" },
         h("div", null,
-          visible.length ? visible.map(function (asset) {
+          visible.length ? shown.map(function (asset) {
             return h("button", {
               key: asset.id, type: "button",
               className: "hs-piece" + (open && open.id === asset.id ? " is-on" : ""),
@@ -1305,6 +1363,8 @@
           open.body ? h("p", { className: "hs-voice" }, open.body) : null,
           open.note ? h("p", { className: "hs-note" }, open.note) : null,
           h("p", { className: "hs-note" }, performanceLine(open)),
+          open.performance && open.performance.pairing_detail ? h("p", { className: open.performance.best_version ? "hs-ok" : "hs-note" }, open.performance.pairing_detail) : null,
+          open.performance && open.performance.best_detail ? h("p", { className: "hs-note" }, open.performance.best_detail) : null,
           open.mime && open.mime.indexOf("video/") === 0
             ? h("video", { className: "hs-thumb", controls: true, src: assetUrl(open.id) })
             : (open.has_file || (open.frames || []).length)
@@ -1318,6 +1378,10 @@
               type: "button", className: "hs-button", disabled: props.busy,
               onClick: function () { props.onUse(open.id, { piece_id: props.piece.id }); },
             }, "Attach to the open draft") : null,
+            open.kind === "image" || open.kind === "logo" || open.kind === "carousel" ? h("button", {
+              type: "button", className: "hs-tab", disabled: props.busy,
+              onClick: function () { props.onTags(open.id); },
+            }, "Read tags") : null,
             (props.posts || []).slice(0, 6).map(function (post) {
               return h("button", {
                 key: post.id, type: "button", className: "hs-tab", disabled: props.busy,
@@ -1327,7 +1391,7 @@
           h("div", { className: "hs-name" }, "Versions"),
           (open.versions || []).map(function (version) {
             return h("div", { key: version.id, className: "hs-note" },
-              (version.note || "Saved") + (version.body ? " · " + version.body.slice(0, 80) : ""),
+              (open.performance && open.performance.best_version === version.id ? "Ahead · " : "") + (version.note || "Saved") + (version.body ? " · " + version.body.slice(0, 80) : ""),
               h("button", {
                 type: "button", className: "hs-tab", disabled: props.busy,
                 onClick: function () { props.onRevise(open.id, { restore: version.id }); },
