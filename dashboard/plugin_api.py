@@ -39,6 +39,7 @@ from campaigns import attach_campaign, revise_campaign, save_campaign
 from queue_desk import bulk_queue
 from voice import guide_for
 from hashtags import apply_set, save_set, save_trend
+from inbox import refresh_inbox, save_inbox_reply, suggest_inbox_reply
 from ideas import draft_idea, revise_idea, save_idea
 from learn import read_ledger
 
@@ -321,6 +322,36 @@ def post_apply_set(set_id: str, body: dict) -> dict:
 def post_trend(brand_id: str, body: dict) -> dict:
     try:
         return save_trend(load(), brand_id, body)
+    except DraftError as exc:
+        _fail(exc)
+
+
+@router.post("/brands/{brand_id}/inbox")
+def post_inbox(brand_id: str) -> dict:
+    try:
+        return refresh_inbox(load(), brand_id)
+    except DraftError as exc:
+        _fail(exc)
+
+
+@router.post("/inbox/{item_id}/reply")
+def post_inbox_reply(item_id: str, body: dict) -> dict:
+    try:
+        return save_inbox_reply(load(), item_id, body)
+    except DraftError as exc:
+        _fail(exc)
+
+
+@router.post("/inbox/{item_id}/suggest")
+def post_inbox_suggest(item_id: str) -> dict:
+    state = load()
+    item = next((row for row in state.get("inbox") or [] if row.get("id") == item_id), None)
+    if item is None:
+        _fail(DraftError("That note is not in the inbox."))
+    try:
+        brand_id = str(item.get("brand_id") or "")
+        guide = guide_for(brand_id, (state.get("voices") or {}).get(brand_id))
+        return suggest_inbox_reply(state, item_id, guide, ollama_complete)
     except DraftError as exc:
         _fail(exc)
 

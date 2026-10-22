@@ -18,7 +18,7 @@ from adapt import DraftError, suggest_hashtags
 from voice import voice_check
 
 
-ACTIONS = ("rewrite", "shorten", "expand", "variations", "hooks", "caption", "hashtags")
+ACTIONS = ("rewrite", "shorten", "expand", "variations", "hooks", "caption", "hashtags", "reply")
 _COUNTS = {"variations": 3, "hooks": 5}
 _FENCE = re.compile(r"```(?:json)?\s*(.*?)```", re.S)
 _NUMBERED = re.compile(r"^\s*\d+[\).\]]\s*")
@@ -99,6 +99,7 @@ def _messages(guide: dict, action: str, text: str, image: bytes | None, mime: st
         "variations": "Write three variations in the brand voice. They must not be the same sentence.\n\n{text}",
         "hooks": "Write five opening hooks in the brand voice for this idea.\n\n{text}",
         "caption": "Write a caption for the attached image in the brand voice. Describe only what is visible.\n\n{text}",
+        "reply": "Draft a short reply in the brand voice. Do not say a post is going live.\n\n{text}",
     }
     prompt = prompts[action].format(text=text or "Use the image.")
     if action in _COUNTS:

@@ -248,3 +248,94 @@ def _local_hour(iso: str) -> int | None:
     if parsed.tzinfo is None:
         parsed = parsed.replace(tzinfo=timezone.utc)
     return parsed.astimezone(ZoneInfo("America/New_York")).hour
+
+
+def gather_inbox(platform: str, external_id: str, token: str, post_ids: list[str], getter=None) -> dict:
+    """A short read of comments, mentions, and messages. Failures stay as text."""
+    fetch = getter or _get
+    items: list[dict] = []
+    errors: list[str] = []
+    for post_id in [str(item) for item in post_ids if item][:8]:
+        try:
+            items.extend(_comments(platform, post_id, token, fetch))
+        except MetaError as exc:
+            errors.append(redact(f"{platform} comments: {exc}"))
+            break
+    try:
+        items.extend(_mentions(platform, external_id, token, fetch))
+    except MetaError as exc:
+        errors.append(redact(f"{platform} mentions: {exc}"))
+    if platform == "threads":
+        errors.append("Threads messages are not in this snapshot.")
+    else:
+        try:
+            items.extend(_direct_messages(platform, external_id, token, fetch))
+        except MetaError as exc:
+            errors.append(redact(f"{platform} messages: {exc}"))
+    return {"items": items[:40], "errors": errors}
+
+
+def _comments(platform: str, post_id: str, token: str, fetch) -> list[dict]:
+    if platform == "facebook":
+        payload = fetch(f"{GRAPH}/{post_id}/comments", token, {"fields": "id,message,created_time,permalink_url", "limit": "5"})
+        return [_item(row, platform=platform, kind="comment", text=row.get("message"), when=row.get("created_time"), link=row.get("permalink_url")) for row in _rows(payload)]
+    if platform == "instagram":
+        payload = fetch(f"{GRAPH}/{post_id}/comments", token, {"fields": "id,text,timestamp,username", "limit": "5"})
+        return [_item(row, platform=platform, kind="comment", text=row.get("text"), when=row.get("timestamp"), author=row.get("username")) for row in _rows(payload)]
+    if platform == "threads":
+        payload = fetch(f"{THREADS}/{post_id}/replies", token, {"fields": "id,text,timestamp,username,permalink", "limit": "5"})
+        return [_item(row, platform=platform, kind="comment", text=row.get("text"), when=row.get("timestamp"), author=row.get("username"), link=row.get("permalink")) for row in _rows(payload)]
+    raise MetaError("Channels are facebook, instagram, and threads.")
+
+
+def _mentions(platform: str, external_id: str, token: str, fetch) -> list[dict]:
+    if platform == "facebook":
+        payload = fetch(f"{GRAPH}/{external_id}/tagged", token, {"fields": "id,message,created_time,permalink_url", "limit": "5"})
+        return [_item(row, platform=platform, kind="mention", text=row.get("message"), when=row.get("created_time"), link=row.get("permalink_url")) for row in _rows(payload)]
+    if platform == "instagram":
+        payload = fetch(f"{GRAPH}/{external_id}/tags", token, {"fields": "id,caption,timestamp,permalink,username", "limit": "5"})
+        return [_item(row, platform=platform, kind="mention", text=row.get("caption"), when=row.get("timestamp"), author=row.get("username"), link=row.get("permalink")) for row in _rows(payload)]
+    payload = fetch(f"{THREADS}/{external_id}/replies", token, {"fields": "id,text,timestamp,username,permalink", "limit": "5"})
+    return [_item(row, platform=platform, kind="mention", text=row.get("text"), when=row.get("timestamp"), author=row.get("username"), link=row.get("permalink")) for row in _rows(payload)]
+
+
+def _direct_messages(platform: str, external_id: str, token: str, fetch) -> list[dict]:
+    params = {"fields": "id,messages.limit(1){id,message,created_time}", "limit": "5"}
+    if platform == "instagram":
+        params["platform"] = "instagram"
+    payload = fetch(f"{GRAPH}/{external_id}/conversations", token, params)
+    rows = []
+    for conversation in _rows(payload):
+        messages = ((conversation.get("messages") or {}).get("data") or []) if isinstance(conversation.get("messages"), dict) else []
+        message = messages[0] if messages and isinstance(messages[0], dict) else {}
+        if not message and not conversation.get("id"):
+            continue
+        rows.append(_item(
+            message or conversation,
+            platform=platform,
+            kind="dm",
+            text=message.get("message") or conversation.get("snippet"),
+            when=message.get("created_time") or conversation.get("updated_time"),
+            item_id=str(message.get("id") or conversation.get("id")),
+        ))
+    return rows
+
+
+def _rows(payload: dict) -> list[dict]:
+    return [row for row in payload.get("data") or [] if isinstance(row, dict) and (row.get("id") or row.get("message"))]
+
+
+def _item(row: dict, *, platform: str, kind: str, text, when, author=None, link=None, item_id: str = "") -> dict:
+    identity = item_id or str(row.get("id") or "")
+    who = author or ""
+    if not who and isinstance(row.get("from"), dict):
+        who = str(row["from"].get("name") or "")
+    return {
+        "id": f"{platform}:{kind}:{identity}",
+        "kind": kind,
+        "platform": platform,
+        "author": str(who or "Someone")[:80],
+            "text": redact(str(text or ""))[:500],
+        "at": _iso(str(when or "")),
+        "permalink": str(link or "")[:300],
+    }

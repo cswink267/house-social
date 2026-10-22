@@ -286,6 +286,31 @@
       if (saved) await refresh(brand.id);
     }
 
+    async function refreshInbox() {
+      const saved = await run(function () {
+        return SDK.fetchJSON("/api/plugins/house-social/brands/" + brand.id + "/inbox", { method: "POST" });
+      });
+      if (saved) await refresh(brand.id);
+    }
+
+    async function saveInboxDraft(id, body) {
+      const saved = await run(function () {
+        return SDK.fetchJSON("/api/plugins/house-social/inbox/" + encodeURIComponent(id) + "/reply", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify(body),
+        });
+      });
+      if (saved) await refresh(brand.id);
+    }
+
+    async function suggestInbox(id) {
+      const saved = await run(function () {
+        return SDK.fetchJSON("/api/plugins/house-social/inbox/" + encodeURIComponent(id) + "/suggest", { method: "POST" });
+      });
+      if (saved) await refresh(brand.id);
+    }
+
     async function saveHashtagSet(body) {
       const saved = await run(function () {
         return SDK.fetchJSON("/api/plugins/house-social/brands/" + brand.id + "/hashtag-sets", {
@@ -620,6 +645,13 @@
             onSaveSet: saveHashtagSet,
             onApply: applyHashtagSet,
             onTrend: saveTrendNote,
+          }) : null,
+          section === "inbox" ? h(InboxDesk, {
+            studio: studio,
+            busy: busy,
+            onRefresh: refreshInbox,
+            onReply: saveInboxDraft,
+            onSuggest: suggestInbox,
           }) : null,
           section === "learning" ? h(Learning, { studio: studio }) : null,
         ) : null,
@@ -1712,6 +1744,50 @@
       (desk.trends || []).length ? desk.trends.map(function (item) {
         return h("p", { key: item.id, className: "hs-note" }, item.kind + " · " + item.name + (item.note ? " · " + item.note : ""));
       }) : h("p", { className: "hs-note" }, "No notes yet."),
+    );
+  }
+
+  function InboxDesk(props) {
+    const desk = (props.studio && props.studio.inbox) || { items: [], errors: [], sending: false };
+    const [kind, setKind] = useState("attention");
+    const [drafts, setDrafts] = useState({});
+    const items = (desk.items || []).filter(function (item) {
+      if (kind === "attention") return item.needs_attention;
+      if (kind === "all") return true;
+      return item.kind === kind;
+    });
+    return h("div", { className: "hs-main" },
+      h("p", { className: "hs-note" }, "Recent comments, mentions, and messages that this brand's token can read. A reply stays a draft on this desk. Nothing is sent."),
+      h("div", { className: "hs-row" },
+        h("button", { type: "button", className: "hs-button", disabled: props.busy, onClick: props.onRefresh }, "Refresh"),
+        [["attention", "Needs attention"], ["all", "All"], ["comment", "Comments"], ["mention", "Mentions"], ["dm", "Messages"]].map(function (pair) {
+          return h("button", {
+            key: pair[0], type: "button",
+            className: "hs-tab" + (kind === pair[0] ? " is-on" : ""),
+            onClick: function () { setKind(pair[0]); },
+          }, pair[1]);
+        })),
+      (desk.errors || []).map(function (error) { return h("p", { key: error, className: "hs-bad" }, error); }),
+      items.length ? items.map(function (item) {
+        const value = drafts[item.id] != null ? drafts[item.id] : (item.reply || "");
+        return h("div", { key: item.id, className: "hs-pillar" },
+          h("div", { className: "hs-name" }, item.kind + " · " + item.platform + " · " + item.author),
+          h("p", { className: "hs-voice" }, item.text),
+          item.permalink ? h("a", { href: item.permalink, target: "_blank", rel: "noopener noreferrer" }, "Open it") : null,
+          h("textarea", {
+            className: "hs-area",
+            value: value,
+            placeholder: "Reply draft",
+            onChange: function (event) {
+              const next = event.target.value;
+              setDrafts(function (current) { return Object.assign({}, current, { [item.id]: next }); });
+            },
+          }),
+          h("div", { className: "hs-row" },
+            h("button", { type: "button", className: "hs-tab", disabled: props.busy, onClick: function () { props.onSuggest(item.id); } }, "Suggest a reply"),
+            h("button", { type: "button", className: "hs-button", disabled: props.busy, onClick: function () { props.onReply(item.id, { reply: value }); } }, "Save draft"),
+            h("button", { type: "button", className: "hs-tab", disabled: props.busy, onClick: function () { props.onReply(item.id, { reply: value, dismissed: true }); } }, "Dismiss")));
+      }) : h("p", { className: "hs-note" }, "Nothing in this view. Refresh after a page is connected."),
     );
   }
 

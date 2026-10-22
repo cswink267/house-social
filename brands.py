@@ -227,6 +227,7 @@ SECTIONS = (
     {"id": "campaigns", "label": "Campaigns"},
     {"id": "performance", "label": "Analytics"},
     {"id": "hashtags", "label": "Hashtags"},
+    {"id": "inbox", "label": "Inbox"},
     {"id": "learning", "label": "Learning"},
 )
 

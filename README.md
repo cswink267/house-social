@@ -24,6 +24,7 @@ Each brand has the same desks.
 | Campaigns | A named effort with a kind, a goal, dates, the pieces, and the assets. Progress is how much of that work is in the campaign. Performance is what those pieces have already earned. |
 | Analytics | Reach, engagement, saves, shares, follower change, top posts, and format performance for 7, 28, or 90 days, or the whole history. This window sits beside the one before it. A campaign is compared with the other posts only when both sides have three and the gap is real. A missing number stays missing. |
 | Hashtags | Saved sets of up to five tags. Performance of tags that posts actually used. Notes for a topic, a sound, or a format. A tag or a format is only called ahead when the gap is real. |
+| Inbox | A short list of comments, mentions, and messages the page token can read. Questions and messages sit at the top. A suggested reply follows the brand voice and stays a draft. |
 | Learning | A comparison is kept only when both sides have at least three posts and the gap is real. An impression count of zero is never turned into a rate. |
 
 Facebook and Instagram are one Meta app. A Page token can name the linked Instagram professional account, and that account is read with the same token. Threads is a separate login on `graph.threads.net`. The Facebook token cannot read it. The username often matches Instagram. The id does not.
@@ -85,6 +86,7 @@ campaigns.py             named efforts, goals, and dates
 ideas.py                 sparks, notes, and the draft they become
 approval.py              review steps, comments, and notices on the desk
 hashtags.py              saved sets and the tags posts used
+inbox.py                 comments, mentions, and reply drafts
 voice.py                 guides and the voice checklist
 library.py               assets, versions, and use
 store.py                 state, connections, calendar, pulls
