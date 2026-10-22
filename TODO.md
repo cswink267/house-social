@@ -94,3 +94,80 @@ Implementation notes:
 - Do not build this while a single brand’s history, memory, and corrections are still unfinished.
 
 Do not build this while a single brand's history, memory, and corrections are still unfinished.
+
+## 7. Operating Modes
+
+Three modes for how Hermes acts on a brand. The user chooses the mode per brand. The mode is stored with the brand and can be changed at any time. Nothing is sent until the mode and the approval rules allow it. Tokens stay in the vault.
+
+### 1. Manual
+
+Self-explanatory. The user does every step.
+
+How it works:
+- The user creates ideas, drafts, and schedules everything by hand.
+- The Composer, Calendar, Queue, and Approval desks work exactly as they do today.
+- Hermes may suggest (voice check, similar past posts, format ideas) but never creates, schedules, or advances a piece without an explicit user action.
+- No email is sent. No background job runs for this brand.
+
+Why:
+- Full control. Useful while the brand voice is still being established or when the user wants to stay hands-on.
+- Safe default. New brands start here.
+
+Implementation notes:
+- Mode selector on the Brief or Pages desk (or a small settings area).
+- When Manual is selected, hide or disable any “run autonomously” controls.
+- Existing approval flow remains available if the user wants a second person to review, but Hermes itself does not initiate work.
+
+### 2. Autonomous with approval
+
+Hermes performs the content work on its own, then asks the user to approve or reject each piece by email before anything is scheduled or published.
+
+How it works:
+- On a schedule the user sets (or on demand), Hermes generates ideas, drafts, and proposed calendar slots for the brand, staying inside the voice guide and any learned patterns that already meet the three-post rule.
+- It does not schedule or mark anything ready.
+- It sends one email (via agent.to or the configured mail path) that lists every piece waiting for approval.
+- The email contains the draft text, platform previews, proposed day/time, and simple Approve / Reject links or buttons for each piece.
+- When the user clicks Approve, Hermes moves that piece to scheduled (or to the Approval desk if a human approver is still required).
+- When the user clicks Reject, Hermes discards or archives the piece and records the rejection as feedback.
+- If the user does not respond, the piece stays unscheduled. Nothing is sent.
+
+Why:
+- Lets Hermes do the repetitive creation work while the user keeps final control.
+- Builds a record of what the user accepts and rejects, which later feeds Fully Autonomous mode.
+- Uses email so the user can approve from anywhere without opening the dashboard.
+
+Implementation notes:
+- New mode flag on the brand.
+- Background job (or Hermes session) that generates a batch only when the mode is Autonomous-with-approval and the last batch has been resolved or expired.
+- Email template that is plain and factual. Each piece gets its own Approve and Reject action. Actions are single-use and tied to the piece id.
+- Incoming approval/rejection is handled by a small endpoint or by Hermes reading the reply; the result is written to the same store the dashboard uses.
+- Rejection is stored as explicit feedback (Off-brand or Irrelevant, with the optional note the user can add).
+- The email never contains a token or a machine path.
+- The user can still open the dashboard and approve or reject the same pieces there; both paths stay in sync.
+
+### 3. Fully Autonomous
+
+After the user has used Autonomous-with-approval long enough to trust the results, they can switch the brand to Fully Autonomous. Hermes creates, schedules, and (when a publisher is attached) publishes without waiting for per-piece approval.
+
+How it works:
+- Hermes runs on the schedule the user set.
+- It generates content that stays inside the voice guide and the patterns that have already been accepted.
+- It schedules pieces directly.
+- It still writes an audit log of what it created and why (the pattern or pillar it matched).
+- The user can still open the dashboard, edit, unschedule, or switch the brand back to a stricter mode at any time.
+- A simple confidence or “still learning” notice appears if the recent acceptance rate in mode 2 was low; the user must explicitly confirm before the switch.
+
+Why:
+- Removes the last manual step once the user is confident.
+- The learning loop from mode 2 (approvals and rejections) is what makes this mode safe.
+- The user remains able to intervene; autonomy is a setting, not a lock.
+
+Implementation notes:
+- Mode switch requires an explicit confirmation that names the recent approval rate (only if the numbers exist; otherwise it says the history is thin).
+- Hermes still respects hard guards (JamHaul never on Josie’s page, quote-image requirement, etc.).
+- Every autonomous action is logged with the piece id, the pattern it matched, and the timestamp.
+- The user can set a maximum number of posts per day or per week; Hermes stops when the limit is reached.
+- Switching back to Manual or Autonomous-with-approval takes effect immediately; already-scheduled pieces stay scheduled unless the user removes them.
+- Nothing in this mode bypasses the “three posts and a real gap” rule for any learned recommendation.
+
+The three modes are progressive. Manual is the starting point. Autonomous-with-approval builds the trust and the feedback data. Fully Autonomous is available only after that data exists and the user chooses it. A brand can move between modes at any time. Nothing is sent until the active mode and the approval rules allow it.
