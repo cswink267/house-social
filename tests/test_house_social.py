@@ -14,6 +14,7 @@ from adapt import DraftError, issues, shape  # noqa: E402
 from brands import seed_brand  # noqa: E402
 from store import (  # noqa: E402
     add_brand,
+    remove_brand,
     calendar_entries,
     calendar_span,
     create_piece,
@@ -171,6 +172,30 @@ def test_custom_brand_and_channel_edit_roundtrip(tmp_path: Path):
     assert piece["variants"]["instagram"]["body"].endswith("North Room")
     with pytest.raises(DraftError, match="Unknown brand"):
         create_piece(load(path), "not-a-brand", IDEA, path)
+
+
+def test_a_custom_brand_can_be_removed_and_a_house_brand_cannot(tmp_path: Path, monkeypatch):
+    monkeypatch.setenv("HOUSE_SOCIAL_ASSETS", str(tmp_path / "files"))
+    path = tmp_path / "state.json"
+    add_brand(empty_state(), {"id": "north-room", "name": "North Room"}, path)
+    piece = create_piece(load(path), "north-room", IDEA, path)
+    files = tmp_path / "files" / "north-room"
+    files.mkdir(parents=True)
+    (files / "note.txt").write_text("keep", encoding="utf-8")
+    kept = tmp_path / "files" / "other"
+    kept.mkdir()
+    (kept / "stay.txt").write_text("stay", encoding="utf-8")
+    removed = remove_brand(load(path), "north-room", path)
+    assert removed["id"] == "north-room"
+    assert all(item["id"] != "north-room" for item in roster(load(path)))
+    assert all(item["id"] != piece["id"] for item in load(path)["pieces"])
+    assert not files.exists()
+    assert (kept / "stay.txt").read_text(encoding="utf-8") == "stay"
+    with pytest.raises(DraftError, match="House brands stay"):
+        remove_brand(load(path), "josie-blackthorn", path)
+    assert any(item["id"] == "josie-blackthorn" for item in roster(load(path)))
+    with pytest.raises(DraftError, match="not on the roster"):
+        remove_brand(load(path), "north-room", path)
 
 
 def test_saving_a_handle_keeps_the_known_page_id(tmp_path: Path):

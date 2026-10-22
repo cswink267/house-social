@@ -21,6 +21,7 @@ from library import library_for, open_asset_file, read_asset_tags, record_use, r
 from store import (
     accept_voice_suggestion,
     add_brand,
+    remove_brand,
     add_voice_post,
     apply_recurrence,
     create_piece,
@@ -70,6 +71,14 @@ def get_roster() -> dict:
 def post_brand(body: dict) -> dict:
     try:
         return add_brand(load(), body)
+    except DraftError as exc:
+        _fail(exc)
+
+
+@router.delete("/brands/{brand_id}")
+def delete_brand(brand_id: str) -> dict:
+    try:
+        return remove_brand(load(), brand_id)
     except DraftError as exc:
         _fail(exc)
 

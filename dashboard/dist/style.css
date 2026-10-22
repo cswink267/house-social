@@ -206,8 +206,11 @@
   text-transform: uppercase;
   letter-spacing: 0.07em;
   color: #8aa4b5;
-  margin: 14px 0 4px 2px;
+  margin: 0 0 4px 2px;
 }
+.hs-tab-group { display: flex; flex-direction: column; gap: 4px; min-width: 0; }
+.hs-brand-line { display: flex; gap: 6px; align-items: stretch; }
+.hs-brand-line .hs-brand { flex: 1; text-align: left; }
 .hs-empty {
   color: #b7c3cc;
   font-style: italic;

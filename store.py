@@ -11,6 +11,7 @@ import copy
 import json
 import os
 import re
+import shutil
 import uuid
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
@@ -297,6 +298,53 @@ def add_brand(state: dict, spec: dict, path: Path | None = None) -> dict:
     updated["custom_brands"] = [*updated["custom_brands"], custom]
     save(updated, path)
     return custom
+
+
+def remove_brand(state: dict, brand_id: str, path: Path | None = None, root: Path | None = None) -> dict:
+    name = str(brand_id or "").strip()
+    if seed_brand(name):
+        raise DraftError("House brands stay on the roster.")
+    if not any(item.get("id") == name for item in state.get("custom_brands") or []):
+        raise DraftError("That brand is not on the roster.")
+    updated = _copy(state)
+    updated["custom_brands"] = [item for item in updated["custom_brands"] if item.get("id") != name]
+    for key in (
+        "pieces",
+        "stats",
+        "connections",
+        "assets",
+        "campaigns",
+        "ideas",
+        "notices",
+        "hashtag_sets",
+        "trends",
+        "inbox",
+        "reports",
+        "voice_imports",
+        "history",
+        "goals",
+        "recurrences",
+    ):
+        updated[key] = [item for item in updated.get(key) or [] if item.get("brand_id") != name]
+    for key in ("channels", "pulls", "voices", "approval_steps", "inbox_errors", "voice_versions"):
+        current = dict(updated.get(key) or {})
+        current.pop(name, None)
+        updated[key] = current
+    save(updated, path)
+    _drop_asset_dir(name, root)
+    return {"id": name, "removed": True}
+
+
+def _drop_asset_dir(brand_id: str, root: Path | None) -> None:
+    if not _ID.fullmatch(brand_id):
+        return
+    from library import assets_root
+
+    base = (root or assets_root()).resolve()
+    target = (base / brand_id).resolve()
+    if target.parent != base or target.is_symlink() or not target.is_dir():
+        return
+    shutil.rmtree(target)
 
 
 def record_stat(state: dict, spec: dict, path: Path | None = None) -> dict:

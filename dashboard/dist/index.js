@@ -69,6 +69,7 @@
     const [error, setError] = useState("");
     const [busy, setBusy] = useState(false);
     const [adding, setAdding] = useState(false);
+    const [confirmRemove, setConfirmRemove] = useState("");
     const [fresh, setFresh] = useState({ id: "", name: "", site: "", voice: "" });
     const [voiceCheck, setVoiceCheck] = useState(null);
     const [library, setLibrary] = useState({ assets: [], folders: [], tags: [] });
@@ -527,7 +528,29 @@
       setBrandId(created.id);
     }
 
+    async function removeBrand(id) {
+      const done = await run(function () {
+        return SDK.fetchJSON("/api/plugins/house-social/brands/" + encodeURIComponent(id), { method: "DELETE" });
+      });
+      if (!done) return;
+      setConfirmRemove("");
+      const rest = brands.filter(function (item) { return item.id !== id; });
+      const next = rest[0] ? rest[0].id : "josie-blackthorn";
+      if (brandId === id) setBrandId(next);
+      else await refresh(brandId);
+    }
+
     const sections = (brand && brand.sections) || [];
+    const groups = [];
+    sections.forEach(function (item) {
+      const name = item.group || "Desk";
+      let found = groups.find(function (group) { return group.name === name; });
+      if (!found) {
+        found = { name: name, items: [] };
+        groups.push(found);
+      }
+      found.items.push(item);
+    });
     return h("div", { className: "hs-page" },
       h("div", null,
         h("h1", { className: "text-xl font-semibold" }, "House Social"),
@@ -539,27 +562,40 @@
         h("div", { className: "hs-brands" },
           brands.map(function (item) {
             const known = (item.channels || []).filter(function (channel) { return channel.known; }).length;
-            return h("button", {
-              key: item.id,
-              type: "button",
-              className: "hs-brand" + (brand && item.id === brand.id ? " is-on" : ""),
-              onClick: function () { setBrandId(item.id); setPickedDay(""); setPickedPost(""); setPickedHour(""); },
-            },
-              h("div", { className: "hs-name" }, item.name),
-              h("div", { className: "hs-meta" }, known + " of 3 channels known"),
-            );
+            return h("div", { key: item.id, className: "hs-brand-line" },
+              h("button", {
+                type: "button",
+                className: "hs-brand" + (brand && item.id === brand.id ? " is-on" : ""),
+                onClick: function () { setBrandId(item.id); setConfirmRemove(""); setPickedDay(""); setPickedPost(""); setPickedHour(""); },
+              },
+                h("div", { className: "hs-name" }, item.name),
+                h("div", { className: "hs-meta" }, known + " of 3 channels known")),
+              item.custom ? h("button", {
+                type: "button",
+                className: "hs-tab",
+                disabled: busy,
+                onClick: function () {
+                  if (confirmRemove === item.id) removeBrand(item.id);
+                  else setConfirmRemove(item.id);
+                },
+              }, confirmRemove === item.id ? "Yes, remove" : "Remove") : null);
           }),
           h("button", { type: "button", className: "hs-button", onClick: function () { setAdding(!adding); } }, adding ? "Close" : "Add a brand"),
         ),
         brand ? h("div", { className: "hs-main" },
           h("div", { className: "hs-tabs" },
-            sections.map(function (item) {
-              return h("button", {
-                key: item.id,
-                type: "button",
-                className: "hs-tab" + (section === item.id ? " is-on" : ""),
-                onClick: function () { setSection(item.id); },
-              }, item.label);
+            groups.map(function (group) {
+              return h("div", { key: group.name, className: "hs-tab-group" },
+                h("div", { className: "hs-group-label" }, group.name),
+                h("div", { className: "hs-row" },
+                  group.items.map(function (item) {
+                    return h("button", {
+                      key: item.id,
+                      type: "button",
+                      className: "hs-tab" + (section === item.id ? " is-on" : ""),
+                      onClick: function () { setSection(item.id); },
+                    }, item.label);
+                  })));
             })),
           section === "brief" ? h(Brief, { brand: brand, handles: handles, setHandles: setHandles, busy: busy, onSave: saveChannels }) : null,
           section === "voice" ? h(VoiceGuide, {
