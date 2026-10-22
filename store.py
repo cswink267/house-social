@@ -57,6 +57,7 @@ def empty_state() -> dict:
         "trends": [],
         "inbox": [],
         "inbox_errors": {},
+        "reports": [],
     }
 
 
@@ -83,6 +84,7 @@ def load(path: Path | None = None) -> dict:
     trends = raw.get("trends")
     inbox = raw.get("inbox")
     inbox_errors = raw.get("inbox_errors")
+    reports = raw.get("reports")
     return {
         "version": 1,
         "channels": channels if isinstance(channels, dict) else {},
@@ -101,6 +103,7 @@ def load(path: Path | None = None) -> dict:
         "trends": trends if isinstance(trends, list) else [],
         "inbox": inbox if isinstance(inbox, list) else [],
         "inbox_errors": inbox_errors if isinstance(inbox_errors, dict) else {},
+        "reports": reports if isinstance(reports, list) else [],
     }
 
 
@@ -390,6 +393,7 @@ def studio(state: dict, brand_id: str, ledger: dict | None = None, today=None) -
         "approval": _approval_view(state, brand_id),
         "hashtags": _hashtags_view(state, brand_id, posts),
         "inbox": _inbox_view(state, brand_id),
+        "reports": _reports_view(state, brand_id),
     }
 
 
@@ -651,6 +655,12 @@ def _inbox_view(state: dict, brand_id: str) -> dict:
     from inbox import inbox_for
 
     return inbox_for(state, brand_id)
+
+
+def _reports_view(state: dict, brand_id: str) -> dict:
+    from reports import reports_for
+
+    return reports_for(state, brand_id)
 
 
 def resolve_brand(state: dict, brand_id: str) -> Brand:

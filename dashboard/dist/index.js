@@ -311,6 +311,17 @@
       if (saved) await refresh(brand.id);
     }
 
+    async function generateReport(period, note) {
+      const saved = await run(function () {
+        return SDK.fetchJSON("/api/plugins/house-social/brands/" + brand.id + "/reports", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ period: period, note: note }),
+        });
+      });
+      if (saved) await refresh(brand.id);
+    }
+
     async function saveHashtagSet(body) {
       const saved = await run(function () {
         return SDK.fetchJSON("/api/plugins/house-social/brands/" + brand.id + "/hashtag-sets", {
@@ -652,6 +663,11 @@
             onRefresh: refreshInbox,
             onReply: saveInboxDraft,
             onSuggest: suggestInbox,
+          }) : null,
+          section === "reports" ? h(ReportsDesk, {
+            studio: studio,
+            busy: busy,
+            onGenerate: generateReport,
           }) : null,
           section === "learning" ? h(Learning, { studio: studio }) : null,
         ) : null,
@@ -1788,6 +1804,88 @@
             h("button", { type: "button", className: "hs-button", disabled: props.busy, onClick: function () { props.onReply(item.id, { reply: value }); } }, "Save draft"),
             h("button", { type: "button", className: "hs-tab", disabled: props.busy, onClick: function () { props.onReply(item.id, { reply: value, dismissed: true }); } }, "Dismiss")));
       }) : h("p", { className: "hs-note" }, "Nothing in this view. Refresh after a page is connected."),
+    );
+  }
+
+  function downloadText(name, text, type) {
+    const blob = new Blob([text], { type: type });
+    const url = URL.createObjectURL(blob);
+    const link = document.createElement("a");
+    link.href = url;
+    link.download = name;
+    document.body.appendChild(link);
+    link.click();
+    link.remove();
+    URL.revokeObjectURL(url);
+  }
+
+  function reportFileName(title, ext) {
+    const slug = String(title || "report").replace(/[^A-Za-z0-9]+/g, "-").replace(/^-|-$/g, "").slice(0, 60);
+    return (slug || "report") + "." + ext;
+  }
+
+  function ReportsDesk(props) {
+    const desk = (props.studio && props.studio.reports) || { reports: [] };
+    const [period, setPeriod] = useState("week");
+    const [note, setNote] = useState("");
+    const [copied, setCopied] = useState("");
+    const rows = desk.reports || [];
+    return h("div", { className: "hs-main" },
+      h("p", { className: "hs-note" }, "A week or a month of this brand, with the numbers the pull actually returned and a note you write. Download it. Nothing here is mailed, and the file does not include a token."),
+      h("div", { className: "hs-row" },
+        [["week", "Week"], ["month", "Month"]].map(function (pair) {
+          return h("button", {
+            key: pair[0], type: "button",
+            className: "hs-tab" + (period === pair[0] ? " is-on" : ""),
+            onClick: function () { setPeriod(pair[0]); },
+          }, pair[1]);
+        })),
+      h("textarea", {
+        className: "hs-area",
+        value: note,
+        placeholder: "Note for this report",
+        onChange: function (event) { setNote(event.target.value); },
+      }),
+      h("button", {
+        type: "button", className: "hs-button", disabled: props.busy,
+        onClick: function () { props.onGenerate(period, note); },
+      }, "Generate"),
+      rows.length ? rows.map(function (row) {
+        const totals = (row.document && row.document.totals) || {};
+        return h("div", { key: row.id, className: "hs-pillar" },
+          h("div", { className: "hs-name" }, row.title),
+          h("p", { className: "hs-note" }, row.note || "No note."),
+          h("p", { className: "hs-voice" },
+            "Engagements " + (totals.engagements == null ? "—" : totals.engagements) +
+            " · Shares " + (totals.shares == null ? "—" : totals.shares) +
+            " · Reach " + (totals.reach == null ? (totals.reach_note || "Not in the pull") : totals.reach)),
+          h("pre", { className: "hs-report" }, row.markdown || ""),
+          h("div", { className: "hs-row" },
+            h("button", {
+              type: "button", className: "hs-tab",
+              onClick: function () { downloadText(reportFileName(row.title, "md"), row.markdown || "", "text/markdown"); },
+            }, "Download markdown"),
+            h("button", {
+              type: "button", className: "hs-tab",
+              onClick: function () {
+                const payload = {
+                  title: row.title, period: row.period, note: row.note || "",
+                  start: row.start, end: row.end, generated_at: row.generated_at,
+                  document: row.document || {},
+                };
+                downloadText(reportFileName(row.title, "json"), JSON.stringify(payload, null, 2), "application/json");
+              },
+            }, "Download JSON"),
+            h("button", {
+              type: "button", className: "hs-tab",
+              onClick: function () {
+                const text = row.markdown || "";
+                if (navigator.clipboard && navigator.clipboard.writeText) {
+                  navigator.clipboard.writeText(text).then(function () { setCopied(row.id); });
+                }
+              },
+            }, copied === row.id ? "Copied" : "Copy")));
+      }) : h("p", { className: "hs-note" }, "No report yet. Generate a week or a month."),
     );
   }
 

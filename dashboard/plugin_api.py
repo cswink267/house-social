@@ -6,7 +6,7 @@ import sys
 from pathlib import Path
 
 from fastapi import APIRouter, HTTPException
-from fastapi.responses import FileResponse
+from fastapi.responses import FileResponse, Response
 
 ROOT = Path(__file__).resolve().parents[1]
 if str(ROOT) not in sys.path:
@@ -40,6 +40,7 @@ from queue_desk import bulk_queue
 from voice import guide_for
 from hashtags import apply_set, save_set, save_trend
 from inbox import refresh_inbox, save_inbox_reply, suggest_inbox_reply
+from reports import generate_report, report_export
 from ideas import draft_idea, revise_idea, save_idea
 from learn import read_ledger
 
@@ -340,6 +341,24 @@ def post_inbox_reply(item_id: str, body: dict) -> dict:
         return save_inbox_reply(load(), item_id, body)
     except DraftError as exc:
         _fail(exc)
+
+
+@router.post("/brands/{brand_id}/reports")
+def post_report(brand_id: str, body: dict) -> dict:
+    try:
+        return generate_report(load(), brand_id, str((body or {}).get("period") or ""), str((body or {}).get("note") or ""))
+    except DraftError as exc:
+        _fail(exc)
+
+
+@router.get("/reports/{report_id}/export")
+def get_report_export(report_id: str, fmt: str = "md") -> Response:
+    try:
+        text, media, name = report_export(load(), report_id, fmt)
+    except DraftError as exc:
+        _fail(exc)
+    safe = "".join(ch if ch.isalnum() or ch in "-_." else "-" for ch in name).strip("-") or "report.md"
+    return Response(content=text, media_type=media, headers={"Content-Disposition": f'attachment; filename="{safe[:80]}"'})
 
 
 @router.post("/inbox/{item_id}/suggest")
