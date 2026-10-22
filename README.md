@@ -16,6 +16,7 @@ Each brand has the same desks.
 | Voice | Tone, personality, do and don't, visual notes, banned lines, required lines, and an example. Create can score a draft against that guide. |
 | Pages | The Meta app id, the page or account id, and a token. The token is written to a vault. The saved record stores the vault name. |
 | Create | One idea, shaped into three different drafts. Ready and scheduled are blocked when the brand rules fail. |
+| Library | Images, video, carousels, templates, logos, and copy blocks. Tags, search, folders, and version history. Use on a piece or a live post, and the card shows the engagements that use actually earned. |
 | Calendar | Month, week, and day. Planned, drafted, ready, scheduled, and published. Drag a piece onto a day. Filter by platform, format, pillar, or campaign. |
 | Performance | Bars from pulled posts or a local ledger. A bar is a real total. |
 | Learning | A comparison is kept only when both sides have at least three posts and the gap is real. An impression count of zero is never turned into a rate. |
@@ -34,7 +35,7 @@ Add `house-social` to `plugins.enabled` in `~/.hermes/config.yaml`. Restart the 
 
 The web tab is `House Social`. The desktop pane lists the roster. Both talk to `/api/plugins/house-social/`.
 
-State is not in this repository. Drafts, connections, and pull results live in `~/.hermes/plugin-data/house-social/state.json`. Override that with `HOUSE_SOCIAL_STATE`.
+State is not in this repository. Drafts, connections, and pull results live in `~/.hermes/plugin-data/house-social/state.json`. Override that with `HOUSE_SOCIAL_STATE`. Library files live in a sibling `assets` directory. Override that with `HOUSE_SOCIAL_ASSETS`. Neither directory belongs in git.
 
 ## Tokens
 
@@ -72,6 +73,7 @@ __init__.py              roster and draft tools
 brands.py                brands, pillars, desks
 adapt.py                 one idea, three different drafts
 voice.py                 guides and the voice checklist
+library.py               assets, versions, and use
 store.py                 state, connections, calendar, pulls
 learn.py                 performance and lessons
 meta.py                  Graph reads for Facebook, Instagram, and Threads

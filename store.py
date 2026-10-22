@@ -48,6 +48,7 @@ def empty_state() -> dict:
         "connections": [],
         "pulls": {},
         "voices": {},
+        "assets": [],
     }
 
 
@@ -65,6 +66,7 @@ def load(path: Path | None = None) -> dict:
     connections = raw.get("connections")
     pulls = raw.get("pulls")
     voices = raw.get("voices")
+    assets = raw.get("assets")
     return {
         "version": 1,
         "channels": channels if isinstance(channels, dict) else {},
@@ -74,6 +76,7 @@ def load(path: Path | None = None) -> dict:
         "connections": connections if isinstance(connections, list) else [],
         "pulls": pulls if isinstance(pulls, dict) else {},
         "voices": voices if isinstance(voices, dict) else {},
+        "assets": assets if isinstance(assets, list) else [],
     }
 
 

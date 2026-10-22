@@ -8,6 +8,7 @@ venv/
 .env
 .env.*
 state.json
+/assets/
 *.pem
 *.key
 *.p12

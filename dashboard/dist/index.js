@@ -71,6 +71,7 @@
     const [adding, setAdding] = useState(false);
     const [fresh, setFresh] = useState({ id: "", name: "", site: "", voice: "" });
     const [voiceCheck, setVoiceCheck] = useState(null);
+    const [library, setLibrary] = useState({ assets: [], folders: [], tags: [] });
 
     const brand = useMemo(function () {
       return brands.find(function (item) { return item.id === brandId; }) || brands[0] || null;
@@ -84,9 +85,11 @@
       const queue = await SDK.fetchJSON("/api/plugins/house-social/pieces");
       const id = nextBrand || brandId;
       const desk = await SDK.fetchJSON("/api/plugins/house-social/brands/" + id + "/studio");
+      const shelf = await SDK.fetchJSON("/api/plugins/house-social/brands/" + id + "/library");
       setBrands(roster.brands || []);
       setPieces(queue.pieces || []);
       setStudio(desk);
+      setLibrary(shelf || { assets: [], folders: [], tags: [] });
       return desk;
     }, [brandId]);
 
@@ -209,6 +212,39 @@
       if (saved) await refresh(brand.id);
     }
 
+    async function saveAsset(body) {
+      const saved = await run(function () {
+        return SDK.fetchJSON("/api/plugins/house-social/brands/" + brand.id + "/assets", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify(body),
+        });
+      });
+      if (saved) await refresh(brand.id);
+    }
+
+    async function reviseAsset(id, body) {
+      const saved = await run(function () {
+        return SDK.fetchJSON("/api/plugins/house-social/assets/" + id, {
+          method: "PATCH",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify(body),
+        });
+      });
+      if (saved) await refresh(brand.id);
+    }
+
+    async function useAsset(id, body) {
+      const saved = await run(function () {
+        return SDK.fetchJSON("/api/plugins/house-social/assets/" + id + "/use", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify(body),
+        });
+      });
+      if (saved) await refresh(brand.id);
+    }
+
     async function removePiece(id) {
       const done = await run(function () {
         return SDK.fetchJSON("/api/plugins/house-social/pieces/" + id, { method: "DELETE" });
@@ -306,6 +342,23 @@
             format: format, setFormat: setFormat, hypothesis: hypothesis, setHypothesis: setHypothesis,
             busy: busy, onShape: shapeIdea, onCheck: checkVoice, voiceCheck: voiceCheck, active: active, pieces: pieces, onEdit: editVariant,
             onSave: savePiece, onDelete: removePiece, onOpen: function (piece) { setActiveId(piece.id); },
+            library: library,
+            onInsert: function (text) {
+              setIdea(function (current) { return current ? current + "\n\n" + text : text; });
+            },
+            onAttach: function (assetId) {
+              if (active && active.brand_id === brand.id) useAsset(assetId, { piece_id: active.id });
+            },
+          }) : null,
+          section === "library" ? h(Library, {
+            library: library,
+            busy: busy,
+            piece: active && active.brand_id === brand.id ? active : null,
+            posts: (studio && studio.feed) || [],
+            onSave: saveAsset,
+            onRevise: reviseAsset,
+            onUse: useAsset,
+            onFail: function (text) { setError(text); },
           }) : null,
           section === "calendar" ? h(Calendar, {
             brand: brand,
@@ -536,6 +589,17 @@
       h("div", { className: "hs-row" },
         h("button", { type: "button", className: "hs-button", disabled: props.busy || !props.idea.trim(), onClick: props.onShape }, "Shape three posts"),
         h("button", { type: "button", className: "hs-tab", disabled: props.busy || (!props.idea.trim() && !(props.active && props.active.brand_id === brand.id)), onClick: props.onCheck }, "Check voice")),
+      (props.library && (props.library.assets || []).length) ? h("div", null,
+        h("div", { className: "hs-name" }, "From the library"),
+        h("div", { className: "hs-row" }, (props.library.assets || []).slice(0, 8).map(function (asset) {
+          return h("button", {
+            key: asset.id, type: "button", className: "hs-tab",
+            onClick: function () {
+              if (asset.body && props.onInsert) props.onInsert(asset.body);
+              if (props.onAttach) props.onAttach(asset.id);
+            },
+          }, asset.kind + " · " + asset.name);
+        }))) : null,
       props.voiceCheck ? h(VoiceScore, { report: props.voiceCheck }) : null,
       props.active && props.active.brand_id === brand.id ? h(PieceEditor, {
         piece: props.active, busy: props.busy, onEdit: props.onEdit, onSave: props.onSave, onDelete: function () { props.onDelete(props.active.id); },
@@ -644,6 +708,154 @@
       + " · scheduled " + lanes.scheduled
       + " · published " + lanes.published
       + (mix.length ? " · " + mix.join(" · ") : "");
+  }
+
+  const ASSET_KINDS = ["copy", "template", "image", "logo", "carousel", "video"];
+
+  function readAssetFiles(fileList) {
+    return Promise.all(Array.from(fileList || []).map(function (file) {
+      return new Promise(function (resolve, reject) {
+        const reader = new FileReader();
+        reader.onload = function () {
+          const text = String(reader.result || "");
+          const comma = text.indexOf(",");
+          resolve({ name: file.name, data: comma >= 0 ? text.slice(comma + 1) : text });
+        };
+        reader.onerror = function () { reject(new Error("That file did not read.")); };
+        reader.readAsDataURL(file);
+      });
+    }));
+  }
+
+  function assetUrl(id, version, frame) {
+    const params = [];
+    if (version) params.push("version=" + encodeURIComponent(version));
+    if (frame != null) params.push("frame=" + frame);
+    const query = params.length ? "?" + params.join("&") : "";
+    return "/api/plugins/house-social/assets/" + id + "/file" + query;
+  }
+
+  function performanceLine(asset) {
+    const perf = asset.performance || {};
+    if (!perf.uses) return "Not used yet.";
+    if (!perf.samples) return "Used " + perf.uses + ". No numbers yet.";
+    let line = "Used " + perf.uses + " · " + perf.engagements + " engagements";
+    if (perf.impressions) line += " · " + perf.impressions + " impressions";
+    return line;
+  }
+
+  function Library(props) {
+    const shelf = props.library || { assets: [], folders: [], tags: [] };
+    const assets = shelf.assets || [];
+    const [q, setQ] = useState("");
+    const [kind, setKind] = useState("all");
+    const [folder, setFolder] = useState("all");
+    const [tag, setTag] = useState("all");
+    const [openId, setOpenId] = useState("");
+    const [draft, setDraft] = useState({ kind: "copy", name: "", folder: "", tags: "", body: "", note: "" });
+    const visible = assets.filter(function (asset) {
+      if (kind !== "all" && asset.kind !== kind) return false;
+      if (folder !== "all" && asset.folder !== folder && asset.folder.indexOf(folder + "/") !== 0) return false;
+      if (tag !== "all" && (asset.tags || []).indexOf(tag) < 0) return false;
+      const hay = [asset.name, asset.folder, asset.note, asset.body, (asset.tags || []).join(" ")].join(" ").toLowerCase();
+      return !q.trim() || hay.indexOf(q.trim().toLowerCase()) >= 0;
+    });
+    const open = assets.find(function (asset) { return asset.id === openId; }) || null;
+
+    function setField(field, value) {
+      setDraft(function (current) { return Object.assign({}, current, { [field]: value }); });
+    }
+
+    function save(event) {
+      event.preventDefault();
+      const input = event.target.querySelector("input[type=file]");
+      const files = input && input.files ? input.files : [];
+      readAssetFiles(files).then(function (packed) {
+        const body = {
+          kind: draft.kind,
+          name: draft.name,
+          folder: draft.folder,
+          tags: draft.tags.split(",").map(function (item) { return item.trim(); }).filter(Boolean),
+          note: draft.note,
+          body: draft.body,
+        };
+        if (draft.kind === "carousel") body.files = packed;
+        else if (packed[0]) {
+          body.data = packed[0].data;
+          body.file_name = packed[0].name;
+        }
+        props.onSave(body);
+        setDraft({ kind: draft.kind, name: "", folder: draft.folder, tags: "", body: "", note: "" });
+        if (input) input.value = "";
+      }).catch(function (err) { if (props.onFail) props.onFail(messageOf(err)); });
+    }
+
+    return h("div", { className: "hs-main" },
+      h("p", { className: "hs-note" }, "Images, video, carousels, templates, logos, and copy for this brand. A new save of the words or the file keeps the older version. Files stay beside the desk, not in git."),
+      h("div", { className: "hs-cols" },
+        h("input", { className: "hs-field", value: q, placeholder: "Search name, tag, folder, or copy", onChange: function (event) { setQ(event.target.value); } }),
+        h("select", { className: "hs-field", value: kind, onChange: function (event) { setKind(event.target.value); } },
+          h("option", { value: "all" }, "All kinds"),
+          ASSET_KINDS.map(function (item) { return h("option", { key: item, value: item }, item); })),
+        h("select", { className: "hs-field", value: folder, onChange: function (event) { setFolder(event.target.value); } },
+          h("option", { value: "all" }, "All folders"),
+          (shelf.folders || []).map(function (item) { return h("option", { key: item, value: item }, item); })),
+        h("select", { className: "hs-field", value: tag, onChange: function (event) { setTag(event.target.value); } },
+          h("option", { value: "all" }, "All tags"),
+          (shelf.tags || []).map(function (item) { return h("option", { key: item, value: item }, item); }))),
+      h("form", { className: "hs-cols", onSubmit: save },
+        h("select", { className: "hs-field", value: draft.kind, onChange: function (event) { setField("kind", event.target.value); } },
+          ASSET_KINDS.map(function (item) { return h("option", { key: item, value: item }, item); })),
+        h("input", { className: "hs-field", value: draft.name, placeholder: "Name", onChange: function (event) { setField("name", event.target.value); } }),
+        h("input", { className: "hs-field", value: draft.folder, placeholder: "Folder, such as cards/ember", onChange: function (event) { setField("folder", event.target.value); } }),
+        h("input", { className: "hs-field", value: draft.tags, placeholder: "Tags, comma separated", onChange: function (event) { setField("tags", event.target.value); } }),
+        h("textarea", { className: "hs-area", value: draft.body, placeholder: "Copy, template, or a note on the file", onChange: function (event) { setField("body", event.target.value); } }),
+        h("input", { className: "hs-field", type: "file", accept: "image/png,image/jpeg,image/webp,image/gif,video/mp4,video/webm", multiple: draft.kind === "carousel" }),
+        h("button", { type: "submit", className: "hs-button", disabled: props.busy || !draft.name.trim() }, "Save to the library")),
+      h("div", { className: "hs-lib" },
+        h("div", null,
+          visible.length ? visible.map(function (asset) {
+            return h("button", {
+              key: asset.id, type: "button",
+              className: "hs-piece" + (open && open.id === asset.id ? " is-on" : ""),
+              onClick: function () { setOpenId(asset.id); },
+            }, h("div", { className: "hs-name" }, asset.kind + " · " + asset.name),
+              h("div", { className: "hs-meta" }, [asset.folder, (asset.tags || []).join(", "), performanceLine(asset)].filter(Boolean).join(" · ")));
+          }) : h("p", { className: "hs-note" }, "Nothing in this library yet.")),
+        open ? h("div", { className: "hs-pillar" },
+          h("div", { className: "hs-name" }, open.name),
+          open.body ? h("p", { className: "hs-voice" }, open.body) : null,
+          open.note ? h("p", { className: "hs-note" }, open.note) : null,
+          h("p", { className: "hs-note" }, performanceLine(open)),
+          open.mime && open.mime.indexOf("video/") === 0
+            ? h("video", { className: "hs-thumb", controls: true, src: assetUrl(open.id) })
+            : (open.has_file || (open.frames || []).length)
+              ? h("img", { className: "hs-thumb", alt: open.name, src: assetUrl(open.id, "", (open.frames || []).length && !open.mime ? 0 : null) })
+              : null,
+          (open.uses || []).length ? h("div", null, open.uses.map(function (use) {
+            return h("div", { key: use.id, className: "hs-note" }, use.idea || use.post_id || "Used");
+          })) : null,
+          h("div", { className: "hs-row" },
+            props.piece ? h("button", {
+              type: "button", className: "hs-button", disabled: props.busy,
+              onClick: function () { props.onUse(open.id, { piece_id: props.piece.id }); },
+            }, "Attach to the open draft") : null,
+            (props.posts || []).slice(0, 6).map(function (post) {
+              return h("button", {
+                key: post.id, type: "button", className: "hs-tab", disabled: props.busy,
+                onClick: function () { props.onUse(open.id, { post_id: post.id }); },
+              }, "Used on " + (post.preview || post.id).slice(0, 42));
+            })),
+          h("div", { className: "hs-name" }, "Versions"),
+          (open.versions || []).map(function (version) {
+            return h("div", { key: version.id, className: "hs-note" },
+              (version.note || "Saved") + (version.body ? " · " + version.body.slice(0, 80) : ""),
+              h("button", {
+                type: "button", className: "hs-tab", disabled: props.busy,
+                onClick: function () { props.onRevise(open.id, { restore: version.id }); },
+              }, "Bring this version back"));
+          })) : h("p", { className: "hs-note" }, "Choose an asset to see its versions and where it has been used.")),
+    );
   }
 
   function Calendar(props) {

@@ -154,8 +154,9 @@
 }
 .hs-post.is-on { color: var(--primary, #cc4400); }
 @media (max-width: 900px) {
-  .hs-layout, .hs-cols, .hs-cal, .hs-pillars { grid-template-columns: 1fr; }
+  .hs-layout, .hs-cols, .hs-cal, .hs-pillars, .hs-lib { grid-template-columns: 1fr; }
   .hs-cal-board { grid-template-columns: repeat(7, minmax(0, 1fr)); }
 }
-.hs-ok { color: #9bb8a4; font-size: 0.85rem; }
+.hs-lib { display: grid; grid-template-columns: minmax(220px, 320px) 1fr; gap: 12px; align-items: start; }
+.hs-thumb { display: block; max-width: 240px; max-height: 240px; margin-top: 8px; border-radius: 8px; background: #2c3544; }
 .hs-bad { color: #e0b4ae; font-size: 0.85rem; }

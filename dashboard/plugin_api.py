@@ -6,6 +6,7 @@ import sys
 from pathlib import Path
 
 from fastapi import APIRouter, HTTPException
+from fastapi.responses import FileResponse
 
 ROOT = Path(__file__).resolve().parents[1]
 if str(ROOT) not in sys.path:
@@ -13,6 +14,7 @@ if str(ROOT) not in sys.path:
 
 from adapt import DraftError
 from brands import PLATFORMS
+from library import library_for, open_asset_file, record_use, revise_asset, save_asset
 from store import (
     add_brand,
     create_piece,
@@ -105,6 +107,47 @@ def post_voice_check(brand_id: str, body: dict) -> dict:
         return voice_check_brand(load(), brand_id, body)
     except DraftError as exc:
         _fail(exc)
+
+
+@router.get("/brands/{brand_id}/library")
+def get_library(brand_id: str, q: str = "", kind: str = "", folder: str = "", tag: str = "") -> dict:
+    try:
+        return library_for(load(), brand_id, q=q, kind=kind, folder=folder, tag=tag)
+    except DraftError as exc:
+        _fail(exc)
+
+
+@router.post("/brands/{brand_id}/assets")
+def post_asset(brand_id: str, body: dict) -> dict:
+    try:
+        return save_asset(load(), brand_id, body)
+    except DraftError as exc:
+        _fail(exc)
+
+
+@router.patch("/assets/{asset_id}")
+def patch_asset(asset_id: str, body: dict) -> dict:
+    try:
+        return revise_asset(load(), asset_id, body)
+    except DraftError as exc:
+        _fail(exc)
+
+
+@router.post("/assets/{asset_id}/use")
+def post_asset_use(asset_id: str, body: dict) -> dict:
+    try:
+        return record_use(load(), asset_id, body)
+    except DraftError as exc:
+        _fail(exc)
+
+
+@router.get("/assets/{asset_id}/file")
+def get_asset_file(asset_id: str, version: str = "", frame: int | None = None):
+    try:
+        found = open_asset_file(load(), asset_id, version, frame)
+    except DraftError as exc:
+        _fail(exc)
+    return FileResponse(found["path"], media_type=found["mime"], filename=found["name"])
 
 
 @router.post("/stats")
