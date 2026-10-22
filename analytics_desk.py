@@ -488,3 +488,117 @@ def _hour_from(published: str) -> int | None:
     if parsed.tzinfo is None:
         parsed = parsed.replace(tzinfo=timezone.utc)
     return parsed.astimezone(ZoneInfo("America/New_York")).hour
+
+
+def read_draft(text: str, posts: list[dict]) -> dict:
+    """What the posts can say about a draft. No predicted score."""
+    body = str(text or "").strip()
+    context = _context(posts, [])
+    found = {item["id"]: item for item in _patterns(posts, [], context)}
+    misses = []
+    lines = []
+    if body:
+        _match(found, "hook", _short_hook({"preview": body}), "The first sentence is longer than the pattern that is ahead.", lines, misses)
+        _match(found, "question", "?" in body, "This draft does not ask a question.", lines, misses)
+        _match(found, "cta", _has_cta({"preview": body}), "This draft does not ask or link.", lines, misses)
+        _match(
+            found,
+            "length",
+            _length_name({"preview": body}) == (context.get("length_name") or ""),
+            "The length is not the one that is ahead.",
+            lines,
+            misses,
+        )
+    clear = any(item.get("clear") for item in found.values() if item.get("id") in {"hook", "question", "cta", "length"})
+    if not body:
+        improve = "Write a draft before asking to improve it."
+        misses = []
+    elif not clear:
+        improve = "Nothing learned is clear enough to change this draft."
+        misses = []
+    elif not misses:
+        improve = "This draft already matches the patterns that are ahead."
+    else:
+        improve = "These are the patterns this draft misses."
+    hook = found.get("hook") or {}
+    cta = found.get("cta") or {}
+    return {
+        "lines": lines,
+        "misses": misses[:6],
+        "improve": improve,
+        "hook": hook.get("detail") or "Hook length is not a pattern yet.",
+        "cta": cta.get("detail") if cta.get("clear") else "A question or a link is not a pattern yet.",
+        "similar": _similar(body, posts),
+        "remix": _remix_post(posts),
+    }
+
+
+def remix_source(posts: list[dict], text: str) -> dict:
+    found = _remix_post(posts)
+    if not found["ready"]:
+        raise DraftError(found["detail"])
+    if str(text or "").strip() != found["preview"].strip():
+        raise DraftError("That post is not ahead of the others.")
+    return found
+
+
+def _match(found: dict, pattern_id: str, holds: bool, miss: str, lines: list[str], misses: list[str]) -> None:
+    pattern = found.get(pattern_id) or {}
+    if not pattern.get("clear"):
+        return
+    if holds:
+        lines.append(pattern.get("detail") or "")
+    else:
+        misses.append((miss + " " + (pattern.get("detail") or "")).strip())
+
+
+def _similar(text: str, posts: list[dict]) -> list[dict]:
+    words = set(re.findall(r"[a-z0-9']{4,}", text.lower())) - _DRAFT_STOP
+    rows = []
+    ahead = {item.get("id") for item in _alerts(posts)}
+    for post in posts:
+        preview = str(post.get("preview") or "").strip()
+        if not preview or post.get("engagements") is None:
+            continue
+        if preview.lower() == text.strip().lower():
+            continue
+        shared = words & set(re.findall(r"[a-z0-9']{4,}", preview.lower()))
+        if not shared:
+            continue
+        rows.append(
+            {
+                "id": post.get("id") or "",
+                "preview": preview[:140],
+                "engagements": int(post.get("engagements") or 0),
+                "ahead": post.get("id") in ahead,
+            }
+        )
+    rows.sort(key=lambda item: item["engagements"], reverse=True)
+    return rows[:3]
+
+
+def _remix_post(posts: list[dict]) -> dict:
+    alerts = _alerts(posts)
+    if not alerts:
+        return {
+            "ready": False,
+            "detail": "No post is at least 3× the others, so there is nothing to remix.",
+            "id": "",
+            "preview": "",
+            "engagements": 0,
+        }
+    top = alerts[0]
+    return {
+        "ready": True,
+        "detail": top.get("detail") or "",
+        "id": top.get("id") or "",
+        "preview": top.get("preview") or "",
+        "engagements": int(top.get("engagements") or 0),
+    }
+
+
+_DRAFT_STOP = {
+    "that", "this", "with", "from", "your", "have", "just", "what", "when", "were",
+    "been", "about", "into", "than", "then", "there", "their", "would", "could",
+    "still", "same", "them", "they", "morning", "today",
+}

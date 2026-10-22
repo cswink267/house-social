@@ -18,8 +18,8 @@ from adapt import DraftError, suggest_hashtags
 from voice import voice_check
 
 
-ACTIONS = ("rewrite", "shorten", "expand", "variations", "hooks", "caption", "hashtags", "reply", "tags")
-_COUNTS = {"variations": 3, "hooks": 5, "tags": 5}
+ACTIONS = ("rewrite", "shorten", "expand", "variations", "hooks", "caption", "hashtags", "reply", "tags", "draft", "comment", "remix")
+_COUNTS = {"variations": 3, "hooks": 5, "tags": 5, "draft": 3}
 _FENCE = re.compile(r"```(?:json)?\s*(.*?)```", re.S)
 _NUMBERED = re.compile(r"^\s*\d+[\).\]]\s*")
 
@@ -37,7 +37,7 @@ def assist(
 ) -> dict:
     name = (action or "").strip().lower()
     if name not in ACTIONS:
-        raise DraftError("Ask for a rewrite, a shorter line, a longer line, variations, hooks, a caption, hashtags, or tags.")
+        raise DraftError("Ask for a draft, a rewrite, a shorter line, a longer line, variations, hooks, a caption, a comment, hashtags, or a remix.")
     body = (text or "").strip()
     if name == "hashtags":
         options = suggest_hashtags(body, brand_tags)
@@ -49,6 +49,8 @@ def assist(
             raise DraftError("Caption runs on a still image. Save a frame as an image." if name == "caption" else "Tag reading runs on a still image.")
         if mime and not mime.startswith("image/"):
             raise DraftError("Caption runs on an image." if name == "caption" else "Tag reading runs on an image.")
+    elif name == "draft" and not body:
+        raise DraftError("Name a subject.")
     elif not body:
         raise DraftError("Write something first.")
     raw = complete(_messages(guide, name, body, image, mime, misses))
@@ -101,6 +103,9 @@ def _messages(guide: dict, action: str, text: str, image: bytes | None, mime: st
         "hooks": "Write five opening hooks in the brand voice for this idea.\n\n{text}",
         "caption": "Write a caption for the attached image in the brand voice. Describe only what is visible.\n\n{text}",
         "tags": "Name up to five one-word tags for what is visible in the image. Do not write a sentence.\n\n{text}",
+        "draft": "Write three different posts in the brand voice about this subject. Do not invent a number or a result.\n\n{text}",
+        "comment": "Write a first comment in the brand voice for this post. Do not repeat the post. Do not say it is going live.\n\n{text}",
+        "remix": "Write a new post in the brand voice. Keep what made the shape useful. Do not copy the sentences.\n\n{text}",
         "reply": "Draft a short reply in the brand voice. Do not say a post is going live.\n\n{text}",
     }
     prompt = prompts[action].format(text=text or "Use the image.")

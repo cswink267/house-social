@@ -75,6 +75,7 @@
     const [limits, setLimits] = useState({ facebook: 5000, instagram: 2200, threads: 500 });
     const [cardLimit, setCardLimit] = useState(240);
     const [assist, setAssist] = useState(null);
+    const [draftRead, setDraftRead] = useState(null);
     const [assistTarget, setAssistTarget] = useState("idea");
 
     const brand = useMemo(function () {
@@ -158,10 +159,30 @@
       return variant.body || idea;
     }
 
+    async function readDraft(text) {
+      const report = await run(function () {
+        return SDK.fetchJSON("/api/plugins/house-social/brands/" + brand.id + "/draft-read", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ text: text == null ? assistText() : text }),
+        });
+      });
+      if (report) setDraftRead(report);
+      return report;
+    }
+
     async function askAssist(action, misses) {
-      const fields = { action: action, text: assistText() };
+      const fields = { action: action, text: action === "draft" ? idea : assistText() };
       if (active && active.brand_id === brand.id) fields.piece_id = active.id;
       if (misses && misses.length) fields.misses = misses;
+      if (action === "remix") {
+        const reading = draftRead && draftRead.remix && draftRead.remix.ready ? draftRead : await readDraft(assistText());
+        if (!reading || !reading.remix || !reading.remix.ready) {
+          setError((reading && reading.remix && reading.remix.detail) || "No post is at least 3× the others, so there is nothing to remix.");
+          return;
+        }
+        fields.text = reading.remix.preview;
+      }
       if (action === "caption") {
         const ids = (active && active.asset_ids) || [];
         const image = ((library && library.assets) || []).find(function (asset) {
@@ -183,7 +204,17 @@
       if (report) setAssist(report);
     }
 
+    async function improveDraft() {
+      const reading = await readDraft(assistText());
+      if (reading && reading.misses && reading.misses.length) askAssist("rewrite", reading.misses);
+    }
+
     function applyAssist(text) {
+      if (assist && assist.action === "comment" && active && assistTarget !== "idea") {
+        editVariant(assistTarget, "first_comment", text);
+        setAssist(null);
+        return;
+      }
       if (assistTarget === "idea" || !active) setIdea(text);
       else editVariant(assistTarget, "body", text);
       setAssist(null);
@@ -640,6 +671,18 @@
             onAssist: askAssist,
             onApply: applyAssist,
             onHashtag: applyHashtag,
+            onRead: function () { readDraft(assistText()); },
+            onImprove: improveDraft,
+            draftRead: draftRead,
+            onHold: function (date) {
+              if (active && active.brand_id === brand.id) placePiece(active.id, date);
+              else if (idea.trim()) planPiece({ idea: idea, scheduled_for: date, pillar: pillar, format: format });
+            },
+            onSaveCopy: function () {
+              const text = assistText().trim();
+              if (!text) return;
+              saveAsset({ kind: "copy", role: "copy", name: text.slice(0, 48), body: text, tags: [] });
+            },
             onQueue: function (id) { runQueue("pending", [id]); },
           }) : null,
           section === "library" ? h(Library, {
@@ -1036,6 +1079,7 @@
   function CreatePanel(props) {
     const brand = props.brand;
     const mine = props.pieces.filter(function (piece) { return piece.brand_id === brand.id; });
+    const [holdDay, setHoldDay] = useState("");
     return h("div", { className: "hs-main" },
       h("div", { className: "hs-cols" },
         h("select", { className: "hs-field", value: props.pillar, onChange: function (event) { props.setPillar(event.target.value); } },
@@ -1058,12 +1102,14 @@
         h("select", { className: "hs-field", value: props.assistTarget || "idea", onChange: function (event) { props.setAssistTarget(event.target.value); } },
           h("option", { value: "idea" }, "Idea"),
           PLATFORMS.map(function (pair) { return h("option", { key: pair[0], value: pair[0] }, pair[1]); })),
-        ["rewrite", "shorten", "expand", "variations", "hooks", "caption", "hashtags"].map(function (action) {
+        ["draft", "rewrite", "shorten", "expand", "variations", "hooks", "caption", "comment", "hashtags", "remix"].map(function (action) {
           return h("button", {
             key: action, type: "button", className: "hs-tab", disabled: props.busy,
             onClick: function () { props.onAssist(action); },
           }, action);
-        })),
+        }),
+        h("button", { type: "button", className: "hs-button", disabled: props.busy, onClick: props.onImprove }, "Improve this draft"),
+        h("button", { type: "button", className: "hs-tab", disabled: props.busy, onClick: props.onRead }, "What the posts say")),
       props.assist && (props.assist.options || []).length ? h("div", { className: "hs-pillar" },
         h("div", { className: "hs-name" }, props.assist.source === "brand" ? "Hashtags from this brand" : "Held to the voice guide"),
         props.assist.options.map(function (option, index) {
@@ -1074,7 +1120,11 @@
               if (props.assist.action === "hashtags") props.onHashtag(option.text);
               else props.onApply(option.text);
             },
-          }, label, option.voice && option.voice.total ? h("span", { className: "hs-note" }, "  " + option.voice.passed + "/" + option.voice.total) : null);
+          }, label,
+          option.voice && option.voice.total ? h("span", { className: "hs-note" }, "  " + option.voice.passed + "/" + option.voice.total) : null,
+          (option.reading && option.reading.lines || []).length
+            ? (option.reading.lines || []).map(function (line, lineIndex) { return h("p", { key: lineIndex, className: "hs-note" }, line); })
+            : option.reading ? h("p", { className: "hs-note" }, "No historical pattern matches this line.") : null);
         })) : null,
       (props.library && (props.library.assets || []).length) ? h("div", null,
         h("div", { className: "hs-name" }, "From the library"),
@@ -1091,6 +1141,18 @@
             },
           }, (textual ? (asset.role || "copy") : asset.kind) + " · " + asset.name);
         }))) : null,
+      props.draftRead ? h("div", { className: "hs-pillar" },
+        h("div", { className: "hs-name" }, "What the posts say"),
+        h("p", { className: "hs-note" }, props.draftRead.hook),
+        h("p", { className: "hs-note" }, props.draftRead.cta),
+        h("p", { className: "hs-voice" }, props.draftRead.improve),
+        (props.draftRead.similar || []).length ? (props.draftRead.similar || []).map(function (item) {
+          return h("p", { key: item.id, className: "hs-note" }, item.engagements + " engagements" + (item.ahead ? " · ahead of the others" : "") + " · " + item.preview);
+        }) : h("p", { className: "hs-note" }, "No saved post shares words with this draft.")) : null,
+      h("div", { className: "hs-row" },
+        h("input", { className: "hs-field", type: "date", value: holdDay, onChange: function (event) { setHoldDay(event.target.value); } }),
+        h("button", { type: "button", className: "hs-tab", disabled: props.busy || !holdDay, onClick: function () { props.onHold(holdDay); } }, "Hold this day"),
+        h("button", { type: "button", className: "hs-tab", disabled: props.busy, onClick: props.onSaveCopy }, "Save copy to the library")),
       props.voiceCheck ? h(VoiceScore, {
         report: props.voiceCheck,
         busy: props.busy,
@@ -2221,6 +2283,7 @@
             h("input", { type: "checkbox", checked: !!variant.image_ready, onChange: function (event) { props.onEdit(pair[0], "image_ready", event.target.checked); } }),
             " Quote image is ready") : null);
       })),
+      h("p", { className: "hs-note" }, "Hashtags stay out of the Instagram caption. Threads stops at 500 characters. Josie's Facebook card stops at 240."),
       h("div", { className: "hs-name" }, "Media"),
       attached.length ? h("div", { className: "hs-row" }, attached.map(function (asset) {
         const image = asset.mime && asset.mime.indexOf("image/") === 0;

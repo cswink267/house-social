@@ -12,6 +12,7 @@ ROOT = Path(__file__).resolve().parents[1]
 if str(ROOT) not in sys.path:
     sys.path.insert(0, str(ROOT))
 
+from analytics_desk import read_draft, remix_source
 from adapt import DraftError, LIMITS, JOSIE_CARD
 from approval import add_comment, decide, mark_notice, save_steps, submit_review
 from assist import assist, ollama_complete
@@ -208,6 +209,20 @@ def get_asset_file(asset_id: str, version: str = "", frame: int | None = None):
     return FileResponse(found["path"], media_type=found["mime"], filename=found["name"])
 
 
+@router.post("/brands/{brand_id}/draft-read")
+def post_draft_read(brand_id: str, body: dict) -> dict:
+    state = load()
+    try:
+        brand = resolve_brand(state, brand_id)
+    except DraftError as exc:
+        _fail(exc)
+    ledger = {"posts": [], "days": []}
+    if brand.id == "josie-blackthorn":
+        ledger = read_ledger(ledger_dir())
+    posts, _days = brand_history(state, brand.id, ledger)
+    return read_draft(str((body or {}).get("text") or ""), posts)
+
+
 @router.post("/brands/{brand_id}/assist")
 def post_assist(brand_id: str, body: dict) -> dict:
     if not isinstance(body, dict):
@@ -232,9 +247,16 @@ def post_assist(brand_id: str, body: dict) -> dict:
             if not owned or owned.get("brand_id") != brand.id:
                 raise DraftError("That piece is not on this brand.")
         misses = body.get("misses") if isinstance(body.get("misses"), list) else []
+        action = str(body.get("action") or "").strip().lower()
+        ledger = {"posts": [], "days": []}
+        if brand.id == "josie-blackthorn":
+            ledger = read_ledger(ledger_dir())
+        posts, _days = brand_history(state, brand.id, ledger)
+        if action == "remix":
+            remix_source(posts, str(body.get("text") or ""))
         result = assist(
             guide,
-            str(body.get("action") or ""),
+            action,
             str(body.get("text") or ""),
             complete=ollama_complete,
             image=image,
@@ -242,6 +264,9 @@ def post_assist(brand_id: str, body: dict) -> dict:
             brand_tags=tuple(brand.tags),
             misses=tuple(str(item) for item in misses[:6]),
         )
+        for option in result.get("options") or []:
+            option["reading"] = read_draft(str(option.get("text") or ""), posts)
+        result["reading"] = read_draft(str(result.get("text") or body.get("text") or ""), posts)
         if piece_id:
             mark_assisted(state, piece_id)
         return result
