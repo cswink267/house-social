@@ -62,6 +62,7 @@ def empty_state() -> dict:
         "voice_imports": [],
         "history": [],
         "goals": [],
+        "recurrences": [],
     }
 
 
@@ -93,6 +94,7 @@ def load(path: Path | None = None) -> dict:
     voice_imports = raw.get("voice_imports")
     history = raw.get("history")
     goals = raw.get("goals")
+    recurrences = raw.get("recurrences")
     return {
         "version": 1,
         "channels": channels if isinstance(channels, dict) else {},
@@ -116,6 +118,7 @@ def load(path: Path | None = None) -> dict:
         "voice_imports": voice_imports if isinstance(voice_imports, list) else [],
         "history": history if isinstance(history, list) else [],
         "goals": goals if isinstance(goals, list) else [],
+        "recurrences": recurrences if isinstance(recurrences, list) else [],
     }
 
 
@@ -528,7 +531,7 @@ def studio(state: dict, brand_id: str, ledger: dict | None = None, today=None) -
     return {
         "posting": False,
         "brand": row,
-        "calendar": _calendar(pieces, posts, when),
+        "calendar": _calendar_view(state, brand_id, pieces, posts, when),
         "performance": desk,
         "feed": sorted(posts, key=lambda post: str(post.get("published_at") or ""), reverse=True)[:50],
         "lessons": found,
@@ -1024,6 +1027,106 @@ def _calendar(pieces: list[dict], posts: list[dict], today) -> dict:
         days.append({"date": key, "label": f"{day.strftime('%a')} {day.day}", "pieces": items})
     unscheduled = [item for item in entries if item.get("kind") == "piece" and not item.get("date")]
     return {"days": days, "unscheduled": unscheduled, "entries": entries}
+
+
+def _calendar_view(state: dict, brand_id: str, pieces: list[dict], posts: list[dict], today) -> dict:
+    from calendar_desk import advise
+
+    desk = _calendar(pieces, posts, today)
+    pillars = next((item.get("pillars") or [] for item in roster(state) if item["id"] == brand_id), [])
+    desk["advice"] = advise(desk["entries"], pillars, posts, today)
+    desk["recurrences"] = [
+        {
+            "id": item.get("id"),
+            "name": item.get("name") or "",
+            "weekday": item.get("weekday"),
+            "weeks": item.get("weeks"),
+            "idea": item.get("idea") or "",
+            "pillar": item.get("pillar") or "",
+            "format": item.get("format") or "",
+        }
+        for item in state.get("recurrences") or []
+        if item.get("brand_id") == brand_id
+    ]
+    return desk
+
+
+def save_recurrence(state: dict, brand_id: str, spec: dict, path: Path | None = None) -> dict:
+    resolve_brand(state, brand_id)
+    if not isinstance(spec, dict):
+        raise DraftError("A recurrence needs a name and a weekday.")
+    name = _label(spec.get("name") or "", 80)
+    idea = _label(spec.get("idea") or "", 500)
+    if not name or not idea:
+        raise DraftError("Name the recurrence and give it the words.")
+    weekday = spec.get("weekday")
+    if isinstance(weekday, str) and weekday.isdigit():
+        weekday = int(weekday)
+    if isinstance(weekday, bool) or not isinstance(weekday, int) or not 0 <= weekday <= 6:
+        raise DraftError("Weekday is 0 for Monday through 6 for Sunday.")
+    weeks = spec.get("weeks") if spec.get("weeks") not in (None, "") else 4
+    if isinstance(weeks, str) and weeks.isdigit():
+        weeks = int(weeks)
+    if isinstance(weeks, bool) or not isinstance(weeks, int) or not 1 <= weeks <= 8:
+        raise DraftError("A recurrence covers 1 to 8 weeks.")
+    row = {
+        "id": str(uuid.uuid4()),
+        "brand_id": brand_id,
+        "name": name,
+        "weekday": weekday,
+        "weeks": weeks,
+        "idea": idea,
+        "pillar": _label(spec.get("pillar") or "", 40),
+        "format": _format_name(brand_id, str(spec.get("format") or "")),
+    }
+    updated = _copy(state)
+    current = list(updated.get("recurrences") or [])
+    others = [item for item in current if item.get("brand_id") != brand_id]
+    mine = [row, *[item for item in current if item.get("brand_id") == brand_id]][:12]
+    updated["recurrences"] = mine + others
+    save(updated, path)
+    return row
+
+
+def apply_recurrence(state: dict, brand_id: str, recurrence_id: str, path: Path | None = None, today=None) -> dict:
+    from calendar_desk import next_dates, slot_when
+    from learn import suggest_hour
+
+    resolve_brand(state, brand_id)
+    row = next((item for item in state.get("recurrences") or [] if item.get("id") == recurrence_id and item.get("brand_id") == brand_id), None)
+    if row is None:
+        raise DraftError("That recurrence is not on this brand.")
+    when = today or datetime.now(ZoneInfo("America/New_York")).date()
+    posts, _days = brand_history(state, brand_id)
+    hour = suggest_hour(posts)
+    clock = hour.get("hour") if hour.get("clear") else None
+    current = state
+    created = 0
+    for day in next_dates(when, int(row["weekday"]), int(row["weeks"])):
+        already = any(
+            piece.get("recurrence_id") == row["id"] and str(piece.get("scheduled_for") or "").startswith(day.isoformat())
+            for piece in current.get("pieces") or []
+        )
+        if already:
+            continue
+        piece = create_piece(
+            current,
+            brand_id,
+            row.get("idea") or row.get("name") or "Recurring",
+            path=path,
+            pillar=row.get("pillar") or "",
+            format_name=row.get("format") or "",
+            scheduled_for=slot_when(day, clock),
+            status="planned",
+        )
+        current = load(path)
+        index, saved = _find(current, piece["id"])
+        pieces = list(current.get("pieces") or [])
+        pieces[index] = {**saved, "recurrence_id": row["id"]}
+        current = {**current, "pieces": pieces}
+        save(current, path)
+        created += 1
+    return {"created": created, "id": row["id"]}
 
 
 def calendar_entries(pieces: list[dict], posts: list[dict]) -> list[dict]:

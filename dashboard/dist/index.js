@@ -704,10 +704,28 @@
           section === "calendar" ? h(Calendar, {
             brand: brand,
             calendar: studio && studio.calendar,
+            ideas: studio && studio.ideas,
+            library: library,
             busy: busy,
             onOpen: function (item) { setActiveId(item.id); setSection("create"); },
             onMove: placePiece,
             onPlan: planPiece,
+            onRecur: async function (body) {
+              const saved = await run(function () {
+                return SDK.fetchJSON("/api/plugins/house-social/brands/" + brand.id + "/recurrences", {
+                  method: "POST",
+                  headers: { "Content-Type": "application/json" },
+                  body: JSON.stringify(body),
+                });
+              });
+              if (saved) await refresh(brand.id);
+            },
+            onApply: async function (id) {
+              const saved = await run(function () {
+                return SDK.fetchJSON("/api/plugins/house-social/recurrences/" + encodeURIComponent(id) + "/apply", { method: "POST" });
+              });
+              if (saved) await refresh(brand.id);
+            },
           }) : null,
           section === "queue" ? h(QueueDesk, {
             studio: studio,
@@ -1185,6 +1203,8 @@
 
   const LANE_COLORS = { planned: "#8aa4b5", draft: "#c4b89a", ready: "#9bb8a4", scheduled: "#c4a36a", published: "#7d9a78" };
   const PILLAR_COLORS = ["#c4b89a", "#8aa4b5", "#9bb8a4", "#c4a36a", "#c48a9a", "#a8b0c4"];
+  const CAMPAIGN_COLORS = ["#d4a574", "#9bb8a4", "#8aa4b5", "#c4b89a", "#b7a8c9", "#e0b4ae"];
+  const PLATFORM_COLORS = { facebook: "#8aa4b5", instagram: "#c4b89a", threads: "#9bb8a4" };
   const WEEKDAYS = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"];
 
   function todayET() {
@@ -1246,10 +1266,33 @@
     return item.campaign === filters.campaign;
   }
 
-  function chipColor(item, colorBy, pillars) {
+  function quickHoldButtons(props, advice, planDate, setPlanIdea, setPlanDate) {
+    const ideas = ((props.ideas && props.ideas.ideas) || []).filter(function (item) { return item.status !== "drafted"; }).slice(0, 4);
+    const copies = ((props.library && props.library.assets) || []).filter(function (asset) { return asset.kind === "copy" || asset.kind === "template"; }).slice(0, 4);
+    function useText(value) {
+      setPlanIdea(value || "");
+      if (!planDate && advice.slot && advice.slot.date) setPlanDate(advice.slot.date);
+    }
+    const buttons = ideas.map(function (item) {
+      return h("button", { key: item.id, type: "button", className: "hs-tab", onClick: function () { useText(item.text); } }, (item.text || "").slice(0, 36));
+    });
+    copies.forEach(function (asset) {
+      buttons.push(h("button", { key: asset.id, type: "button", className: "hs-tab", onClick: function () { useText(asset.body || asset.name); } }, asset.name));
+    });
+    return buttons;
+  }
+
+  function chipColor(item, colorBy, pillars, campaigns) {
     if (colorBy === "pillar") {
       const index = (pillars || []).findIndex(function (pillar) { return pillar.id === item.pillar; });
       return index < 0 ? "#6e7278" : PILLAR_COLORS[index % PILLAR_COLORS.length];
+    }
+    if (colorBy === "campaign") {
+      const index = (campaigns || []).indexOf(item.campaign);
+      return index < 0 ? "#6e7278" : CAMPAIGN_COLORS[index % CAMPAIGN_COLORS.length];
+    }
+    if (colorBy === "platform") {
+      return PLATFORM_COLORS[(item.platforms || [])[0]] || "#6e7278";
     }
     return LANE_COLORS[item.status] || LANE_COLORS.draft;
   }
@@ -1717,6 +1760,8 @@
   function Calendar(props) {
     const brand = props.brand || { pillars: [] };
     const entries = (props.calendar && props.calendar.entries) || [];
+    const advice = (props.calendar && props.calendar.advice) || { gaps: [], mix: [], warnings: [], slot: { clear: false, detail: "" } };
+    const recurrences = (props.calendar && props.calendar.recurrences) || [];
     const [view, setView] = useState("month");
     const [cursor, setCursor] = useState(todayET);
     const [colorBy, setColorBy] = useState("status");
@@ -1729,6 +1774,7 @@
     const [planCampaign, setPlanCampaign] = useState("");
     const [planPillar, setPlanPillar] = useState("");
     const [planFormat, setPlanFormat] = useState(brand.preferred_format || "feed");
+    const [recur, setRecur] = useState({ name: "", weekday: "0", weeks: "4", idea: "", pillar: "", format: brand.preferred_format || "feed" });
     const [over, setOver] = useState("");
     useEffect(function () {
       setCampaign("all");
@@ -1762,7 +1808,7 @@
     }
 
     function chip(item) {
-      const color = chipColor(item, colorBy, brand.pillars);
+      const color = chipColor(item, colorBy, brand.pillars, campaigns);
       const text = (item.time ? item.time + " · " : "") + (item.title || item.status);
       return h("div", {
         key: item.id,
@@ -1817,7 +1863,9 @@
           }, name);
         }),
         h("button", { type: "button", className: "hs-tab" + (colorBy === "status" ? " is-on" : ""), onClick: function () { setColorBy("status"); } }, "By status"),
-        h("button", { type: "button", className: "hs-tab" + (colorBy === "pillar" ? " is-on" : ""), onClick: function () { setColorBy("pillar"); } }, "By pillar")),
+        h("button", { type: "button", className: "hs-tab" + (colorBy === "pillar" ? " is-on" : ""), onClick: function () { setColorBy("pillar"); } }, "By pillar"),
+        h("button", { type: "button", className: "hs-tab" + (colorBy === "campaign" ? " is-on" : ""), onClick: function () { setColorBy("campaign"); } }, "By campaign"),
+        h("button", { type: "button", className: "hs-tab" + (colorBy === "platform" ? " is-on" : ""), onClick: function () { setColorBy("platform"); } }, "By platform")),
       h("div", { className: "hs-cols" },
         h("select", { className: "hs-field", value: platform, onChange: function (event) { setPlatform(event.target.value); } },
           h("option", { value: "all" }, "All platforms"),
@@ -1840,6 +1888,14 @@
           pair[1]);
       })),
       h("p", { className: "hs-note" }, balanceLine(visible, spanDates, brand.pillars)),
+      advice.slot && advice.slot.detail ? h("p", { className: advice.slot.clear ? "hs-ok" : "hs-note" }, advice.slot.clear ? ("Open slot: " + advice.slot.label + ". " + advice.slot.detail) : advice.slot.detail) : null,
+      advice.slot && advice.slot.clear && advice.slot.date ? h("button", {
+        type: "button", className: "hs-tab", disabled: props.busy,
+        onClick: function () { setPlanDate(advice.slot.date); },
+      }, "Plan " + advice.slot.date) : null,
+      (advice.gaps || []).map(function (line) { return h("p", { key: line, className: "hs-note" }, line); }),
+      (advice.mix || []).length ? h("p", { className: "hs-note" }, "Next 7 days: " + advice.mix.map(function (item) { return item.name + " " + item.n; }).join(" · ")) : null,
+      (advice.warnings || []).map(function (line) { return h("p", { key: line, className: "hs-bad" }, line); }),
       planDate ? h("form", {
         className: "hs-cols",
         onSubmit: function (event) {
@@ -1865,7 +1921,26 @@
           (brand.pillars || []).map(function (item) { return h("option", { key: item.id, value: item.id }, item.name); })),
         h("select", { className: "hs-field", value: planFormat, onChange: function (event) { setPlanFormat(event.target.value); } },
           FORMATS.map(function (item) { return h("option", { key: item, value: item }, item); })),
-        h("button", { type: "submit", className: "hs-button", disabled: props.busy || !planIdea.trim() }, "Put it on this day")) : null,
+        h("button", { type: "submit", className: "hs-button", disabled: props.busy || !planIdea.trim() }, "Hold it on this day")) : null,
+      h("div", { className: "hs-row" }, quickHoldButtons(props, advice, planDate, setPlanIdea, setPlanDate)),
+      h("form", { className: "hs-cols", onSubmit: function (event) {
+        event.preventDefault();
+        if (!recur.name.trim() || !recur.idea.trim() || !props.onRecur) return;
+        props.onRecur({ name: recur.name.trim(), idea: recur.idea.trim(), weekday: Number(recur.weekday), weeks: Number(recur.weeks), pillar: recur.pillar, format: recur.format });
+        setRecur(Object.assign({}, recur, { name: "", idea: "" }));
+      } },
+        h("div", { className: "hs-name" }, "Repeat"),
+        h("input", { className: "hs-field", value: recur.name, placeholder: "Recurrence name", onChange: function (event) { setRecur(Object.assign({}, recur, { name: event.target.value })); } }),
+        h("textarea", { className: "hs-area hs-short", value: recur.idea, placeholder: "Words to hold each week", onChange: function (event) { setRecur(Object.assign({}, recur, { idea: event.target.value })); } }),
+        h("select", { className: "hs-field", value: recur.weekday, onChange: function (event) { setRecur(Object.assign({}, recur, { weekday: event.target.value })); } },
+          ["Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday", "Sunday"].map(function (name, index) { return h("option", { key: name, value: String(index) }, name); })),
+        h("input", { className: "hs-field", value: recur.weeks, placeholder: "Weeks, 1 to 8", onChange: function (event) { setRecur(Object.assign({}, recur, { weeks: event.target.value })); } }),
+        h("button", { type: "submit", className: "hs-button", disabled: props.busy || !recur.name.trim() || !recur.idea.trim() }, "Save recurrence")),
+      recurrences.map(function (item) {
+        return h("div", { key: item.id, className: "hs-row" },
+          h("span", { className: "hs-note" }, item.name),
+          h("button", { type: "button", className: "hs-tab", disabled: props.busy, onClick: function () { props.onApply(item.id); } }, "Hold those days"));
+      }),
       view === "day" ? null : h("div", { className: "hs-cal-board" }, WEEKDAYS.map(function (name) {
         return h("div", { key: name, className: "hs-dow" }, name);
       })),

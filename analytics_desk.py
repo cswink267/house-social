@@ -254,7 +254,7 @@ def _weekday_pattern(posts: list[dict]) -> dict:
         detail = f"{best['label']} leads with a mean of {best['mean']} engagements (n={best['n']}). The next qualified days sit at a median of {median}."
     else:
         detail = f"No day is clearly ahead. {best['label']} is the highest qualified mean ({best['mean']}, n={best['n']}). The others sit near {median}."
-    return {"id": "weekday", "title": "Days", "clear": clear, "detail": detail}
+    return {"id": "weekday", "title": "Days", "clear": clear, "weekday": best["weekday"] if clear else None, "detail": detail}
 
 
 def _pillar_pattern(posts: list[dict], pieces: list[dict]) -> dict:

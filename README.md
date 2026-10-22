@@ -19,7 +19,7 @@ Each brand has the same desks.
 | Approval | Draft, then needs review, then approved, then scheduled. One approver, or up to four names in order. Comments, the last two versions side by side, and notices on this desk. Nothing is mailed and nothing is sent. |
 | Composer | The creation hub. Start from a subject, an idea, an image, or a post that is at least 3× the others. Facebook, Instagram, and Threads each get a preview and a count. The assistant stays inside the brand voice. A variation shows the historical pattern it matches, and only when that pattern is clear. Improve this draft asks for a rewrite from those misses. What the posts say lists similar posts with the engagements they earned. Hold a day on the calendar, or save the words to the library. Nothing is sent. |
 | Library | Images, video, carousels, templates, logos, and copy blocks. Hooks, CTAs, hashtags, and bios insert into the composer. Tags, search, folders, and versions. Mean engagement and last used come from the uses that have numbers. A version or a topic is called ahead only when both sides have three uses and the gap is real. Image tags come from tags this brand already uses, or from the vision model when it answers. |
-| Calendar | Month, week, and day. Planned, drafted, ready, scheduled, and published. Drag a piece onto a day. Filter by platform, format, pillar, or campaign. |
+| Calendar | Month, week, and day. Drag a piece onto a day. Color by status, pillar, campaign, or platform. The next 7 days name any pillar that has nothing planned. A suggested day or hour appears only when that pattern is clear. An idea or a library block can be held on the chosen day. A recurrence holds the same words on that weekday for up to 8 weeks. Nothing is sent. |
 | Queue | What is going out. Drafts stay on the making side. Pending approval, scheduled, and failed are the pipeline. Bulk actions move pieces. A suggested hour appears only when past performance shows a real gap. Platform rules block a schedule that is not allowed. Nothing is sent. |
 | Campaigns | A named effort with a kind, a goal, dates, the pieces, and the assets. Progress is how much of that work is in the campaign. Performance is what those pieces have already earned. |
 | Analytics | Reach, impressions, engagements, a rate only when impressions exist, saves, shares, comments, clicks, video completion, and follower change. 7, 28, or 90 days, or the whole history. Patterns for hour, day, format, pillar, hook, length, and assisted drafts appear only when both sides have three posts and the gap is real. A goal is the percent you set, measured against the stretch before it. Paste a CSV of old posts. A row counts when it has a date and an engagement count. |
@@ -96,6 +96,7 @@ library.py               assets, versions, and use
 store.py                 state, connections, calendar, pulls
 learn.py                 performance and lessons
 analytics_desk.py        patterns, goals, and imported history
+calendar_desk.py         gaps, slots, and the mix for the next 7 days
 meta.py                  Graph reads for Facebook, Instagram, and Threads
 dashboard/manifest.json  tab registration
 dashboard/plugin_api.py  HTTP routes

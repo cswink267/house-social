@@ -22,6 +22,7 @@ from store import (
     accept_voice_suggestion,
     add_brand,
     add_voice_post,
+    apply_recurrence,
     create_piece,
     delete_piece,
     import_history,
@@ -36,6 +37,7 @@ from store import (
     roster,
     save_connection,
     save_goal,
+    save_recurrence,
     save_voice,
     set_channels,
     studio,
@@ -421,6 +423,26 @@ def post_inbox(brand_id: str) -> dict:
 def post_inbox_reply(item_id: str, body: dict) -> dict:
     try:
         return save_inbox_reply(load(), item_id, body)
+    except DraftError as exc:
+        _fail(exc)
+
+
+@router.post("/brands/{brand_id}/recurrences")
+def post_recurrence(brand_id: str, body: dict) -> dict:
+    try:
+        return save_recurrence(load(), brand_id, body or {})
+    except DraftError as exc:
+        _fail(exc)
+
+
+@router.post("/recurrences/{recurrence_id}/apply")
+def post_apply_recurrence(recurrence_id: str) -> dict:
+    state = load()
+    row = next((item for item in state.get("recurrences") or [] if item.get("id") == recurrence_id), None)
+    if row is None:
+        _fail(DraftError("That recurrence is not on this brand."))
+    try:
+        return apply_recurrence(state, str(row.get("brand_id") or ""), recurrence_id)
     except DraftError as exc:
         _fail(exc)
 
