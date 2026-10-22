@@ -141,9 +141,13 @@ Implementation notes:
 - Background job (or Hermes session) that generates a batch only when the mode is Autonomous-with-approval and the last batch has been resolved or expired.
 - Email template that is plain and factual. Each piece gets its own Approve and Reject action. Actions are single-use and tied to the piece id.
 - Incoming approval/rejection is handled by a small endpoint or by Hermes reading the reply; the result is written to the same store the dashboard uses.
-- Rejection is stored as explicit feedback (Off-brand or Irrelevant, with the optional note the user can add).
-- The email never contains a token or a machine path.
-- The user can still open the dashboard and approve or reject the same pieces there; both paths stay in sync.
+- Each Approve/Reject link is single-use, expires after a configurable window (default 7 days), and is tied to the piece id and a random token stored only in the vault or in memory. The email never contains a long-lived secret.
+- If the user edits the piece in the dashboard after the email is sent, the email actions are invalidated and a new email is required. The activity log records the invalidation.
+- Rejection is stored as explicit feedback (Off-brand or Irrelevant, with the optional note the user can add). The note field in the email is optional and limited in length.
+- The email never contains a token, a vault name, or a machine path.
+- The user can still open the dashboard and approve or reject the same pieces there; both paths stay in sync. The first action wins; the second is refused with a clear message.
+- If the mail path is down, the batch stays unscheduled, a notice appears on the Brief desk, and Hermes retries on the next run. It does not fall back to scheduling.
+- Concurrent batches are not started while an earlier batch still has unresolved pieces.
 
 ### 3. Fully Autonomous
 
@@ -169,6 +173,10 @@ Implementation notes:
 - The user can set a maximum number of posts per day or per week; Hermes stops when the limit is reached.
 - Switching back to Manual or Autonomous-with-approval takes effect immediately; already-scheduled pieces stay scheduled unless the user removes them.
 - Nothing in this mode bypasses the “three posts and a real gap” rule for any learned recommendation.
+- Generation prompt construction: Hermes assembles the voice guide, active pillars, any locked series, content-mix targets, recent rejections, and the three-post patterns. It does not add instructions that are not already in those sources.
+- Diversity: if the last N scheduled pieces used the same format or pillar, Hermes prefers a different one that still meets the rules. If no alternative exists, it proceeds and logs the repetition.
+- Failure handling: if generation fails or the publisher (when attached) returns an error, the piece is marked failed, the activity log records the error (redacted), and Hermes does not retry the same piece automatically in the same run.
+- The user can set a “review window” even in Fully Autonomous (for example, hold new pieces for 2 hours). During the window the pieces appear in the Queue as scheduled-but-held and can still be edited or removed.
 
 The three modes are progressive. Manual is the starting point. Autonomous-with-approval builds the trust and the feedback data. Fully Autonomous is available only after that data exists and the user chooses it. A brand can move between modes at any time. Nothing is sent until the active mode and the approval rules allow it.
 
@@ -195,6 +203,9 @@ Implementation notes:
 - Store the log in the same state as the pieces. Do not invent a confidence score; show the raw counts.
 - Keep the log redacted: no token, no vault name, no machine path.
 - The log is append-only. A user can clear it, but the clear is itself logged.
+- Each entry stores: timestamp, brand id, mode, action, piece id (if any), short reason (pattern id or “user”), and outcome.
+- The log is queryable by the Brand health summary and by the exportable decision record.
+- Retention: the log keeps at least the last 90 days or 1 000 entries, whichever is larger. Older entries can be archived to a downloadable file; they are not silently dropped.
 
 ### Approval email preferences
 
@@ -250,6 +261,9 @@ Implementation notes:
 - Targets are stored with the brand.
 - A hold is not a rejection; the user can still approve the piece.
 - The three-post rule still applies to any learned recommendation that influences the mix.
+- Evaluation window is the current calendar week (America/New_York) unless the user sets a different window.
+- A piece that would break a hard target is held and appears in the Queue with the reason. A soft target only produces a warning.
+- The user can override a hold; the override is logged.
 
 ### Dry-run / preview week
 
@@ -269,6 +283,9 @@ Implementation notes:
 - Preview pieces are stored separately or flagged so they cannot be scheduled by accident.
 - The preview respects the same guards and the three-post rule as a real run.
 - A preview can be re-run; the previous preview is replaced.
+- Preview pieces are visually distinct (dashed border or “Preview” chip) and cannot be moved to scheduled by drag-and-drop. Promotion to a real draft is an explicit action.
+- A dry-run does not send email and does not count against daily/weekly post limits.
+- If the user switches mode while a preview exists, the preview is kept but marked stale; the user must re-run it.
 
 ### Brand health summary on Brief
 
