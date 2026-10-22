@@ -597,7 +597,16 @@
                     }, item.label);
                   })));
             })),
-          section === "brief" ? h(Brief, { brand: brand, handles: handles, setHandles: setHandles, busy: busy, onSave: saveChannels }) : null,
+          section === "brief" ? h(Brief, {
+            brand: brand, handles: handles, setHandles: setHandles, busy: busy, onSave: saveChannels,
+            studio: studio,
+            onPull: async function () {
+              const saved = await run(function () {
+                return SDK.fetchJSON("/api/plugins/house-social/brands/" + brand.id + "/studio-read", { method: "POST" });
+              });
+              if (saved) await refresh(brand.id);
+            },
+          }) : null,
           section === "voice" ? h(VoiceGuide, {
             brand: brand, studio: studio, busy: busy,
             onSave: async function (body) {
@@ -779,6 +788,12 @@
             busy: busy,
             onOpen: function (id) { setActiveId(id); setSection("create"); },
             onBulk: runQueue,
+            onPull: async function () {
+              const saved = await run(function () {
+                return SDK.fetchJSON("/api/plugins/house-social/brands/" + brand.id + "/studio-read", { method: "POST" });
+              });
+              if (saved) await refresh(brand.id);
+            },
           }) : null,
           section === "approval" ? h(ApprovalDesk, {
             studio: studio,
@@ -1155,10 +1170,38 @@
     );
   }
 
+
+  function StudioRead(props) {
+    const read = props.read || {};
+    if (!read.linked) return null;
+    const learning = read.learning || {};
+    return h("div", { className: "hs-pillar" },
+      h("div", { className: "hs-name" }, "Studio"),
+      h("p", { className: "hs-note" }, "Read from Studio. Nothing is written back, and this desk does not send that queue."),
+      h("div", { className: "hs-row" },
+        read.url ? h("a", { href: read.url, target: "_blank", rel: "noopener" }, "Open Studio") : null,
+        read.cards_url ? h("a", { href: read.cards_url, target: "_blank", rel: "noopener" }, "Quote cards") : null,
+        h("button", { type: "button", className: "hs-button", disabled: props.busy, onClick: props.onPull }, "Pull from Studio")),
+      h("p", { className: "hs-note" }, learning.detail || "Nothing has been read from Studio yet."),
+      (learning.days || []).length ? h("p", { className: "hs-note" }, (learning.days || []).join(" · ")) : null,
+      h("div", { className: "hs-name" }, "Studio queue"),
+      (read.queue || []).length ? (read.queue || []).map(function (job, index) {
+        return h("p", { key: String(job.id || index) + (job.platform || ""), className: "hs-note" },
+          [job.when, job.day, job.platform, job.status, job.caption].filter(Boolean).join(" · "));
+      }) : h("p", { className: "hs-note" }, "No queued Studio posts in the last read."),
+      (read.cards || []).length ? h("div", null,
+        h("div", { className: "hs-name" }, "Quote cards"),
+        read.cards.map(function (card, index) { return h("p", { key: index, className: "hs-voice" }, card); })) : null,
+      (read.tracks || []).length ? h("p", { className: "hs-note" }, "Tracks: " + read.tracks.map(function (track) {
+        return track.artist + " — " + track.title;
+      }).join(" · ")) : null);
+  }
+
   function Brief(props) {
     const brand = props.brand;
     return h("div", { className: "hs-main" },
       h("p", { className: "hs-voice" }, brand.audience || brand.voice),
+      h(StudioRead, { read: props.studio && props.studio.studio_read, busy: props.busy, onPull: props.onPull }),
       h("p", { className: "hs-voice" }, brand.voice),
       (brand.guards || []).length ? h("ul", { className: "hs-guard" }, brand.guards.map(function (guard) {
         return h("li", { key: guard }, guard);
@@ -1882,6 +1925,7 @@
       : "No format has a clear hour yet.";
     return h("div", { className: "hs-main" },
       h("p", { className: "hs-note" }, "Draft, needs approval, approved, scheduled, on the record, or failed. Published means a post is already tied to this draft. This desk does not send."),
+      h(StudioRead, { read: props.studio && props.studio.studio_read, busy: props.busy, onPull: props.onPull }),
       suggestion.clear ? h("p", { className: "hs-note" }, suggestion.label + " is ahead across the posts. " + suggestion.detail + " A format hour wins when that format is clearly ahead.") : h("p", { className: "hs-note" }, suggestion.detail || "Not enough hours to suggest a time."),
       h("p", { className: "hs-note" }, formatLine),
       h("p", { className: "hs-note" }, queue.pace || ""),

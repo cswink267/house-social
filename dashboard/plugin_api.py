@@ -54,6 +54,7 @@ from inbox import keep_inbox_idea, keep_inbox_voice, refresh_inbox, save_inbox_r
 from reports import generate_report, report_export, write_insight
 from ideas import draft_idea, idea_brief, keep_shape, revise_idea, save_idea
 from learn import read_ledger
+from studio_read import pull_studio
 
 router = APIRouter()
 
@@ -119,6 +120,14 @@ def get_studio(brand_id: str) -> dict:
         ledger = read_ledger(ledger_dir())
     try:
         return studio(load(), brand_id, ledger)
+    except DraftError as exc:
+        _fail(exc)
+
+
+@router.post("/brands/{brand_id}/studio-read")
+def post_studio_read(brand_id: str) -> dict:
+    try:
+        return pull_studio(load(), brand_id)
     except DraftError as exc:
         _fail(exc)
 

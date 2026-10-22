@@ -4,7 +4,7 @@ A [Hermes](https://github.com/NousResearch/hermes-agent) dashboard plugin for th
 
 It does not publish. Nothing in this module sends a post.
 
-Studio (`studio.misfitmindset.com`) still owns the weekly posts, the peak posts, and the now posts. This module does not generate those.
+Studio (`studio.misfitmindset.com`) still owns the weekly posts, the peak posts, the quote cards, and the now posts. Misfit Mindset can read that queue, those cards, and the used quotes. This module does not generate them and does not write back.
 
 ## What you get
 
@@ -12,7 +12,7 @@ Each brand has the same desks.
 
 | Desk | What it holds |
 | --- | --- |
-| Brief | Audience, voice line, guards, pillars, and the public handles. |
+| Brief | Audience, voice line, guards, pillars, and the public handles. Misfit Mindset also shows the last read from Studio. |
 | Voice | Tone, personality, formality, humor, point of view, do and don't, visual notes, banned lines, preferred lines, required lines, and competitor notes. Pillars keep the angles you write. On-brand and off-brand examples can be written, pasted, or taken from posts when the gap is real. Create scores a draft and can ask for a rewrite. Each save keeps a version. |
 | Pages | The Meta app id, the page or account id, and a token. The token is written to a vault. The saved record stores the vault name. |
 | Ideas | A board or a list of sparks, competitor notes, trends, questions, and comments. One click makes a draft and opens the composer. A pattern line appears only when the posts already show it. An idea is archived as ahead only when its draft has a post at least 3× the others. Suggest uses the voice, the pillars, those posts, and the trend notes you saved. |

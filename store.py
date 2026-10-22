@@ -65,6 +65,7 @@ def empty_state() -> dict:
         "history": [],
         "goals": [],
         "recurrences": [],
+        "studio_reads": {},
     }
 
 
@@ -98,6 +99,7 @@ def load(path: Path | None = None) -> dict:
     history = raw.get("history")
     goals = raw.get("goals")
     recurrences = raw.get("recurrences")
+    studio_reads = raw.get("studio_reads")
     return {
         "version": 1,
         "channels": channels if isinstance(channels, dict) else {},
@@ -123,6 +125,7 @@ def load(path: Path | None = None) -> dict:
         "history": history if isinstance(history, list) else [],
         "goals": goals if isinstance(goals, list) else [],
         "recurrences": recurrences if isinstance(recurrences, list) else [],
+        "studio_reads": studio_reads if isinstance(studio_reads, dict) else {},
     }
 
 
@@ -615,6 +618,7 @@ def studio(state: dict, brand_id: str, ledger: dict | None = None, today=None) -
         "hashtags": _hashtags_view(state, brand_id, posts),
         "inbox": _inbox_view(state, brand_id, posts),
         "reports": _reports_view(state, brand_id),
+        "studio_read": _studio_read_view(state, brand_id),
     }
 
 
@@ -1030,6 +1034,12 @@ def _reports_view(state: dict, brand_id: str) -> dict:
     from reports import reports_for
 
     return reports_for(state, brand_id)
+
+
+def _studio_read_view(state: dict, brand_id: str) -> dict:
+    from studio_read import studio_view
+
+    return studio_view(state, brand_id)
 
 
 def resolve_brand(state: dict, brand_id: str) -> Brand:
