@@ -633,6 +633,17 @@
             busy: busy,
             onSave: saveIdea,
             onDraft: draftIdea,
+            onSuggest: async function () {
+              return run(function () {
+                return SDK.fetchJSON("/api/plugins/house-social/brands/" + brand.id + "/ideas/suggest", { method: "POST" });
+              });
+            },
+            onKeep: async function (postId) {
+              const saved = await run(function () {
+                return SDK.fetchJSON("/api/plugins/house-social/brands/" + brand.id + "/ideas/shapes/" + encodeURIComponent(postId), { method: "POST" });
+              });
+              if (saved) await refresh(brand.id);
+            },
           }) : null,
           section === "create" ? h(CreatePanel, {
             brand: brand, idea: idea, setIdea: setIdea, pillar: pillar, setPillar: setPillar,
@@ -1561,6 +1572,7 @@
     const [mode, setMode] = useState("board");
     const [source, setSource] = useState("all");
     const [draft, setDraft] = useState({ text: "", source: "spark", priority: "normal", tags: "", note: "", link: "" });
+    const [suggested, setSuggested] = useState([]);
     const ideas = (board.ideas || []).filter(function (item) {
       return source === "all" || item.source === source;
     });
@@ -1584,6 +1596,8 @@
         h("div", { className: "hs-name" }, item.source_label + " · " + item.priority),
         h("p", { className: "hs-voice" }, item.text),
         item.note ? h("p", { className: "hs-note" }, item.note) : null,
+        item.pattern ? h("p", { className: "hs-note" }, item.pattern) : null,
+        item.performed ? h("p", { className: "hs-ok" }, "This draft has a post that is at least 3× the others.") : null,
         (item.tags || []).length ? h("p", { className: "hs-note" }, item.tags.join(", ")) : null,
         item.link ? h("a", { href: item.link, target: "_blank", rel: "noopener noreferrer" }, "Open the link") : null,
         h("button", {
@@ -1595,7 +1609,7 @@
       return { id: name, items: ideas.filter(function (item) { return item.source === name; }) };
     });
     return h("div", { className: "hs-main" },
-      h("p", { className: "hs-note" }, "Sparks, competitor notes, trends, and questions. The board keeps them until you turn one into a draft. It does not fetch the page you link."),
+      h("p", { className: "hs-note" }, "Sparks, competitor notes, trends, questions, and comments. Make this a draft opens it in the composer. A pattern line appears only when the posts already show one. Nothing here is a predicted score."),
       h("form", { className: "hs-cols", onSubmit: save },
         h("textarea", { className: "hs-area", value: draft.text, placeholder: "The idea, still rough", onChange: function (event) { setField("text", event.target.value); } }),
         h("select", { className: "hs-field", value: draft.source, onChange: function (event) { setField("source", event.target.value); } },
@@ -1606,6 +1620,30 @@
         h("input", { className: "hs-field", value: draft.link, placeholder: "Link, if you have one", onChange: function (event) { setField("link", event.target.value); } }),
         h("input", { className: "hs-field", value: draft.note, placeholder: "Note", onChange: function (event) { setField("note", event.target.value); } }),
         h("button", { type: "submit", className: "hs-button", disabled: props.busy || !draft.text.trim() }, "Save idea")),
+      h("div", { className: "hs-row" },
+        h("button", { type: "button", className: "hs-button", disabled: props.busy, onClick: async function () {
+          const found = props.onSuggest ? await props.onSuggest() : null;
+          if (found && found.ideas) setSuggested(found.ideas);
+        } }, "Suggest from the voice"),
+        (suggested || []).map(function (text, index) {
+          return h("button", { key: index, type: "button", className: "hs-tab", disabled: props.busy, onClick: function () { props.onSave({ text: text, source: "spark", priority: "normal" }); } }, "Keep");
+        })),
+      (suggested || []).map(function (text, index) { return h("p", { key: "s" + index, className: "hs-voice" }, text); }),
+      h("p", { className: "hs-note" }, (board.lesson && board.lesson.detail) || ""),
+      h("div", { className: "hs-name" }, "Ahead after a draft"),
+      (board.archive || []).length ? (board.archive || []).map(card) : h("p", { className: "hs-note" }, "No drafted idea has a post that is at least 3× the others yet."),
+      h("div", { className: "hs-name" }, "Shapes from posts that are ahead"),
+      (board.shapes || []).length ? (board.shapes || []).map(function (item) {
+        return h("div", { key: item.id, className: "hs-row" },
+          h("span", { className: "hs-note" }, item.engagements + " · " + item.preview),
+          h("button", { type: "button", className: "hs-tab", disabled: props.busy, onClick: function () { props.onKeep(item.id); } }, "Keep this shape"));
+      }) : h("p", { className: "hs-note" }, "No post is at least 3× the others."),
+      h("div", { className: "hs-name" }, "Comments to keep"),
+      (board.comments || []).map(function (item) {
+        return h("div", { key: item.id, className: "hs-row" },
+          h("span", { className: "hs-note" }, item.text),
+          h("button", { type: "button", className: "hs-tab", disabled: props.busy, onClick: function () { props.onSave({ text: item.text, source: "comment", inbox_id: item.id, note: item.author || "" }); } }, "Keep"));
+      }),
       h("div", { className: "hs-row" },
         h("button", { type: "button", className: "hs-tab" + (mode === "board" ? " is-on" : ""), onClick: function () { setMode("board"); } }, "Board"),
         h("button", { type: "button", className: "hs-tab" + (mode === "list" ? " is-on" : ""), onClick: function () { setMode("list"); } }, "List"),

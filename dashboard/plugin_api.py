@@ -51,7 +51,7 @@ from voice import guide_for
 from hashtags import apply_set, save_set, save_trend
 from inbox import refresh_inbox, save_inbox_reply, suggest_inbox_reply
 from reports import generate_report, report_export
-from ideas import draft_idea, revise_idea, save_idea
+from ideas import draft_idea, idea_brief, keep_shape, revise_idea, save_idea
 from learn import read_ledger
 
 router = APIRouter()
@@ -318,6 +318,35 @@ def patch_campaign(campaign_id: str, body: dict) -> dict:
 def post_campaign_attach(campaign_id: str, body: dict) -> dict:
     try:
         return attach_campaign(load(), campaign_id, body)
+    except DraftError as exc:
+        _fail(exc)
+
+
+@router.post("/brands/{brand_id}/ideas/suggest")
+def post_idea_suggest(brand_id: str) -> dict:
+    state = load()
+    try:
+        brand = resolve_brand(state, brand_id)
+    except DraftError as exc:
+        _fail(exc)
+    ledger = {"posts": [], "days": []}
+    if brand.id == "josie-blackthorn":
+        ledger = read_ledger(ledger_dir())
+    posts, _days = brand_history(state, brand.id, ledger)
+    pillars = next((item.get("pillars") or [] for item in roster(state) if item["id"] == brand.id), [])
+    trends = [item for item in state.get("trends") or [] if item.get("brand_id") == brand.id]
+    guide = guide_for(brand.id, (state.get("voices") or {}).get(brand.id))
+    try:
+        result = assist(guide, "ideas", idea_brief(pillars, posts, trends), complete=ollama_complete, brand_tags=tuple(brand.tags))
+    except DraftError as exc:
+        _fail(exc)
+    return {"ideas": [item.get("text") or "" for item in result.get("options") or [] if item.get("text")]}
+
+
+@router.post("/brands/{brand_id}/ideas/shapes/{post_id}")
+def post_keep_shape(brand_id: str, post_id: str) -> dict:
+    try:
+        return keep_shape(load(), brand_id, post_id)
     except DraftError as exc:
         _fail(exc)
 
