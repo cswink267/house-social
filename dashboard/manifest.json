@@ -1,0 +1,14 @@
+{
+  "name": "house-social",
+  "label": "House Social",
+  "description": "Brand roster and drafts for Facebook, Instagram, and Threads. Nothing is sent until a publisher is attached.",
+  "icon": "MessageSquare",
+  "version": "1.0.0",
+  "tab": {
+    "path": "/house-social",
+    "position": "end"
+  },
+  "entry": "dist/index.js",
+  "css": "dist/style.css",
+  "api": "plugin_api.py"
+}
