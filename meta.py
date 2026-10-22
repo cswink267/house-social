@@ -278,13 +278,13 @@ def gather_inbox(platform: str, external_id: str, token: str, post_ids: list[str
 def _comments(platform: str, post_id: str, token: str, fetch) -> list[dict]:
     if platform == "facebook":
         payload = fetch(f"{GRAPH}/{post_id}/comments", token, {"fields": "id,message,created_time,permalink_url", "limit": "5"})
-        return [_item(row, platform=platform, kind="comment", text=row.get("message"), when=row.get("created_time"), link=row.get("permalink_url")) for row in _rows(payload)]
+        return [_item(row, platform=platform, kind="comment", text=row.get("message"), when=row.get("created_time"), link=row.get("permalink_url"), post_id=post_id) for row in _rows(payload)]
     if platform == "instagram":
         payload = fetch(f"{GRAPH}/{post_id}/comments", token, {"fields": "id,text,timestamp,username", "limit": "5"})
-        return [_item(row, platform=platform, kind="comment", text=row.get("text"), when=row.get("timestamp"), author=row.get("username")) for row in _rows(payload)]
+        return [_item(row, platform=platform, kind="comment", text=row.get("text"), when=row.get("timestamp"), author=row.get("username"), post_id=post_id) for row in _rows(payload)]
     if platform == "threads":
         payload = fetch(f"{THREADS}/{post_id}/replies", token, {"fields": "id,text,timestamp,username,permalink", "limit": "5"})
-        return [_item(row, platform=platform, kind="comment", text=row.get("text"), when=row.get("timestamp"), author=row.get("username"), link=row.get("permalink")) for row in _rows(payload)]
+        return [_item(row, platform=platform, kind="comment", text=row.get("text"), when=row.get("timestamp"), author=row.get("username"), link=row.get("permalink"), post_id=post_id) for row in _rows(payload)]
     raise MetaError("Channels are facebook, instagram, and threads.")
 
 
@@ -325,7 +325,7 @@ def _rows(payload: dict) -> list[dict]:
     return [row for row in payload.get("data") or [] if isinstance(row, dict) and (row.get("id") or row.get("message"))]
 
 
-def _item(row: dict, *, platform: str, kind: str, text, when, author=None, link=None, item_id: str = "") -> dict:
+def _item(row: dict, *, platform: str, kind: str, text, when, author=None, link=None, item_id: str = "", post_id: str = "") -> dict:
     identity = item_id or str(row.get("id") or "")
     who = author or ""
     if not who and isinstance(row.get("from"), dict):
@@ -338,4 +338,5 @@ def _item(row: dict, *, platform: str, kind: str, text, when, author=None, link=
             "text": redact(str(text or ""))[:500],
         "at": _iso(str(when or "")),
         "permalink": str(link or "")[:300],
+        "post_id": str(post_id or "")[:80],
     }

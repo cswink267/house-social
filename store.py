@@ -549,7 +549,7 @@ def studio(state: dict, brand_id: str, ledger: dict | None = None, today=None) -
         "ideas": _ideas_view(state, brand_id, posts),
         "approval": _approval_view(state, brand_id),
         "hashtags": _hashtags_view(state, brand_id, posts),
-        "inbox": _inbox_view(state, brand_id),
+        "inbox": _inbox_view(state, brand_id, posts),
         "reports": _reports_view(state, brand_id),
     }
 
@@ -956,10 +956,10 @@ def _hashtags_view(state: dict, brand_id: str, posts: list[dict]) -> dict:
     return hashtags_for(state, brand_id, posts)
 
 
-def _inbox_view(state: dict, brand_id: str) -> dict:
+def _inbox_view(state: dict, brand_id: str, posts: list[dict] | None = None) -> dict:
     from inbox import inbox_for
 
-    return inbox_for(state, brand_id)
+    return inbox_for(state, brand_id, posts)
 
 
 def _reports_view(state: dict, brand_id: str) -> dict:

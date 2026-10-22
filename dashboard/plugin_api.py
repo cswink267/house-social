@@ -49,7 +49,7 @@ from campaigns import attach_campaign, clone_campaign, keep_retrospective, kind_
 from queue_desk import bulk_queue
 from voice import guide_for
 from hashtags import apply_set, save_set, save_trend, use_ahead
-from inbox import refresh_inbox, save_inbox_reply, suggest_inbox_reply
+from inbox import keep_inbox_idea, keep_inbox_voice, refresh_inbox, save_inbox_reply, suggest_inbox_reply
 from reports import generate_report, report_export, write_insight
 from ideas import draft_idea, idea_brief, keep_shape, revise_idea, save_idea
 from learn import read_ledger
@@ -565,6 +565,31 @@ def post_inbox_suggest(item_id: str) -> dict:
         brand_id = str(item.get("brand_id") or "")
         guide = guide_for(brand_id, (state.get("voices") or {}).get(brand_id))
         return suggest_inbox_reply(state, item_id, guide, ollama_complete)
+    except DraftError as exc:
+        _fail(exc)
+
+
+@router.post("/inbox/{item_id}/idea")
+def post_inbox_idea(item_id: str) -> dict:
+    state = load()
+    item = next((row for row in state.get("inbox") or [] if row.get("id") == item_id), None)
+    if item is None:
+        _fail(DraftError("That note is not in the inbox."))
+    brand_id = str(item.get("brand_id") or "")
+    ledger = {"posts": [], "days": []}
+    if brand_id == "josie-blackthorn":
+        ledger = read_ledger(ledger_dir())
+    posts, _days = brand_history(state, brand_id, ledger)
+    try:
+        return keep_inbox_idea(state, item_id, posts)
+    except DraftError as exc:
+        _fail(exc)
+
+
+@router.post("/inbox/{item_id}/voice")
+def post_inbox_voice(item_id: str, body: dict) -> dict:
+    try:
+        return keep_inbox_voice(load(), item_id, reply=str((body or {}).get("reply") or ""))
     except DraftError as exc:
         _fail(exc)
 

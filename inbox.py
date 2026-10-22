@@ -15,9 +15,14 @@ from meta import redact
 from store import resolve_brand, save
 
 
-def inbox_for(state: dict, brand_id: str) -> dict:
+def inbox_for(state: dict, brand_id: str, posts: list[dict] | None = None) -> dict:
     brand = resolve_brand(state, brand_id)
-    items = [_public(item) for item in state.get("inbox") or [] if item.get("brand_id") == brand.id]
+    ahead = _ahead_posts(posts or [])
+    items = [
+        _noted(item, ahead)
+        for item in state.get("inbox") or []
+        if item.get("brand_id") == brand.id
+    ]
     items.sort(key=lambda item: item.get("at") or "", reverse=True)
     items.sort(key=lambda item: 0 if item["needs_attention"] else 1)
     errors = list((state.get("inbox_errors") or {}).get(brand.id) or [])
@@ -82,9 +87,48 @@ def suggest_inbox_reply(state: dict, item_id: str, guide: dict, complete, path: 
     result = assist(guide, "reply", item.get("text") or "", complete=complete)
     updated, saved = _replace(state, item_id, {"reply": result["text"]})
     save(updated, path)
-    public = _public(saved)
+    public = _noted(saved, _ahead_posts([]))
     public["voice"] = (result.get("options") or [{}])[0].get("voice")
     return public
+
+
+def keep_inbox_idea(state: dict, item_id: str, posts: list[dict] | None, path: Path | None = None) -> dict:
+    from ideas import save_idea
+
+    _updated, item = _replace(state, item_id, {})
+    if item.get("kind") == "dm":
+        raise DraftError("A message stays in the inbox. It is not a content idea.")
+    noted = _noted(item, _ahead_posts(posts or []))
+    if not noted["question"] and not noted["ahead"]:
+        raise DraftError("This note is not a question, and it is not on a post that is at least 3× the others.")
+    return save_idea(
+        state,
+        str(item.get("brand_id") or ""),
+        {
+            "text": noted["text"],
+            "source": "comment",
+            "inbox_id": item.get("id") or "",
+            "note": str(item.get("author") or ""),
+        },
+        path,
+    )
+
+
+def keep_inbox_voice(state: dict, item_id: str, reply: str = "", path: Path | None = None) -> dict:
+    from store import add_voice_post
+
+    _updated, item = _replace(state, item_id, {})
+    text = str(reply or item.get("reply") or "").strip()
+    if not text:
+        raise DraftError("Write the reply before it can go into the voice.")
+    if len(text) > 500:
+        raise DraftError("That reply is too long to keep in the voice.")
+    return add_voice_post(
+        state,
+        str(item.get("brand_id") or ""),
+        {"text": text, "kind": "on", "title": "Inbox reply"},
+        path,
+    )
 
 
 def _merge(previous: list[dict], fresh: list[dict], brand_id: str) -> list[dict]:
@@ -137,5 +181,34 @@ def _public(item: dict) -> dict:
         "reply": item.get("reply") or "",
         "dismissed": dismissed,
         "needs_attention": needs,
+        "post_id": str(item.get("post_id") or ""),
         "sending": False,
     }
+
+
+def _noted(item: dict, ahead: dict[str, dict]) -> dict:
+    public = _public(item)
+    post_id = public["post_id"]
+    post = ahead.get(post_id) if post_id else None
+    question = "?" in public["text"] and not public["dismissed"]
+    flagged = bool(post) and not public["dismissed"] and public["kind"] != "dm"
+    if flagged:
+        public["needs_attention"] = True
+    public["ahead"] = flagged
+    public["question"] = question and public["kind"] != "dm"
+    if flagged:
+        public["prompt"] = (
+            f"This is on a post with {int(post.get('engagements') or 0)} engagements. "
+            "That post is at least 3× the others."
+        )
+    elif public["question"]:
+        public["prompt"] = "This is a question. It can be kept as an idea. It is not a score."
+    else:
+        public["prompt"] = "This note is not on a post that is at least 3× the others."
+    return public
+
+
+def _ahead_posts(posts: list[dict]) -> dict[str, dict]:
+    from analytics_desk import _alerts
+
+    return {str(item.get("id") or ""): item for item in _alerts(posts) if item.get("id")}

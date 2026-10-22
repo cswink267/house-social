@@ -90,3 +90,59 @@ def test_inbox_snapshot_keeps_replies_and_redacts_tokens(tmp_path: Path):
     threads = gather_inbox("threads", "user", "tok", [], getter=getter)
     assert any("Threads messages are not" in line for line in threads["errors"])
     assert any(section["id"] == "inbox" for section in roster(empty_state())[0]["sections"])
+
+
+def test_a_comment_becomes_an_idea_only_when_the_post_is_ahead_or_it_asks(tmp_path: Path):
+    path = tmp_path / "state.json"
+    posts = [{"id": "big", "engagements": 30, "preview": "You felt that dread."}]
+    posts += [{"id": f"q{i}", "engagements": 4, "preview": "A quiet line."} for i in range(3)]
+    state = {
+        **empty_state(),
+        "inbox": [
+            {"id": "c-ahead", "brand_id": "misfit-mindset", "kind": "comment", "platform": "facebook", "author": "A", "text": "Say more about the dread.", "post_id": "big", "reply": ""},
+            {"id": "c-ask", "brand_id": "misfit-mindset", "kind": "comment", "platform": "facebook", "author": "B", "text": "Does the night keep it?", "post_id": "q0", "reply": "You can leave it there."},
+            {"id": "c-quiet", "brand_id": "misfit-mindset", "kind": "comment", "platform": "facebook", "author": "C", "text": "Nice.", "post_id": "q0", "reply": ""},
+            {"id": "c-dm", "brand_id": "misfit-mindset", "kind": "dm", "platform": "facebook", "author": "D", "text": "Can you answer this?", "reply": ""},
+        ],
+    }
+    save(state, path)
+    from inbox import inbox_for, keep_inbox_idea, keep_inbox_voice
+
+    view = inbox_for(load(path), "misfit-mindset", posts)
+    ahead = next(item for item in view["items"] if item["id"] == "c-ahead")
+    assert ahead["ahead"] is True
+    assert ahead["needs_attention"] is True
+    assert "30" in ahead["prompt"]
+    assert "3×" in ahead["prompt"]
+    assert "%" not in ahead["prompt"]
+    assert ahead["sending"] is False
+    quiet = next(item for item in view["items"] if item["id"] == "c-quiet")
+    assert quiet["ahead"] is False
+    assert "not on a post" in quiet["prompt"]
+    kept = keep_inbox_idea(load(path), "c-ahead", posts, path)
+    assert kept["source"] == "comment"
+    assert kept["text"] == "Say more about the dread."
+    asked = keep_inbox_idea(load(path), "c-ask", posts, path)
+    assert "?" in asked["text"]
+    try:
+        keep_inbox_idea(load(path), "c-quiet", posts, path)
+    except Exception as exc:
+        assert "not a question" in str(exc)
+    else:
+        raise AssertionError("a quiet comment became an idea")
+    try:
+        keep_inbox_idea(load(path), "c-dm", posts, path)
+    except Exception as exc:
+        assert "not a content idea" in str(exc)
+    else:
+        raise AssertionError("a message became an idea")
+    try:
+        keep_inbox_voice(load(path), "c-ahead", path=path)
+    except Exception as exc:
+        assert "Write the reply" in str(exc)
+    else:
+        raise AssertionError("an empty reply entered the voice")
+    voiced = keep_inbox_voice(load(path), "c-ask", path=path)
+    texts = [item["text"] for item in voiced["voice"]["examples"]]
+    assert "You can leave it there." in texts
+    assert "Does the night keep it?" not in texts

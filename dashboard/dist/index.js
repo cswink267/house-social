@@ -835,6 +835,22 @@
             onRefresh: refreshInbox,
             onReply: saveInboxDraft,
             onSuggest: suggestInbox,
+            onIdea: async function (id) {
+              const saved = await run(function () {
+                return SDK.fetchJSON("/api/plugins/house-social/inbox/" + encodeURIComponent(id) + "/idea", { method: "POST" });
+              });
+              if (saved) await refresh(brand.id);
+            },
+            onVoice: async function (id, reply) {
+              const saved = await run(function () {
+                return SDK.fetchJSON("/api/plugins/house-social/inbox/" + encodeURIComponent(id) + "/voice", {
+                  method: "POST",
+                  headers: { "Content-Type": "application/json" },
+                  body: JSON.stringify({ reply: reply || "" }),
+                });
+              });
+              if (saved) await refresh(brand.id);
+            },
           }) : null,
           section === "reports" ? h(ReportsDesk, {
             studio: studio,
@@ -2311,14 +2327,15 @@
     const [drafts, setDrafts] = useState({});
     const items = (desk.items || []).filter(function (item) {
       if (kind === "attention") return item.needs_attention;
+      if (kind === "ahead") return item.ahead;
       if (kind === "all") return true;
       return item.kind === kind;
     });
     return h("div", { className: "hs-main" },
-      h("p", { className: "hs-note" }, "Recent comments, mentions, and messages that this brand's token can read. A reply stays a draft on this desk. Nothing is sent."),
+      h("p", { className: "hs-note" }, "Recent comments, mentions, and messages. A comment is flagged when its post is at least 3× the others. Keep as an idea stores the comment. Keep this reply in the voice stores the reply, not their words. Nothing is sent."),
       h("div", { className: "hs-row" },
         h("button", { type: "button", className: "hs-button", disabled: props.busy, onClick: props.onRefresh }, "Refresh"),
-        [["attention", "Needs attention"], ["all", "All"], ["comment", "Comments"], ["mention", "Mentions"], ["dm", "Messages"]].map(function (pair) {
+        [["attention", "Needs attention"], ["ahead", "On a post that is ahead"], ["all", "All"], ["comment", "Comments"], ["mention", "Mentions"], ["dm", "Messages"]].map(function (pair) {
           return h("button", {
             key: pair[0], type: "button",
             className: "hs-tab" + (kind === pair[0] ? " is-on" : ""),
@@ -2328,9 +2345,11 @@
       (desk.errors || []).map(function (error) { return h("p", { key: error, className: "hs-bad" }, error); }),
       items.length ? items.map(function (item) {
         const value = drafts[item.id] != null ? drafts[item.id] : (item.reply || "");
+        const canIdea = item.kind !== "dm" && (item.question || item.ahead);
         return h("div", { key: item.id, className: "hs-pillar" },
           h("div", { className: "hs-name" }, item.kind + " · " + item.platform + " · " + item.author),
           h("p", { className: "hs-voice" }, item.text),
+          item.prompt ? h("p", { className: item.ahead ? "hs-ok" : "hs-note" }, item.prompt) : null,
           item.permalink ? h("a", { href: item.permalink, target: "_blank", rel: "noopener noreferrer" }, "Open it") : null,
           h("textarea", {
             className: "hs-area",
@@ -2344,6 +2363,8 @@
           h("div", { className: "hs-row" },
             h("button", { type: "button", className: "hs-tab", disabled: props.busy, onClick: function () { props.onSuggest(item.id); } }, "Suggest a reply"),
             h("button", { type: "button", className: "hs-button", disabled: props.busy, onClick: function () { props.onReply(item.id, { reply: value }); } }, "Save draft"),
+            canIdea ? h("button", { type: "button", className: "hs-tab", disabled: props.busy, onClick: function () { props.onIdea(item.id); } }, "Keep as an idea") : null,
+            h("button", { type: "button", className: "hs-tab", disabled: props.busy || !value.trim(), onClick: function () { props.onVoice(item.id, value); } }, "Keep this reply in the voice"),
             h("button", { type: "button", className: "hs-tab", disabled: props.busy, onClick: function () { props.onReply(item.id, { reply: value, dismissed: true }); } }, "Dismiss")));
       }) : h("p", { className: "hs-note" }, "Nothing in this view. Refresh after a page is connected."),
     );
