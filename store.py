@@ -339,7 +339,7 @@ def studio(state: dict, brand_id: str, ledger: dict | None = None, today=None) -
         "posting": False,
         "brand": row,
         "calendar": _calendar(pieces, posts, when),
-        "performance": performance(posts, page_days),
+        "performance": performance(posts, page_days, pieces, when),
         "feed": sorted(posts, key=lambda post: str(post.get("published_at") or ""), reverse=True)[:50],
         "lessons": found,
         "experiments": open_experiments,

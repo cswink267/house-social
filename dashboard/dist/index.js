@@ -1184,7 +1184,12 @@
   }
 
   function Performance(props) {
-    const perf = (props.studio && props.studio.performance) || { page_days: [], recorded_days: [], hours: [], posts: [], source: "none" };
+    const perf = (props.studio && props.studio.performance) || { page_days: [], recorded_days: [], hours: [], posts: [], source: "none", ranges: {} };
+    const [range, setRange] = useState("7");
+    const [campaign, setCampaign] = useState("");
+    const report = (perf.ranges && perf.ranges[range]) || { totals: {}, comparison: { lines: [] }, campaigns: [], formats: [], top: [] };
+    const totals = report.totals || {};
+    const chosen = (report.campaigns || []).find(function (item) { return item.name === campaign; }) || (report.campaigns || [])[0] || null;
     const pageDays = perf.page_days || [];
     const recordedDays = perf.recorded_days || [];
     const usePage = pageDays.length > 0;
@@ -1201,7 +1206,52 @@
     const picked = pageDays.concat(recordedDays).find(function (day) { return day.id === props.pickedDay; });
     const post = posts.find(function (item) { return item.id === props.pickedPost; });
     const hourPosts = posts.filter(function (item) { return String(item.local_hour) === props.pickedHour; });
+    const formatPoints = (report.formats || []).map(function (item) {
+      return { id: item.id, label: item.label + " · n=" + item.n, value: item.mean, raw: item };
+    });
+    function tile(label, value, note) {
+      return h("div", { key: label, className: "hs-pillar" },
+        h("div", { className: "hs-note" }, label),
+        h("div", { className: "hs-name" }, value == null ? "Not in the pull" : String(value)),
+        note ? h("div", { className: "hs-note" }, note) : null);
+    }
     return h("div", { className: "hs-main" },
+      h("p", { className: "hs-note" }, "Numbers for this brand only. A missing pull stays missing. Nothing here is a rate unless the count exists."),
+      h("div", { className: "hs-row" },
+        [["7", "7 days"], ["28", "28 days"], ["90", "90 days"], ["all", "All"]].map(function (pair) {
+          return h("button", {
+            key: pair[0], type: "button",
+            className: "hs-tab" + (range === pair[0] ? " is-on" : ""),
+            onClick: function () { setRange(pair[0]); },
+          }, pair[1]);
+        })),
+      h("div", { className: "hs-previews" },
+        tile("Reach", totals.reach, totals.reach_note),
+        tile("Engagements", totals.engagements, totals.posts + " posts"),
+        tile("Saves", totals.saves, totals.saves_note),
+        tile("Shares", totals.shares, ""),
+        tile("Follower change", totals.growth, totals.growth_note)),
+      h("div", { className: "hs-name" }, (report.comparison && report.comparison.label) || "Comparison"),
+      ((report.comparison && report.comparison.lines) || []).map(function (line) {
+        return h("p", { key: line, className: "hs-note" }, line);
+      }),
+      h("div", { className: "hs-name" }, "Campaign against the other posts"),
+      (report.campaigns || []).some(function (item) { return item.name; }) ? h("select", {
+        className: "hs-field",
+        value: chosen ? chosen.name : "",
+        onChange: function (event) { setCampaign(event.target.value); },
+      }, (report.campaigns || []).filter(function (item) { return item.name; }).map(function (item) {
+        return h("option", { key: item.name, value: item.name }, item.name);
+      })) : null,
+      chosen ? h("p", { className: "hs-note" }, chosen.detail) : null,
+      h(BarChart, { label: "Mean engagements by format", points: formatPoints, empty: "No format in this window." }),
+      h("div", { className: "hs-name" }, "Top posts"),
+      (report.top || []).length ? report.top.map(function (item) {
+        return h("div", { key: item.id, className: "hs-pillar" },
+          h("div", { className: "hs-name" }, item.engagements + " engagements"),
+          h("div", { className: "hs-note" }, [item.platform, item.format, item.shares + " shares", item.saves == null ? "" : item.saves + " saves", item.preview].filter(Boolean).join(" · ")),
+          item.permalink ? h("a", { href: item.permalink, target: "_blank", rel: "noopener noreferrer" }, "Open the post") : null);
+      }) : h("p", { className: "hs-note" }, "No posts in this window."),
       h("p", { className: "hs-note" }, usePage
         ? "Page totals from the Facebook ledger. A bar is a day. Click it. These are not estimated."
         : "No page ledger for this brand. Record a result and the bars are the posts you logged."),
@@ -1229,12 +1279,12 @@
   }
 
   function RecordForm(props) {
-    const [form, setForm] = useState({ platform: "facebook", format: "unknown", published_at: "", local_hour: "", impressions: "", engagements: "", likes: "", comments: "", shares: "", note: "" });
+    const [form, setForm] = useState({ platform: "facebook", format: "unknown", published_at: "", local_hour: "", impressions: "", engagements: "", likes: "", comments: "", shares: "", saves: "", follows: "", note: "" });
     function setField(field, value) { setForm(function (current) { return Object.assign({}, current, { [field]: value }); }); }
     async function submit(event) {
       event.preventDefault();
       const metrics = {};
-      ["impressions", "engagements", "likes", "comments", "shares"].forEach(function (key) {
+      ["impressions", "engagements", "likes", "comments", "shares", "saves", "follows"].forEach(function (key) {
         if (form[key] !== "") metrics[key] = Number(form[key]);
       });
       const body = { platform: form.platform, format: form.format, metrics: metrics, note: form.note, preview: form.note };
@@ -1251,7 +1301,7 @@
           ["unknown"].concat(FORMATS).map(function (item) { return h("option", { key: item, value: item }, item); })),
         h("input", { className: "hs-field", type: "datetime-local", value: form.published_at, onChange: function (event) { setField("published_at", event.target.value); } }),
         h("input", { className: "hs-field", placeholder: "local hour 0-23", value: form.local_hour, onChange: function (event) { setField("local_hour", event.target.value); } }),
-        ["impressions", "engagements", "likes", "comments", "shares"].map(function (key) {
+        ["impressions", "engagements", "likes", "comments", "shares", "saves", "follows"].map(function (key) {
           return h("input", { key: key, className: "hs-field", placeholder: key, value: form[key], onChange: function (event) { setField(key, event.target.value); } });
         })),
       h("input", { className: "hs-field", placeholder: "What the post was", value: form.note, onChange: function (event) { setField("note", event.target.value); } }),
