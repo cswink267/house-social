@@ -78,6 +78,12 @@ def _prepare(idea: str) -> tuple[str, list[str]]:
     return body, pulled
 
 
+def suggest_hashtags(text: str, brand_tags: tuple[str, ...] = (), extra: list[str] | None = None) -> list[str]:
+    """Tags already in the words, then the brand's own tags. Five at most."""
+    pulled = _HASHTAG.findall(text or "")
+    return _tags([*pulled, *(extra or [])], tuple(brand_tags))
+
+
 def _tags(pulled: list[str], brand_tags: tuple[str, ...]) -> list[str]:
     seen: list[str] = []
     for tag in [*pulled, *brand_tags]:

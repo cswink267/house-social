@@ -218,7 +218,7 @@ SECTIONS = (
     {"id": "brief", "label": "Brief"},
     {"id": "voice", "label": "Voice"},
     {"id": "pages", "label": "Pages"},
-    {"id": "create", "label": "Create"},
+    {"id": "create", "label": "Composer"},
     {"id": "library", "label": "Library"},
     {"id": "calendar", "label": "Calendar"},
     {"id": "performance", "label": "Performance"},

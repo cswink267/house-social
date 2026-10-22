@@ -15,7 +15,7 @@ Each brand has the same desks.
 | Brief | Audience, voice line, guards, pillars, and the public handles. |
 | Voice | Tone, personality, do and don't, visual notes, banned lines, required lines, and an example. Create can score a draft against that guide. |
 | Pages | The Meta app id, the page or account id, and a token. The token is written to a vault. The saved record stores the vault name. |
-| Create | One idea, shaped into three different drafts. Ready and scheduled are blocked when the brand rules fail. |
+| Composer | The creation hub. Facebook, Instagram, and Threads each get a preview, a character count, a first comment, and media from the library. Hashtags are suggested from the brand and the draft. The assistant can rewrite, shorten, expand, vary, hook, or caption an image, and the brand voice guide is the rule. |
 | Library | Images, video, carousels, templates, logos, and copy blocks. Tags, search, folders, and version history. Use on a piece or a live post, and the card shows the engagements that use actually earned. |
 | Calendar | Month, week, and day. Planned, drafted, ready, scheduled, and published. Drag a piece onto a day. Filter by platform, format, pillar, or campaign. |
 | Performance | Bars from pulled posts or a local ledger. A bar is a real total. |
@@ -36,6 +36,8 @@ Add `house-social` to `plugins.enabled` in `~/.hermes/config.yaml`. Restart the 
 The web tab is `House Social`. The desktop pane lists the roster. Both talk to `/api/plugins/house-social/`.
 
 State is not in this repository. Drafts, connections, and pull results live in `~/.hermes/plugin-data/house-social/state.json`. Override that with `HOUSE_SOCIAL_STATE`. Library files live in a sibling `assets` directory. Override that with `HOUSE_SOCIAL_ASSETS`. Neither directory belongs in git.
+
+The assistant calls a local OpenAI-compatible endpoint. `HOUSE_SOCIAL_AI_URL` defaults to `http://127.0.0.1:11434/v1/chat/completions`. `HOUSE_SOCIAL_AI_MODEL` defaults to `qwen3.5:9b`. Captions use `HOUSE_SOCIAL_VISION_MODEL`, default `moondream`. No key lives in this repository. If the endpoint is down, the composer says the assistant is offline.
 
 ## Tokens
 
@@ -72,6 +74,7 @@ plugin.yaml              plugin name and version
 __init__.py              roster and draft tools
 brands.py                brands, pillars, desks
 adapt.py                 one idea, three different drafts
+assist.py                voice-bound rewrites, variations, hooks, and captions
 voice.py                 guides and the voice checklist
 library.py               assets, versions, and use
 store.py                 state, connections, calendar, pulls

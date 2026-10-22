@@ -12,7 +12,8 @@ ROOT = Path(__file__).resolve().parents[1]
 if str(ROOT) not in sys.path:
     sys.path.insert(0, str(ROOT))
 
-from adapt import DraftError
+from adapt import DraftError, LIMITS, JOSIE_CARD
+from assist import assist, ollama_complete
 from brands import PLATFORMS
 from library import library_for, open_asset_file, record_use, revise_asset, save_asset
 from store import (
@@ -23,6 +24,7 @@ from store import (
     load,
     pull_brand,
     record_stat,
+    resolve_brand,
     roster,
     save_connection,
     save_voice,
@@ -31,6 +33,7 @@ from store import (
     update_piece,
     voice_check_brand,
 )
+from voice import guide_for
 from learn import read_ledger
 
 router = APIRouter()
@@ -42,7 +45,7 @@ def _fail(exc: DraftError) -> None:
 
 @router.get("/roster")
 def get_roster() -> dict:
-    return {"posting": False, "platforms": list(PLATFORMS), "brands": roster(load())}
+    return {"posting": False, "platforms": list(PLATFORMS), "limits": LIMITS, "card_limit": JOSIE_CARD, "brands": roster(load())}
 
 
 @router.post("/brands")
@@ -148,6 +151,37 @@ def get_asset_file(asset_id: str, version: str = "", frame: int | None = None):
     except DraftError as exc:
         _fail(exc)
     return FileResponse(found["path"], media_type=found["mime"], filename=found["name"])
+
+
+@router.post("/brands/{brand_id}/assist")
+def post_assist(brand_id: str, body: dict) -> dict:
+    if not isinstance(body, dict):
+        _fail(DraftError("The assistant needs a request."))
+    state = load()
+    try:
+        brand = resolve_brand(state, brand_id)
+        guide = guide_for(brand.id, (state.get("voices") or {}).get(brand.id))
+        image = None
+        mime = ""
+        asset_id = str(body.get("asset_id") or "")
+        if asset_id:
+            owned = next((item for item in state.get("assets") or [] if item.get("id") == asset_id), None)
+            if not owned or owned.get("brand_id") != brand.id:
+                raise DraftError("That asset belongs to another brand.")
+            found = open_asset_file(state, asset_id)
+            image = Path(found["path"]).read_bytes()
+            mime = found["mime"]
+        return assist(
+            guide,
+            str(body.get("action") or ""),
+            str(body.get("text") or ""),
+            complete=ollama_complete,
+            image=image,
+            mime=mime,
+            brand_tags=tuple(brand.tags),
+        )
+    except DraftError as exc:
+        _fail(exc)
 
 
 @router.post("/stats")

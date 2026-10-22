@@ -72,6 +72,10 @@
     const [fresh, setFresh] = useState({ id: "", name: "", site: "", voice: "" });
     const [voiceCheck, setVoiceCheck] = useState(null);
     const [library, setLibrary] = useState({ assets: [], folders: [], tags: [] });
+    const [limits, setLimits] = useState({ facebook: 5000, instagram: 2200, threads: 500 });
+    const [cardLimit, setCardLimit] = useState(240);
+    const [assist, setAssist] = useState(null);
+    const [assistTarget, setAssistTarget] = useState("idea");
 
     const brand = useMemo(function () {
       return brands.find(function (item) { return item.id === brandId; }) || brands[0] || null;
@@ -87,6 +91,8 @@
       const desk = await SDK.fetchJSON("/api/plugins/house-social/brands/" + id + "/studio");
       const shelf = await SDK.fetchJSON("/api/plugins/house-social/brands/" + id + "/library");
       setBrands(roster.brands || []);
+      setLimits(roster.limits || { facebook: 5000, instagram: 2200, threads: 500 });
+      setCardLimit(roster.card_limit || 240);
       setPieces(queue.pieces || []);
       setStudio(desk);
       setLibrary(shelf || { assets: [], folders: [], tags: [] });
@@ -146,6 +152,49 @@
       if (report) setVoiceCheck(report);
     }
 
+    function assistText() {
+      if (assistTarget === "idea") return idea;
+      const variant = active && active.variants ? active.variants[assistTarget] || {} : {};
+      return variant.body || idea;
+    }
+
+    async function askAssist(action) {
+      const fields = { action: action, text: assistText() };
+      if (action === "caption") {
+        const ids = (active && active.asset_ids) || [];
+        const image = ((library && library.assets) || []).find(function (asset) {
+          return ids.indexOf(asset.id) >= 0 && asset.mime && asset.mime.indexOf("image/") === 0;
+        });
+        if (!image) {
+          setError("Attach an image from the library before asking for a caption.");
+          return;
+        }
+        fields.asset_id = image.id;
+      }
+      const report = await run(function () {
+        return SDK.fetchJSON("/api/plugins/house-social/brands/" + brand.id + "/assist", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify(fields),
+        });
+      });
+      if (report) setAssist(report);
+    }
+
+    function applyAssist(text) {
+      if (assistTarget === "idea" || !active) setIdea(text);
+      else editVariant(assistTarget, "body", text);
+      setAssist(null);
+    }
+
+    function applyHashtag(tag) {
+      if (!active) return;
+      const variant = (active.variants && active.variants.instagram) || {};
+      const tags = (variant.hashtags || []).slice();
+      if (tags.map(function (item) { return item.toLowerCase(); }).indexOf(tag.toLowerCase()) < 0) tags.push(tag);
+      editVariant("instagram", "hashtags", tags.slice(0, 5));
+    }
+
     async function saveChannels() {
       const body = {};
       PLATFORMS.forEach(function (pair) {
@@ -178,7 +227,7 @@
       const variants = {};
       PLATFORMS.forEach(function (pair) {
         const variant = active.variants[pair[0]] || {};
-        variants[pair[0]] = { body: variant.body || "", hashtags: variant.hashtags || [], image_ready: !!variant.image_ready };
+        variants[pair[0]] = { body: variant.body || "", hashtags: variant.hashtags || [], image_ready: !!variant.image_ready, first_comment: variant.first_comment || "" };
       });
       const saved = await run(function () {
         return SDK.fetchJSON("/api/plugins/house-social/pieces/" + active.id, {
@@ -349,6 +398,14 @@
             onAttach: function (assetId) {
               if (active && active.brand_id === brand.id) useAsset(assetId, { piece_id: active.id });
             },
+            limits: limits,
+            cardLimit: cardLimit,
+            assist: assist,
+            assistTarget: assistTarget,
+            setAssistTarget: setAssistTarget,
+            onAssist: askAssist,
+            onApply: applyAssist,
+            onHashtag: applyHashtag,
           }) : null,
           section === "library" ? h(Library, {
             library: library,
@@ -589,6 +646,28 @@
       h("div", { className: "hs-row" },
         h("button", { type: "button", className: "hs-button", disabled: props.busy || !props.idea.trim(), onClick: props.onShape }, "Shape three posts"),
         h("button", { type: "button", className: "hs-tab", disabled: props.busy || (!props.idea.trim() && !(props.active && props.active.brand_id === brand.id)), onClick: props.onCheck }, "Check voice")),
+      h("div", { className: "hs-row" },
+        h("select", { className: "hs-field", value: props.assistTarget || "idea", onChange: function (event) { props.setAssistTarget(event.target.value); } },
+          h("option", { value: "idea" }, "Idea"),
+          PLATFORMS.map(function (pair) { return h("option", { key: pair[0], value: pair[0] }, pair[1]); })),
+        ["rewrite", "shorten", "expand", "variations", "hooks", "caption", "hashtags"].map(function (action) {
+          return h("button", {
+            key: action, type: "button", className: "hs-tab", disabled: props.busy,
+            onClick: function () { props.onAssist(action); },
+          }, action);
+        })),
+      props.assist && (props.assist.options || []).length ? h("div", { className: "hs-pillar" },
+        h("div", { className: "hs-name" }, props.assist.source === "brand" ? "Hashtags from this brand" : "Held to the voice guide"),
+        props.assist.options.map(function (option, index) {
+          const label = props.assist.action === "hashtags" ? "#" + option.text : option.text;
+          return h("button", {
+            key: index, type: "button", className: "hs-post",
+            onClick: function () {
+              if (props.assist.action === "hashtags") props.onHashtag(option.text);
+              else props.onApply(option.text);
+            },
+          }, label, option.voice && option.voice.total ? h("span", { className: "hs-note" }, "  " + option.voice.passed + "/" + option.voice.total) : null);
+        })) : null,
       (props.library && (props.library.assets || []).length) ? h("div", null,
         h("div", { className: "hs-name" }, "From the library"),
         h("div", { className: "hs-row" }, (props.library.assets || []).slice(0, 8).map(function (asset) {
@@ -602,7 +681,9 @@
         }))) : null,
       props.voiceCheck ? h(VoiceScore, { report: props.voiceCheck }) : null,
       props.active && props.active.brand_id === brand.id ? h(PieceEditor, {
-        piece: props.active, busy: props.busy, onEdit: props.onEdit, onSave: props.onSave, onDelete: function () { props.onDelete(props.active.id); },
+        piece: props.active, brand: brand, busy: props.busy, limits: props.limits, cardLimit: props.cardLimit,
+        library: props.library, onAttach: props.onAttach,
+        onEdit: props.onEdit, onSave: props.onSave, onDelete: function () { props.onDelete(props.active.id); },
       }) : null,
       h("div", { className: "hs-name" }, "This brand's queue"),
       mine.length ? mine.map(function (piece) {
@@ -1112,24 +1193,61 @@
     );
   }
 
+  function platformLimit(brand, platform, limits, cardLimit) {
+    if (brand && brand.id === "josie-blackthorn" && platform === "facebook") return cardLimit || 240;
+    return (limits && limits[platform]) || 500;
+  }
+
   function PieceEditor(props) {
     const piece = props.piece;
+    const brand = props.brand || {};
     const [when, setWhen] = useState("");
+    const attached = ((props.library && props.library.assets) || []).filter(function (asset) {
+      return (piece.asset_ids || []).indexOf(asset.id) >= 0;
+    });
+    const loose = ((props.library && props.library.assets) || []).filter(function (asset) {
+      return (piece.asset_ids || []).indexOf(asset.id) < 0;
+    });
     return h("div", null,
-      h("div", { className: "hs-cols" }, PLATFORMS.map(function (pair) {
-        const variant = (piece.variants && piece.variants[pair[0]]) || { body: "", hashtags: [], note: "" };
-        return h("div", { key: pair[0] },
+      h("div", { className: "hs-previews" }, PLATFORMS.map(function (pair) {
+        const variant = (piece.variants && piece.variants[pair[0]]) || { body: "", hashtags: [], note: "", first_comment: "" };
+        const limit = platformLimit(brand, pair[0], props.limits, props.cardLimit);
+        const count = (variant.body || "").length;
+        const commentCount = (variant.first_comment || "").length;
+        return h("div", { key: pair[0], className: "hs-preview" },
           h("div", { className: "hs-name" }, pair[1]),
+          h("div", { className: count > limit ? "hs-bad" : "hs-note" }, count + " / " + limit),
           variant.note ? h("p", { className: "hs-note" }, variant.note) : null,
           h("textarea", { className: "hs-area", value: variant.body || "", onChange: function (event) { props.onEdit(pair[0], "body", event.target.value); } }),
           pair[0] === "instagram" ? h("input", {
-            className: "hs-field", value: (variant.hashtags || []).join(" "), placeholder: "hashtags",
+            className: "hs-field", value: (variant.hashtags || []).join(" "), placeholder: "hashtags, kept out of the caption",
             onChange: function (event) { props.onEdit(pair[0], "hashtags", event.target.value.split(/\s+/).filter(Boolean)); },
           }) : null,
+          h("textarea", {
+            className: "hs-area", value: variant.first_comment || "", placeholder: "First comment, not the post",
+            onChange: function (event) { props.onEdit(pair[0], "first_comment", event.target.value); },
+          }),
+          h("div", { className: commentCount > 1000 ? "hs-bad" : "hs-note" }, "First comment " + commentCount + " / 1000"),
           variant.needs_image ? h("label", { className: "hs-note" },
             h("input", { type: "checkbox", checked: !!variant.image_ready, onChange: function (event) { props.onEdit(pair[0], "image_ready", event.target.checked); } }),
             " Quote image is ready") : null);
       })),
+      h("div", { className: "hs-name" }, "Media"),
+      attached.length ? h("div", { className: "hs-row" }, attached.map(function (asset) {
+        const image = asset.mime && asset.mime.indexOf("image/") === 0;
+        return h("div", { key: asset.id, className: "hs-pillar" },
+          image ? h("img", { className: "hs-thumb", alt: asset.name, src: assetUrl(asset.id) }) : h("div", { className: "hs-name" }, asset.kind),
+          h("div", { className: "hs-note" }, asset.name));
+      })) : h("p", { className: "hs-note" }, "No media on this draft yet."),
+      loose.length ? h("select", {
+        className: "hs-field",
+        value: "",
+        onChange: function (event) {
+          if (event.target.value && props.onAttach) props.onAttach(event.target.value);
+          event.target.value = "";
+        },
+      }, h("option", { value: "" }, "Attach from the library"),
+        loose.map(function (asset) { return h("option", { key: asset.id, value: asset.id }, asset.kind + " · " + asset.name); })) : null,
       h("div", { className: "hs-row" },
         h("input", {
           className: "hs-field",

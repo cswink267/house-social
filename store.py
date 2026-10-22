@@ -742,6 +742,11 @@ def _merge_variants(current: dict, updates: dict) -> dict:
             variant["hashtags"] = [str(tag).strip().lstrip("#") for tag in payload["hashtags"] if str(tag).strip()][:5]
         if "image_ready" in payload:
             variant["image_ready"] = bool(payload["image_ready"])
+        if "first_comment" in payload:
+            comment = str(payload["first_comment"])
+            if len(comment) > 1000:
+                raise DraftError("That first comment is too long.")
+            variant["first_comment"] = comment
         merged[platform] = variant
     return merged
 
