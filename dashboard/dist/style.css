@@ -69,6 +69,7 @@
   border-color: #c4b89a;
 }
 .hs-area { min-height: 140px; resize: vertical; }
+.hs-area.hs-short { min-height: 72px; }
 .hs-row { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; }
 .hs-button {
   border-radius: 8px;

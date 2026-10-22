@@ -33,6 +33,7 @@ def assist(
     image: bytes | None = None,
     mime: str = "",
     brand_tags: tuple[str, ...] = (),
+    misses: tuple[str, ...] = (),
 ) -> dict:
     name = (action or "").strip().lower()
     if name not in ACTIONS:
@@ -50,7 +51,7 @@ def assist(
             raise DraftError("Caption runs on an image.")
     elif not body:
         raise DraftError("Write something first.")
-    raw = complete(_messages(guide, name, body, image, mime))
+    raw = complete(_messages(guide, name, body, image, mime, misses))
     parsed = _parse(str(raw or ""))
     if name in _COUNTS:
         options = []
@@ -91,7 +92,7 @@ def ollama_complete(messages: list) -> str:
     return text
 
 
-def _messages(guide: dict, action: str, text: str, image: bytes | None, mime: str) -> list[dict]:
+def _messages(guide: dict, action: str, text: str, image: bytes | None, mime: str, misses: tuple[str, ...] = ()) -> list[dict]:
     prompts = {
         "rewrite": "Rewrite this in the brand voice.\n\n{text}",
         "shorten": "Shorten this. Keep the brand voice and the point.\n\n{text}",
@@ -114,30 +115,49 @@ def _messages(guide: dict, action: str, text: str, image: bytes | None, mime: st
             {"type": "image_url", "image_url": {"url": f"data:{mime or 'image/png'};base64,{encoded}"}},
         ]
     return [
-        {"role": "system", "content": _system(guide)},
+        {"role": "system", "content": _system(guide, misses)},
         {"role": "user", "content": content},
     ]
 
 
-def _system(guide: dict) -> str:
+def _system(guide: dict, misses: tuple[str, ...] = ()) -> str:
     lines = [
         "You write for one brand. The voice guide is the rule. Do not sound like a generic campaign.",
         f"Tone: {guide.get('tone') or 'Plain and specific.'}",
         f"Personality: {guide.get('personality') or ''}",
     ]
+    if guide.get("formality"):
+        lines.append("Formality: " + guide["formality"])
+    if guide.get("humor"):
+        lines.append("Humor: " + guide["humor"])
+    if guide.get("point_of_view"):
+        lines.append("Point of view: " + guide["point_of_view"])
     if guide.get("dos"):
         lines.append("Do: " + " ".join(guide["dos"]))
     if guide.get("donts"):
         lines.append("Don't: " + " ".join(guide["donts"]))
     banned = guide.get("banned") or []
     lines.append("Never use these phrases: " + (", ".join(banned) if banned else "none given."))
+    if guide.get("preferred"):
+        lines.append("Preferred language: " + ", ".join(guide["preferred"]))
     if guide.get("required"):
         lines.append("Include: " + ", ".join(guide["required"]))
+    if guide.get("differentiation"):
+        lines.append("Different from competitors: " + guide["differentiation"])
     if guide.get("second_person"):
         lines.append("Speak to you.")
-    for example in (guide.get("examples") or [])[:2]:
-        if example.get("text"):
-            lines.append("A line that nails it: " + example["text"])
+    for pillar in (guide.get("pillars") or [])[:5]:
+        angles = pillar.get("angles") or []
+        if angles:
+            lines.append(f"{pillar.get('name')}: " + "; ".join(angles))
+    on_brand = [item for item in guide.get("examples") or [] if item.get("kind", "on") != "off" and item.get("text")]
+    off_brand = [item for item in guide.get("examples") or [] if item.get("kind") == "off" and item.get("text")]
+    for example in on_brand[:2]:
+        lines.append("A line that nails it: " + example["text"])
+    if off_brand:
+        lines.append("A line that misses it: " + off_brand[0]["text"])
+    if misses:
+        lines.append("Fix these misses: " + "; ".join(str(item) for item in misses[:6]))
     return "\n".join(lines)
 
 

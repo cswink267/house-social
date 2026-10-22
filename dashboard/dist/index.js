@@ -158,8 +158,9 @@
       return variant.body || idea;
     }
 
-    async function askAssist(action) {
+    async function askAssist(action, misses) {
       const fields = { action: action, text: assistText() };
+      if (misses && misses.length) fields.misses = misses;
       if (action === "caption") {
         const ids = (active && active.asset_ids) || [];
         const image = ((library && library.assets) || []).find(function (asset) {
@@ -529,16 +530,49 @@
               }, item.label);
             })),
           section === "brief" ? h(Brief, { brand: brand, handles: handles, setHandles: setHandles, busy: busy, onSave: saveChannels }) : null,
-          section === "voice" ? h(VoiceGuide, { brand: brand, studio: studio, busy: busy, onSave: async function (body) {
-            const saved = await run(function () {
-              return SDK.fetchJSON("/api/plugins/house-social/brands/" + brand.id + "/voice", {
-                method: "POST",
-                headers: { "Content-Type": "application/json" },
-                body: JSON.stringify(body),
+          section === "voice" ? h(VoiceGuide, {
+            brand: brand, studio: studio, busy: busy,
+            onSave: async function (body) {
+              const saved = await run(function () {
+                return SDK.fetchJSON("/api/plugins/house-social/brands/" + brand.id + "/voice", {
+                  method: "POST",
+                  headers: { "Content-Type": "application/json" },
+                  body: JSON.stringify(body),
+                });
               });
-            });
-            if (saved) await refresh(brand.id);
-          } }) : null,
+              if (saved) await refresh(brand.id);
+            },
+            onImport: async function (body) {
+              const saved = await run(function () {
+                return SDK.fetchJSON("/api/plugins/house-social/brands/" + brand.id + "/voice/import", {
+                  method: "POST",
+                  headers: { "Content-Type": "application/json" },
+                  body: JSON.stringify(body),
+                });
+              });
+              if (saved) await refresh(brand.id);
+            },
+            onAccept: async function (id) {
+              const saved = await run(function () {
+                return SDK.fetchJSON("/api/plugins/house-social/brands/" + brand.id + "/voice/accept", {
+                  method: "POST",
+                  headers: { "Content-Type": "application/json" },
+                  body: JSON.stringify({ id: id }),
+                });
+              });
+              if (saved) await refresh(brand.id);
+            },
+            onRestore: async function (id) {
+              const saved = await run(function () {
+                return SDK.fetchJSON("/api/plugins/house-social/brands/" + brand.id + "/voice/restore", {
+                  method: "POST",
+                  headers: { "Content-Type": "application/json" },
+                  body: JSON.stringify({ id: id }),
+                });
+              });
+              if (saved) await refresh(brand.id);
+            },
+          }) : null,
           section === "pages" ? h(Pages, {
             brand: brand,
             studio: studio,
@@ -689,6 +723,9 @@
 
   function VoiceScore(props) {
     const report = props.report || { label: "", fields: [] };
+    const missed = (report.fields || []).some(function (field) {
+      return (field.checks || []).some(function (check) { return !check.ok; });
+    });
     return h("div", { className: "hs-pillar" },
       h("div", { className: "hs-name" }, report.label || "Voice"),
       (report.fields || []).map(function (field) {
@@ -697,7 +734,9 @@
           (field.checks || []).map(function (check) {
             return h("div", { key: field.field + check.id, className: check.ok ? "hs-ok" : "hs-bad" }, (check.ok ? "Yes. " : "No. ") + check.label);
           }));
-      }));
+      }),
+      missed ? h("button", { type: "button", className: "hs-tab", disabled: props.busy, onClick: props.onRewrite }, "Suggest a rewrite") : null,
+    );
   }
 
   function linesOf(value) {
@@ -706,26 +745,39 @@
 
   function VoiceGuide(props) {
     const guide = (props.studio && props.studio.voice) || {};
+    const desk = (props.studio && props.studio.voice_desk) || { versions: [], lessons: { suggestions: [], detail: "" }, imports: 0 };
+    const lessons = desk.lessons || { suggestions: [], detail: "", ready: false };
     const stamp = [
-      guide.tone, guide.personality, guide.visual,
+      guide.tone, guide.personality, guide.formality, guide.humor, guide.point_of_view, guide.visual, guide.differentiation,
       (guide.dos || []).join("|"), (guide.donts || []).join("|"),
-      (guide.banned || []).join("|"), (guide.required || []).join("|"),
+      (guide.banned || []).join("|"), (guide.preferred || []).join("|"), (guide.required || []).join("|"),
       guide.second_person ? "1" : "0",
-      ((guide.examples || [])[0] || {}).text || "",
+      JSON.stringify(guide.pillars || []),
+      JSON.stringify(guide.examples || []),
     ].join("\n");
     const [form, setForm] = useState(null);
+    const [manual, setManual] = useState({ text: "", engagements: "", kind: "on", title: "" });
     useEffect(function () {
+      const angles = {};
+      (guide.pillars || []).forEach(function (pillar) { angles[pillar.id] = (pillar.angles || []).join("\n"); });
       setForm({
         tone: guide.tone || "",
         personality: guide.personality || "",
+        formality: guide.formality || "",
+        humor: guide.humor || "",
+        point_of_view: guide.point_of_view || "",
         visual: guide.visual || "",
+        differentiation: guide.differentiation || "",
         dos: (guide.dos || []).join("\n"),
         donts: (guide.donts || []).join("\n"),
         banned: (guide.banned || []).join("\n"),
+        preferred: (guide.preferred || []).join("\n"),
         required: (guide.required || []).join("\n"),
         second_person: !!guide.second_person,
-        exampleTitle: ((guide.examples || [])[0] || {}).title || "",
-        exampleText: ((guide.examples || [])[0] || {}).text || "",
+        angles: angles,
+        examples: guide.examples || [],
+        exampleTitle: "",
+        exampleText: "",
       });
     }, [props.brand && props.brand.id, stamp]);
     if (!form) return null;
@@ -737,41 +789,125 @@
       props.onSave({
         tone: form.tone,
         personality: form.personality,
+        formality: form.formality,
+        humor: form.humor,
+        point_of_view: form.point_of_view,
         visual: form.visual,
+        differentiation: form.differentiation,
         dos: linesOf(form.dos),
         donts: linesOf(form.donts),
         banned: linesOf(form.banned),
+        preferred: linesOf(form.preferred),
         required: linesOf(form.required),
         second_person: form.second_person,
-        examples: (form.exampleText ? [{ title: form.exampleTitle, text: form.exampleText }] : []).concat((guide.examples || []).slice(1)),
+        pillars: (guide.pillars || []).map(function (pillar) {
+          return { id: pillar.id, name: pillar.name, angles: linesOf(form.angles[pillar.id] || "") };
+        }),
+        examples: form.examples || [],
       });
     }
-    return h("form", { className: "hs-main", onSubmit: save },
-      h("p", { className: "hs-note" }, "The voice for this brand. Create checks a draft against the banned lines, the required lines, and second person when that box is on."),
-      h("label", { className: "hs-note" }, "Tone", h("textarea", { className: "hs-area", value: form.tone, onChange: function (event) { setField("tone", event.target.value); } })),
-      h("label", { className: "hs-note" }, "Personality", h("textarea", { className: "hs-area", value: form.personality, onChange: function (event) { setField("personality", event.target.value); } })),
-      h("label", { className: "hs-note" }, "Do", h("textarea", { className: "hs-area", placeholder: "One rule a line", value: form.dos, onChange: function (event) { setField("dos", event.target.value); } })),
-      h("label", { className: "hs-note" }, "Don't", h("textarea", { className: "hs-area", placeholder: "One rule a line", value: form.donts, onChange: function (event) { setField("donts", event.target.value); } })),
-      h("label", { className: "hs-note" }, "Visual", h("textarea", { className: "hs-area", value: form.visual, onChange: function (event) { setField("visual", event.target.value); } })),
-      h("label", { className: "hs-note" }, "Banned words and phrases", h("textarea", { className: "hs-area", placeholder: "One phrase a line", value: form.banned, onChange: function (event) { setField("banned", event.target.value); } })),
-      h("label", { className: "hs-note" }, "Required in the draft", h("textarea", { className: "hs-area", placeholder: "One phrase a line. Use ? for a question mark.", value: form.required, onChange: function (event) { setField("required", event.target.value); } })),
-      h("label", { className: "hs-note" }, h("input", { type: "checkbox", checked: form.second_person, onChange: function (event) { setField("second_person", event.target.checked); } }), " Require you"),
-      h("label", { className: "hs-note" }, "Example title", h("input", { className: "hs-field", value: form.exampleTitle, onChange: function (event) { setField("exampleTitle", event.target.value); } })),
-      h("label", { className: "hs-note" }, "Example that nails it", h("textarea", { className: "hs-area", value: form.exampleText, onChange: function (event) { setField("exampleText", event.target.value); } })),
-      (guide.examples || []).slice(1).map(function (example) {
-        return h("div", { key: example.text, className: "hs-pillar" },
-          h("div", { className: "hs-name" }, example.title || "Another line"),
-          h("p", { className: "hs-note" }, example.text));
+    function addExample(kind) {
+      const text = form.exampleText.trim();
+      if (!text) return;
+      setField("examples", (form.examples || []).concat([{ title: form.exampleTitle, text: text, kind: kind, source: "written" }]));
+      setField("exampleTitle", "");
+      setField("exampleText", "");
+    }
+    return h("div", { className: "hs-main" },
+      h("form", { onSubmit: save },
+        h("p", { className: "hs-note" }, "The memory of this brand. Composer checks a draft against it. A suggestion below is saved only when you accept it, and only when the posts actually show the gap."),
+        h("label", { className: "hs-note" }, "Tone", h("textarea", { className: "hs-area", value: form.tone, onChange: function (event) { setField("tone", event.target.value); } })),
+        h("label", { className: "hs-note" }, "Personality", h("textarea", { className: "hs-area hs-short", value: form.personality, onChange: function (event) { setField("personality", event.target.value); } })),
+        h("label", { className: "hs-note" }, "Formality",
+          h("select", { className: "hs-field", value: form.formality, onChange: function (event) { setField("formality", event.target.value); } },
+            h("option", { value: "" }, "Not set"),
+            h("option", { value: "casual" }, "Casual"),
+            h("option", { value: "plain" }, "Plain"),
+            h("option", { value: "formal" }, "Formal"))),
+        h("label", { className: "hs-note" }, "Humor", h("input", { className: "hs-field", value: form.humor, placeholder: "Dry, none, warm", onChange: function (event) { setField("humor", event.target.value); } })),
+        h("label", { className: "hs-note" }, "Point of view", h("input", { className: "hs-field", value: form.point_of_view, placeholder: "Second person, her scene, the product", onChange: function (event) { setField("point_of_view", event.target.value); } })),
+        h("label", { className: "hs-note" }, "Do", h("textarea", { className: "hs-area hs-short", placeholder: "One rule a line", value: form.dos, onChange: function (event) { setField("dos", event.target.value); } })),
+        h("label", { className: "hs-note" }, "Don't", h("textarea", { className: "hs-area hs-short", placeholder: "One rule a line", value: form.donts, onChange: function (event) { setField("donts", event.target.value); } })),
+        h("label", { className: "hs-note" }, "Visual", h("textarea", { className: "hs-area hs-short", value: form.visual, onChange: function (event) { setField("visual", event.target.value); } })),
+        h("label", { className: "hs-note" }, "Banned words and phrases", h("textarea", { className: "hs-area hs-short", placeholder: "One phrase a line", value: form.banned, onChange: function (event) { setField("banned", event.target.value); } })),
+        h("label", { className: "hs-note" }, "Preferred language", h("textarea", { className: "hs-area hs-short", placeholder: "One phrase a line. A long draft should use one of them.", value: form.preferred, onChange: function (event) { setField("preferred", event.target.value); } })),
+        h("label", { className: "hs-note" }, "Required in the draft", h("textarea", { className: "hs-area hs-short", placeholder: "One phrase a line. Use ? for a question mark.", value: form.required, onChange: function (event) { setField("required", event.target.value); } })),
+        h("label", { className: "hs-note" }, "Competitor differentiation", h("textarea", { className: "hs-area hs-short", placeholder: "What this brand refuses to sound like", value: form.differentiation, onChange: function (event) { setField("differentiation", event.target.value); } })),
+        h("label", { className: "hs-note" }, h("input", { type: "checkbox", checked: form.second_person, onChange: function (event) { setField("second_person", event.target.checked); } }), " Require you"),
+        h("div", { className: "hs-name" }, "Pillars and angles"),
+        (guide.pillars || []).length ? (guide.pillars || []).map(function (pillar) {
+          const known = ((props.brand && props.brand.pillars) || []).find(function (item) { return item.id === pillar.id; });
+          return h("label", { key: pillar.id, className: "hs-note" },
+            pillar.name + (known && known.note ? " — " + known.note : ""),
+            h("textarea", {
+              className: "hs-area hs-short",
+              placeholder: "One angle a line, up to three",
+              value: (form.angles && form.angles[pillar.id]) || "",
+              onChange: function (event) {
+                const value = event.target.value;
+                setForm(function (current) {
+                  return Object.assign({}, current, { angles: Object.assign({}, current.angles, { [pillar.id]: value }) });
+                });
+              },
+            }));
+        }) : h("p", { className: "hs-note" }, "No themes on this brand yet."),
+        h("div", { className: "hs-name" }, "On-brand and off-brand"),
+        (form.examples || []).map(function (example, index) {
+          return h("div", { key: example.kind + example.text + index, className: "hs-pillar" },
+            h("div", { className: "hs-name" }, (example.kind === "off" ? "Off-brand" : "On-brand") + " · " + (example.source || "written") + (example.title ? " · " + example.title : "")),
+            h("p", { className: "hs-note" }, example.text),
+            h("button", {
+              type: "button", className: "hs-tab",
+              onClick: function () {
+                setField("examples", (form.examples || []).filter(function (_item, itemIndex) { return itemIndex !== index; }));
+              },
+            }, "Remove"));
+        }),
+        h("label", { className: "hs-note" }, "Example title", h("input", { className: "hs-field", value: form.exampleTitle, onChange: function (event) { setField("exampleTitle", event.target.value); } })),
+        h("label", { className: "hs-note" }, "Example text", h("textarea", { className: "hs-area hs-short", value: form.exampleText, onChange: function (event) { setField("exampleText", event.target.value); } })),
+        h("div", { className: "hs-row" },
+          h("button", { type: "button", className: "hs-tab", onClick: function () { addExample("on"); } }, "Add on-brand"),
+          h("button", { type: "button", className: "hs-tab", onClick: function () { addExample("off"); } }, "Add off-brand"),
+          h("button", { type: "submit", className: "hs-button", disabled: props.busy }, "Save voice"))),
+      h("div", { className: "hs-name" }, "What the posts suggest"),
+      h("p", { className: "hs-note" }, "Save the profile before you accept a suggestion. " + (lessons.detail || "Pull the page, or paste posts below.")),
+      (lessons.suggestions || []).map(function (item) {
+        return h("div", { key: item.id, className: "hs-pillar" },
+          h("p", { className: "hs-voice" }, item.detail),
+          item.example ? h("p", { className: "hs-note" }, item.example.text) : null,
+          h("button", { type: "button", className: "hs-button", disabled: props.busy, onClick: function () { props.onAccept(item.id); } }, "Accept"));
       }),
-      (props.brand.pillars || []).length ? h("div", null,
-        h("div", { className: "hs-name" }, "Pillars"),
-        h("div", { className: "hs-pillars" }, props.brand.pillars.map(function (item) {
-          return h("div", { key: item.id, className: "hs-pillar" }, h("div", { className: "hs-name" }, item.name), h("p", { className: "hs-note" }, item.note));
-        }))) : null,
-      (props.brand.guards || []).length ? h("ul", { className: "hs-guard" }, props.brand.guards.map(function (guard) {
-        return h("li", { key: guard }, guard);
-      })) : null,
-      h("button", { type: "submit", className: "hs-button", disabled: props.busy }, "Save voice"),
+      h("div", { className: "hs-name" }, "Teach it from old posts"),
+      h("p", { className: "hs-note" }, (desk.imports || 0) + " pasted posts sit on this desk. A row counts toward a pattern only when it has text and an engagement number. These rows are not in Analytics yet."),
+      h("label", { className: "hs-note" }, "CSV",
+        h("input", {
+          className: "hs-field", type: "file", accept: ".csv,text/csv",
+          onChange: function (event) {
+            const file = event.target.files && event.target.files[0];
+            if (!file) return;
+            const reader = new FileReader();
+            reader.onload = function () { props.onImport({ csv: String(reader.result || "") }); };
+            reader.readAsText(file);
+          },
+        })),
+      h("label", { className: "hs-note" }, "One post", h("textarea", { className: "hs-area hs-short", placeholder: "Paste one post", value: manual.text, onChange: function (event) { setManual(Object.assign({}, manual, { text: event.target.value })); } })),
+      h("div", { className: "hs-row" },
+        h("input", { className: "hs-field", placeholder: "Engagements, if you know them", value: manual.engagements, onChange: function (event) { setManual(Object.assign({}, manual, { engagements: event.target.value })); } }),
+        h("select", { className: "hs-field", value: manual.kind, onChange: function (event) { setManual(Object.assign({}, manual, { kind: event.target.value })); } },
+          h("option", { value: "on" }, "On-brand example"),
+          h("option", { value: "off" }, "Off-brand example"),
+          h("option", { value: "" }, "Numbers only")),
+        h("button", {
+          type: "button", className: "hs-button", disabled: props.busy || !manual.text.trim(),
+          onClick: function () { props.onImport({ text: manual.text, engagements: manual.engagements, kind: manual.kind, title: manual.title }); },
+        }, "Add post")),
+      h("div", { className: "hs-name" }, "Versions"),
+      (desk.versions || []).length ? (desk.versions || []).map(function (version) {
+        return h("div", { key: version.id, className: "hs-pillar" },
+          h("div", { className: "hs-name" }, version.note || "saved"),
+          h("p", { className: "hs-note" }, (version.at || "") + (version.tone ? " — " + version.tone : "")),
+          h("button", { type: "button", className: "hs-tab", disabled: props.busy, onClick: function () { props.onRestore(version.id); } }, "Restore"));
+      }) : h("p", { className: "hs-note" }, "No saved version yet. The guide on screen is the one in use."),
     );
   }
 
@@ -907,7 +1043,19 @@
             },
           }, asset.kind + " · " + asset.name);
         }))) : null,
-      props.voiceCheck ? h(VoiceScore, { report: props.voiceCheck }) : null,
+      props.voiceCheck ? h(VoiceScore, {
+        report: props.voiceCheck,
+        busy: props.busy,
+        onRewrite: function () {
+          const misses = [];
+          (props.voiceCheck.fields || []).forEach(function (field) {
+            (field.checks || []).forEach(function (check) {
+              if (!check.ok) misses.push(field.field + ": " + check.label);
+            });
+          });
+          props.onAssist("rewrite", misses);
+        },
+      }) : null,
       props.active && props.active.brand_id === brand.id ? h(PieceEditor, {
         piece: props.active, brand: brand, busy: props.busy, limits: props.limits, cardLimit: props.cardLimit,
         library: props.library, onAttach: props.onAttach, onQueue: props.onQueue,

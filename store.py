@@ -58,6 +58,8 @@ def empty_state() -> dict:
         "inbox": [],
         "inbox_errors": {},
         "reports": [],
+        "voice_versions": {},
+        "voice_imports": [],
     }
 
 
@@ -85,6 +87,8 @@ def load(path: Path | None = None) -> dict:
     inbox = raw.get("inbox")
     inbox_errors = raw.get("inbox_errors")
     reports = raw.get("reports")
+    voice_versions = raw.get("voice_versions")
+    voice_imports = raw.get("voice_imports")
     return {
         "version": 1,
         "channels": channels if isinstance(channels, dict) else {},
@@ -104,6 +108,8 @@ def load(path: Path | None = None) -> dict:
         "inbox": inbox if isinstance(inbox, list) else [],
         "inbox_errors": inbox_errors if isinstance(inbox_errors, dict) else {},
         "reports": reports if isinstance(reports, list) else [],
+        "voice_versions": voice_versions if isinstance(voice_versions, dict) else {},
+        "voice_imports": voice_imports if isinstance(voice_imports, list) else [],
     }
 
 
@@ -387,6 +393,7 @@ def studio(state: dict, brand_id: str, ledger: dict | None = None, today=None) -
             "errors": list(((state.get("pulls") or {}).get(brand_id) or {}).get("errors") or []),
         },
         "voice": _voice_view(state, brand_id),
+        "voice_desk": _voice_desk(state, brand_id, posts),
         "queue": _queue_view(state, brand_id, posts),
         "campaigns": _campaigns_view(state, brand_id, posts, when),
         "ideas": _ideas_view(state, brand_id),
@@ -590,21 +597,106 @@ def _read_vault(name: str) -> str | None:
     return value or None
 
 
-def save_voice(state: dict, brand_id: str, spec: dict, path: Path | None = None) -> dict:
+def save_voice(state: dict, brand_id: str, spec: dict, path: Path | None = None, note: str = "saved") -> dict:
     from voice import guide_for
 
     resolve_brand(state, brand_id)
     if not isinstance(spec, dict):
         raise DraftError("The voice guide needs fields.")
     guide = guide_for(brand_id, spec)
-    for key in ("tone", "personality", "visual"):
+    for key in ("tone", "personality", "visual", "differentiation"):
         if len(guide[key]) > 600:
             raise DraftError("That voice field is too long.")
     updated = _copy(state)
     updated.setdefault("voices", {})
+    previous = updated["voices"].get(brand_id)
     updated["voices"][brand_id] = guide
+    if previous != guide or note != "saved":
+        versions = dict(updated.get("voice_versions") or {})
+        history = list(versions.get(brand_id) or [])
+        history.append(
+            {
+                "id": str(uuid.uuid4()),
+                "at": datetime.now(ZoneInfo("America/New_York")).isoformat(),
+                "note": _label(note or "saved", 80),
+                "guide": copy.deepcopy(guide),
+            }
+        )
+        versions[brand_id] = history[-20:]
+        updated["voice_versions"] = versions
     save(updated, path)
     return guide
+
+
+def import_voice_csv(state: dict, brand_id: str, csv_text: str, path: Path | None = None) -> dict:
+    from voice import parse_voice_csv
+
+    resolve_brand(state, brand_id)
+    rows = parse_voice_csv(csv_text)
+    updated, count = _add_voice_rows(state, brand_id, rows, "csv")
+    save(updated, path)
+    return {"imported": count, "imports": _import_count(updated, brand_id)}
+
+
+def add_voice_post(state: dict, brand_id: str, spec: dict, path: Path | None = None) -> dict:
+    from meta import redact
+    from voice import guide_for
+
+    resolve_brand(state, brand_id)
+    if not isinstance(spec, dict):
+        raise DraftError("Write the post.")
+    text = redact(_label(spec.get("text") or "", 500))
+    if not text:
+        raise DraftError("Write the post.")
+    engagements = _optional_count(spec.get("engagements"))
+    kind = spec.get("kind") if spec.get("kind") in {"on", "off"} else ""
+    updated, _count = _add_voice_rows(
+        state,
+        brand_id,
+        [{"text": text, "engagements": engagements, "shares": 0, "published_at": "", "platform": ""}],
+        "manual",
+    )
+    if not kind:
+        save(updated, path)
+        return {"imported": 1, "imports": _import_count(updated, brand_id)}
+    guide = guide_for(brand_id, updated.get("voices", {}).get(brand_id))
+    examples = list(guide.get("examples") or []) + [
+        {"title": _label(spec.get("title") or "", 80), "text": text, "kind": kind, "source": "saved"}
+    ]
+    saved = save_voice(updated, brand_id, {**guide, "examples": examples}, path, note="saved an example")
+    return {"imported": 1, "voice": saved}
+
+
+def accept_voice_suggestion(state: dict, brand_id: str, suggestion_id: str, path: Path | None = None, posts: list[dict] | None = None) -> dict:
+    from voice import guide_for, voice_lessons
+
+    resolve_brand(state, brand_id)
+    guide = guide_for(brand_id, (state.get("voices") or {}).get(brand_id))
+    history = list(posts) if posts is not None else list(brand_history(state, brand_id)[0])
+    imports = [row for row in state.get("voice_imports") or [] if row.get("brand_id") == brand_id]
+    lessons = voice_lessons(guide, history + imports)
+    found = next((item for item in lessons["suggestions"] if item.get("id") == suggestion_id), None)
+    if found is None:
+        raise DraftError("That suggestion is not supported by these posts.")
+    spec = copy.deepcopy(guide)
+    if found["kind"] == "preferred":
+        spec["preferred"] = list(spec.get("preferred") or []) + [found.get("line") or ""]
+    elif found["kind"] == "second_person":
+        spec["second_person"] = True
+    elif found["kind"] == "example" and found.get("example"):
+        spec["examples"] = list(spec.get("examples") or []) + [found["example"]]
+    else:
+        raise DraftError("That suggestion cannot be saved.")
+    return save_voice(state, brand_id, spec, path, note=f"accepted {suggestion_id}"[:80])
+
+
+def restore_voice(state: dict, brand_id: str, version_id: str, path: Path | None = None) -> dict:
+    resolve_brand(state, brand_id)
+    history = list(((state.get("voice_versions") or {}).get(brand_id) or []))
+    found = next((item for item in history if item.get("id") == version_id), None)
+    if found is None:
+        raise DraftError("That voice version is not on this brand.")
+    return save_voice(state, brand_id, found.get("guide") or {}, path, note="restored")
 
 
 def voice_check_brand(state: dict, brand_id: str, fields: dict) -> dict:
@@ -619,6 +711,69 @@ def _voice_view(state: dict, brand_id: str) -> dict:
     from voice import guide_for
 
     return guide_for(brand_id, (state.get("voices") or {}).get(brand_id))
+
+
+def _voice_desk(state: dict, brand_id: str, posts: list[dict]) -> dict:
+    from voice import guide_for, voice_lessons
+
+    guide = guide_for(brand_id, (state.get("voices") or {}).get(brand_id))
+    imports = [row for row in state.get("voice_imports") or [] if row.get("brand_id") == brand_id]
+    versions = list((state.get("voice_versions") or {}).get(brand_id) or [])
+    return {
+        "versions": [
+            {
+                "id": item.get("id"),
+                "at": item.get("at") or "",
+                "note": item.get("note") or "",
+                "tone": str((item.get("guide") or {}).get("tone") or ""),
+                "formality": str((item.get("guide") or {}).get("formality") or ""),
+                "preferred": list((item.get("guide") or {}).get("preferred") or []),
+            }
+            for item in versions
+        ][::-1],
+        "lessons": voice_lessons(guide, list(posts) + imports),
+        "imports": len(imports),
+    }
+
+
+def _add_voice_rows(state: dict, brand_id: str, rows: list[dict], source: str) -> tuple[dict, int]:
+    updated = _copy(state)
+    current = list(updated.get("voice_imports") or [])
+    mine = [row for row in current if row.get("brand_id") == brand_id]
+    others = [row for row in current if row.get("brand_id") != brand_id]
+    added = []
+    for item in rows:
+        added.append(
+            {
+                "id": "import:" + str(uuid.uuid4()),
+                "brand_id": brand_id,
+                "preview": str(item.get("text") or "")[:500],
+                "engagements": item.get("engagements"),
+                "shares": int(item.get("shares") or 0),
+                "published_at": item.get("published_at") or "",
+                "platform": item.get("platform") or "",
+                "source": source,
+            }
+        )
+    updated["voice_imports"] = others + (mine + added)[-200:]
+    return updated, len(added)
+
+
+def _import_count(state: dict, brand_id: str) -> int:
+    return len([row for row in state.get("voice_imports") or [] if row.get("brand_id") == brand_id])
+
+
+def _optional_count(value: object) -> int | None:
+    if value in (None, ""):
+        return None
+    if isinstance(value, bool) or not isinstance(value, int):
+        text = str(value).strip()
+        if not text.isdigit():
+            raise DraftError("Engagements need a whole number, or they can be left blank.")
+        value = int(text)
+    if value < 0 or value > 10_000_000:
+        raise DraftError("That engagement count is out of range.")
+    return int(value)
 
 
 def _queue_view(state: dict, brand_id: str, posts: list[dict]) -> dict:

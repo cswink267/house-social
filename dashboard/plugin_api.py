@@ -18,14 +18,18 @@ from assist import assist, ollama_complete
 from brands import PLATFORMS
 from library import library_for, open_asset_file, record_use, revise_asset, save_asset
 from store import (
+    accept_voice_suggestion,
     add_brand,
+    add_voice_post,
     create_piece,
     delete_piece,
+    import_voice_csv,
     ledger_dir,
     load,
     pull_brand,
     record_stat,
     resolve_brand,
+    restore_voice,
     roster,
     save_connection,
     save_voice,
@@ -120,6 +124,37 @@ def post_voice_check(brand_id: str, body: dict) -> dict:
         _fail(exc)
 
 
+@router.post("/brands/{brand_id}/voice/import")
+def post_voice_import(brand_id: str, body: dict) -> dict:
+    try:
+        if str((body or {}).get("csv") or "").strip():
+            return import_voice_csv(load(), brand_id, str(body.get("csv") or ""))
+        return add_voice_post(load(), brand_id, body or {})
+    except DraftError as exc:
+        _fail(exc)
+
+
+@router.post("/brands/{brand_id}/voice/accept")
+def post_voice_accept(brand_id: str, body: dict) -> dict:
+    state = load()
+    ledger = {"posts": [], "days": []}
+    if brand_id == "josie-blackthorn":
+        ledger = read_ledger(ledger_dir())
+    posts, _days = brand_history(state, brand_id, ledger)
+    try:
+        return accept_voice_suggestion(state, brand_id, str((body or {}).get("id") or ""), posts=posts)
+    except DraftError as exc:
+        _fail(exc)
+
+
+@router.post("/brands/{brand_id}/voice/restore")
+def post_voice_restore(brand_id: str, body: dict) -> dict:
+    try:
+        return restore_voice(load(), brand_id, str((body or {}).get("id") or ""))
+    except DraftError as exc:
+        _fail(exc)
+
+
 @router.get("/brands/{brand_id}/library")
 def get_library(brand_id: str, q: str = "", kind: str = "", folder: str = "", tag: str = "") -> dict:
     try:
@@ -179,6 +214,7 @@ def post_assist(brand_id: str, body: dict) -> dict:
             found = open_asset_file(state, asset_id)
             image = Path(found["path"]).read_bytes()
             mime = found["mime"]
+        misses = body.get("misses") if isinstance(body.get("misses"), list) else []
         return assist(
             guide,
             str(body.get("action") or ""),
@@ -187,6 +223,7 @@ def post_assist(brand_id: str, body: dict) -> dict:
             image=image,
             mime=mime,
             brand_tags=tuple(brand.tags),
+            misses=tuple(str(item) for item in misses[:6]),
         )
     except DraftError as exc:
         _fail(exc)

@@ -13,7 +13,7 @@ Each brand has the same desks.
 | Desk | What it holds |
 | --- | --- |
 | Brief | Audience, voice line, guards, pillars, and the public handles. |
-| Voice | Tone, personality, do and don't, visual notes, banned lines, required lines, and an example. Create can score a draft against that guide. |
+| Voice | Tone, personality, formality, humor, point of view, do and don't, visual notes, banned lines, preferred lines, required lines, and competitor notes. Pillars keep the angles you write. On-brand and off-brand examples can be written, pasted, or taken from posts when the gap is real. Create scores a draft and can ask for a rewrite. Each save keeps a version. |
 | Pages | The Meta app id, the page or account id, and a token. The token is written to a vault. The saved record stores the vault name. |
 | Ideas | A board or a list of sparks, competitor notes, trends, and questions. Tag them, set a priority, and turn one into a draft. A link is only a link. The board does not fetch it. |
 | Approval | Draft, then needs review, then approved, then scheduled. One approver, or up to four names in order. Comments, the last two versions side by side, and notices on this desk. Nothing is mailed and nothing is sent. |
@@ -29,6 +29,8 @@ Each brand has the same desks.
 | Learning | A comparison is kept only when both sides have at least three posts and the gap is real. An impression count of zero is never turned into a rate. |
 
 Facebook and Instagram are one Meta app. A Page token can name the linked Instagram professional account, and that account is read with the same token. Threads is a separate login on `graph.threads.net`. The Facebook token cannot read it. The username often matches Instagram. The id does not.
+
+A pasted CSV on the voice desk teaches that desk. A row moves a pattern only when it has text and an engagement count, and only when both sides have three posts and the gap is real. Those rows are not part of Analytics yet.
 
 ## Install
 
@@ -89,7 +91,7 @@ approval.py              review steps, comments, and notices on the desk
 hashtags.py              saved sets and the tags posts used
 inbox.py                 comments, mentions, and reply drafts
 reports.py               weekly and monthly reports, markdown and JSON |
-voice.py                 guides and the voice checklist
+voice.py                 the brand profile, the checklist, and lessons from posts
 library.py               assets, versions, and use
 store.py                 state, connections, calendar, pulls
 learn.py                 performance and lessons
