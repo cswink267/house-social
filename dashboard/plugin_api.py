@@ -38,6 +38,7 @@ from store import (
 from campaigns import attach_campaign, revise_campaign, save_campaign
 from queue_desk import bulk_queue
 from voice import guide_for
+from hashtags import apply_set, save_set, save_trend
 from ideas import draft_idea, revise_idea, save_idea
 from learn import read_ledger
 
@@ -296,6 +297,30 @@ def post_comment(piece_id: str, body: dict) -> dict:
 def post_notice_read(notice_id: str) -> dict:
     try:
         return mark_notice(load(), notice_id)
+    except DraftError as exc:
+        _fail(exc)
+
+
+@router.post("/brands/{brand_id}/hashtag-sets")
+def post_hashtag_set(brand_id: str, body: dict) -> dict:
+    try:
+        return save_set(load(), brand_id, body)
+    except DraftError as exc:
+        _fail(exc)
+
+
+@router.post("/hashtag-sets/{set_id}/apply")
+def post_apply_set(set_id: str, body: dict) -> dict:
+    try:
+        return apply_set(load(), set_id, str((body or {}).get("piece_id") or ""))
+    except DraftError as exc:
+        _fail(exc)
+
+
+@router.post("/brands/{brand_id}/trends")
+def post_trend(brand_id: str, body: dict) -> dict:
+    try:
+        return save_trend(load(), brand_id, body)
     except DraftError as exc:
         _fail(exc)
 

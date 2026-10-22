@@ -286,6 +286,40 @@
       if (saved) await refresh(brand.id);
     }
 
+    async function saveHashtagSet(body) {
+      const saved = await run(function () {
+        return SDK.fetchJSON("/api/plugins/house-social/brands/" + brand.id + "/hashtag-sets", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify(body),
+        });
+      });
+      if (saved) await refresh(brand.id);
+    }
+
+    async function applyHashtagSet(setId) {
+      if (!active || active.brand_id !== brand.id) return;
+      const saved = await run(function () {
+        return SDK.fetchJSON("/api/plugins/house-social/hashtag-sets/" + setId + "/apply", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ piece_id: active.id }),
+        });
+      });
+      if (saved) await refresh(brand.id);
+    }
+
+    async function saveTrendNote(body) {
+      const saved = await run(function () {
+        return SDK.fetchJSON("/api/plugins/house-social/brands/" + brand.id + "/trends", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify(body),
+        });
+      });
+      if (saved) await refresh(brand.id);
+    }
+
     async function saveIdea(body) {
       const saved = await run(function () {
         return SDK.fetchJSON("/api/plugins/house-social/brands/" + brand.id + "/ideas", {
@@ -578,6 +612,14 @@
               });
               if (saved) await refresh(brand.id);
             },
+          }) : null,
+          section === "hashtags" ? h(HashtagDesk, {
+            studio: studio,
+            piece: active && active.brand_id === brand.id ? active : null,
+            busy: busy,
+            onSaveSet: saveHashtagSet,
+            onApply: applyHashtagSet,
+            onTrend: saveTrendNote,
           }) : null,
           section === "learning" ? h(Learning, { studio: studio }) : null,
         ) : null,
@@ -1618,6 +1660,58 @@
         })),
       h("input", { className: "hs-field", placeholder: "What the post was", value: form.note, onChange: function (event) { setField("note", event.target.value); } }),
       h("button", { type: "submit", className: "hs-button", disabled: props.busy }, "Save result"),
+    );
+  }
+
+  function HashtagDesk(props) {
+    const desk = (props.studio && props.studio.hashtags) || { sets: [], tags: [], formats: { rows: [], detail: "" }, trends: [], kinds: ["topic", "sound", "format"] };
+    const [setName, setSetName] = useState("");
+    const [setTags, setSetTags] = useState("");
+    const [trend, setTrend] = useState({ kind: "topic", name: "", note: "" });
+    const formats = desk.formats || { rows: [], detail: "" };
+    return h("div", { className: "hs-main" },
+      h("p", { className: "hs-note" }, "Five tags in a set. A tag is only called ahead when three posts used it, three did not, and the gap is real. Trend notes are what you wrote down. They are not a live chart."),
+      h("form", { className: "hs-row", onSubmit: function (event) {
+        event.preventDefault();
+        props.onSaveSet({ name: setName, tags: setTags.split(/[,\s]+/).filter(Boolean) });
+        setSetName("");
+        setSetTags("");
+      } },
+        h("input", { className: "hs-field", value: setName, placeholder: "Set name", onChange: function (event) { setSetName(event.target.value); } }),
+        h("input", { className: "hs-field", value: setTags, placeholder: "Tags, up to five", onChange: function (event) { setSetTags(event.target.value); } }),
+        h("button", { type: "submit", className: "hs-button", disabled: props.busy || !setName.trim() || !setTags.trim() }, "Save set")),
+      (desk.sets || []).length ? desk.sets.map(function (item) {
+        return h("div", { key: item.id, className: "hs-row" },
+          h("span", { className: "hs-name" }, item.name),
+          h("span", { className: "hs-note" }, item.tags.map(function (tag) { return "#" + tag; }).join(" ")),
+          h("button", {
+            type: "button", className: "hs-tab", disabled: props.busy || !props.piece,
+            onClick: function () { props.onApply(item.id); },
+          }, props.piece ? "Use on the open draft" : "Open a draft to use this"));
+      }) : h("p", { className: "hs-note" }, "No saved sets yet."),
+      h("div", { className: "hs-name" }, "Tags these posts used"),
+      (desk.tags || []).length ? desk.tags.map(function (item) {
+        return h("p", { key: item.tag, className: item.clear ? "hs-ok" : "hs-note" }, item.detail);
+      }) : h("p", { className: "hs-note" }, "No hashtags on the posts in this window."),
+      h("div", { className: "hs-name" }, "Formats"),
+      h("p", { className: "hs-note" }, formats.detail),
+      (formats.rows || []).map(function (item) {
+        return h("p", { key: item.id, className: "hs-note" }, item.label + " · " + item.mean + " · n=" + item.n);
+      }),
+      h("div", { className: "hs-name" }, "Notes"),
+      h("form", { className: "hs-row", onSubmit: function (event) {
+        event.preventDefault();
+        props.onTrend(trend);
+        setTrend({ kind: trend.kind, name: "", note: "" });
+      } },
+        h("select", { className: "hs-field", value: trend.kind, onChange: function (event) { setTrend(Object.assign({}, trend, { kind: event.target.value })); } },
+          (desk.kinds || []).map(function (kind) { return h("option", { key: kind, value: kind }, kind); })),
+        h("input", { className: "hs-field", value: trend.name, placeholder: "Topic, sound, or format", onChange: function (event) { setTrend(Object.assign({}, trend, { name: event.target.value })); } }),
+        h("input", { className: "hs-field", value: trend.note, placeholder: "Where you noticed it", onChange: function (event) { setTrend(Object.assign({}, trend, { note: event.target.value })); } }),
+        h("button", { type: "submit", className: "hs-button", disabled: props.busy || !trend.name.trim() }, "Save note")),
+      (desk.trends || []).length ? desk.trends.map(function (item) {
+        return h("p", { key: item.id, className: "hs-note" }, item.kind + " · " + item.name + (item.note ? " · " + item.note : ""));
+      }) : h("p", { className: "hs-note" }, "No notes yet."),
     );
   }
 

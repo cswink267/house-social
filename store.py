@@ -53,6 +53,8 @@ def empty_state() -> dict:
         "ideas": [],
         "notices": [],
         "approval_steps": {},
+        "hashtag_sets": [],
+        "trends": [],
     }
 
 
@@ -75,6 +77,8 @@ def load(path: Path | None = None) -> dict:
     ideas = raw.get("ideas")
     notices = raw.get("notices")
     approval_steps = raw.get("approval_steps")
+    hashtag_sets = raw.get("hashtag_sets")
+    trends = raw.get("trends")
     return {
         "version": 1,
         "channels": channels if isinstance(channels, dict) else {},
@@ -89,6 +93,8 @@ def load(path: Path | None = None) -> dict:
         "ideas": ideas if isinstance(ideas, list) else [],
         "notices": notices if isinstance(notices, list) else [],
         "approval_steps": approval_steps if isinstance(approval_steps, dict) else {},
+        "hashtag_sets": hashtag_sets if isinstance(hashtag_sets, list) else [],
+        "trends": trends if isinstance(trends, list) else [],
     }
 
 
@@ -376,6 +382,7 @@ def studio(state: dict, brand_id: str, ledger: dict | None = None, today=None) -
         "campaigns": _campaigns_view(state, brand_id, posts, when),
         "ideas": _ideas_view(state, brand_id),
         "approval": _approval_view(state, brand_id),
+        "hashtags": _hashtags_view(state, brand_id, posts),
     }
 
 
@@ -625,6 +632,12 @@ def _approval_view(state: dict, brand_id: str) -> dict:
     from approval import approval_for
 
     return approval_for(state, brand_id)
+
+
+def _hashtags_view(state: dict, brand_id: str, posts: list[dict]) -> dict:
+    from hashtags import hashtags_for
+
+    return hashtags_for(state, brand_id, posts)
 
 
 def resolve_brand(state: dict, brand_id: str) -> Brand:
