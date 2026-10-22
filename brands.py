@@ -221,6 +221,7 @@ SECTIONS = (
     {"id": "create", "label": "Composer"},
     {"id": "library", "label": "Library"},
     {"id": "calendar", "label": "Calendar"},
+    {"id": "queue", "label": "Queue"},
     {"id": "performance", "label": "Performance"},
     {"id": "learning", "label": "Learning"},
 )

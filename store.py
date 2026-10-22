@@ -21,7 +21,7 @@ from brands import FORMATS, PLATFORMS, SECTIONS, Brand, Channel, brand_dict, pre
 
 
 _ID = re.compile(r"^[a-z0-9]+(?:-[a-z0-9]+)*$")
-STATUSES = ("draft", "planned", "ready", "scheduled")
+STATUSES = ("draft", "planned", "ready", "pending", "scheduled", "failed")
 
 
 def state_path() -> Path:
@@ -145,6 +145,7 @@ def update_piece(
     format_name: str | None = None,
     hypothesis: str | None = None,
     campaign: str | None = None,
+    failure: str | None = None,
     path: Path | None = None,
 ) -> dict:
     updated = _copy(state)
@@ -170,14 +171,15 @@ def update_piece(
         next_piece["campaign"] = _label(campaign, 48)
     if status is not None:
         if status not in STATUSES:
-            raise DraftError("Status must be draft, planned, ready, or scheduled.")
-        if status in {"ready", "scheduled"}:
+            raise DraftError("Status must be draft, planned, ready, pending, scheduled, or failed.")
+        if status in {"ready", "pending", "scheduled"}:
             problems = issues(brand, next_piece["variants"])
             if problems:
                 raise DraftError(" ".join(problems))
         if status == "scheduled" and not next_piece.get("scheduled_for"):
             raise DraftError("A scheduled piece needs a time.")
         next_piece["status"] = status
+        next_piece["failure"] = _label(failure or "It did not pass the schedule rules.", 300) if status == "failed" else ""
     next_piece["posted"] = False
     updated["pieces"][index] = next_piece
     save(updated, path)
@@ -285,10 +287,9 @@ def record_stat(state: dict, spec: dict, path: Path | None = None) -> dict:
     return stat
 
 
-def studio(state: dict, brand_id: str, ledger: dict | None = None, today=None) -> dict:
-    from learn import combine_posts, lessons, manual_posts, next_step, performance
+def brand_history(state: dict, brand_id: str, ledger: dict | None = None) -> tuple[list[dict], list[dict]]:
+    from learn import combine_posts, manual_posts
 
-    resolve_brand(state, brand_id)
     pulled = (state.get("pulls") or {}).get(brand_id) or {}
     pulled_posts = list(pulled.get("posts") or [])
     if pulled_posts:
@@ -301,7 +302,15 @@ def studio(state: dict, brand_id: str, ledger: dict | None = None, today=None) -
         ledger_posts = list(ledger.get("posts") or [])
         page_days = list(ledger.get("days") or [])
     recorded = manual_posts([stat for stat in state.get("stats", []) if stat.get("brand_id") == brand_id])
-    posts = combine_posts(ledger_posts, recorded)
+    return combine_posts(ledger_posts, recorded), page_days
+
+
+def studio(state: dict, brand_id: str, ledger: dict | None = None, today=None) -> dict:
+    from learn import lessons, manual_posts, next_step, performance
+
+    resolve_brand(state, brand_id)
+    posts, page_days = brand_history(state, brand_id, ledger)
+    recorded = manual_posts([stat for stat in state.get("stats", []) if stat.get("brand_id") == brand_id])
     found = lessons(posts, page_days, recorded)
     pieces = [piece for piece in state["pieces"] if piece.get("brand_id") == brand_id]
     unscheduled = [piece for piece in pieces if not piece.get("scheduled_for")]
@@ -336,11 +345,12 @@ def studio(state: dict, brand_id: str, ledger: dict | None = None, today=None) -
         "experiments": open_experiments,
         "connections": [_public_connection(item) for item in state.get("connections", []) if item.get("brand_id") == brand_id],
         "pull": {
-            "pulled_at": pulled.get("pulled_at"),
-            "count": len(pulled_posts),
-            "errors": list(pulled.get("errors") or []),
+            "pulled_at": ((state.get("pulls") or {}).get(brand_id) or {}).get("pulled_at"),
+            "count": len(((state.get("pulls") or {}).get(brand_id) or {}).get("posts") or []),
+            "errors": list(((state.get("pulls") or {}).get(brand_id) or {}).get("errors") or []),
         },
         "voice": _voice_view(state, brand_id),
+        "queue": _queue_view(state, brand_id, posts),
     }
 
 
@@ -566,6 +576,12 @@ def _voice_view(state: dict, brand_id: str) -> dict:
     from voice import guide_for
 
     return guide_for(brand_id, (state.get("voices") or {}).get(brand_id))
+
+
+def _queue_view(state: dict, brand_id: str, posts: list[dict]) -> dict:
+    from queue_desk import queue_for
+
+    return queue_for(state, brand_id, posts)
 
 
 def resolve_brand(state: dict, brand_id: str) -> Brand:

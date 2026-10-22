@@ -32,7 +32,9 @@ from store import (
     studio,
     update_piece,
     voice_check_brand,
+    brand_history,
 )
+from queue_desk import bulk_queue
 from voice import guide_for
 from learn import read_ledger
 
@@ -179,6 +181,28 @@ def post_assist(brand_id: str, body: dict) -> dict:
             image=image,
             mime=mime,
             brand_tags=tuple(brand.tags),
+        )
+    except DraftError as exc:
+        _fail(exc)
+
+
+@router.post("/brands/{brand_id}/queue")
+def post_queue(brand_id: str, body: dict) -> dict:
+    if not isinstance(body, dict):
+        _fail(DraftError("The queue needs an action."))
+    state = load()
+    ledger = {"posts": [], "days": []}
+    if brand_id == "josie-blackthorn":
+        ledger = read_ledger(ledger_dir())
+    posts, _days = brand_history(state, brand_id, ledger)
+    try:
+        return bulk_queue(
+            state,
+            brand_id,
+            body.get("ids") or [],
+            str(body.get("action") or ""),
+            scheduled_for=str(body.get("scheduled_for") or ""),
+            posts=posts,
         )
     except DraftError as exc:
         _fail(exc)

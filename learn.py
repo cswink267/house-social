@@ -252,6 +252,19 @@ def format_table(posts: list[dict]) -> list[dict]:
     return rows
 
 
+def suggest_hour(posts: list[dict]) -> dict:
+    """A schedule hour only when the same gap rule as the hour lesson is clear."""
+    lesson = _hour_lesson(posts)
+    if not lesson:
+        return {"clear": False, "hour": None, "label": "", "detail": "Not enough hours to suggest a time."}
+    return {
+        "clear": bool(lesson.get("clear")),
+        "hour": lesson.get("hour") if lesson.get("clear") else None,
+        "label": lesson.get("label") or "" if lesson.get("clear") else "",
+        "detail": lesson.get("detail") or "",
+    }
+
+
 def engagement_rate(impressions: int, engagements: int) -> float | None:
     if impressions <= 0:
         return None
@@ -346,7 +359,15 @@ def _hour_lesson(posts: list[dict]) -> dict | None:
             "A gap under 3 engagements does not move the schedule."
         )
         nxt = ""
-    return {"id": "hour", "title": "Hours", "detail": detail, "clear": clear, "next": nxt}
+    return {
+        "id": "hour",
+        "title": "Hours",
+        "detail": detail,
+        "clear": clear,
+        "next": nxt,
+        "hour": best["hour"],
+        "label": best["label"],
+    }
 
 
 def _trend_lesson(days: list[dict]) -> dict | None:
