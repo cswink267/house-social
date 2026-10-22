@@ -239,6 +239,28 @@
       if (saved) await refresh(brand.id);
     }
 
+    async function saveCampaign(body) {
+      const saved = await run(function () {
+        return SDK.fetchJSON("/api/plugins/house-social/brands/" + brand.id + "/campaigns", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify(body),
+        });
+      });
+      if (saved) await refresh(brand.id);
+    }
+
+    async function attachCampaign(id, body) {
+      const saved = await run(function () {
+        return SDK.fetchJSON("/api/plugins/house-social/campaigns/" + id + "/attach", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify(body),
+        });
+      });
+      if (saved) await refresh(brand.id);
+    }
+
     async function runQueue(action, ids) {
       const saved = await run(function () {
         return SDK.fetchJSON("/api/plugins/house-social/brands/" + brand.id + "/queue", {
@@ -445,6 +467,15 @@
             busy: busy,
             onOpen: function (id) { setActiveId(id); setSection("create"); },
             onBulk: runQueue,
+          }) : null,
+          section === "campaigns" ? h(CampaignsDesk, {
+            studio: studio,
+            pieces: pieces.filter(function (piece) { return brand && piece.brand_id === brand.id; }),
+            library: library,
+            busy: busy,
+            onOpen: function (id) { setActiveId(id); setSection("create"); },
+            onSave: saveCampaign,
+            onAttach: attachCampaign,
           }) : null,
           section === "performance" ? h(Performance, {
             brand: brand, studio: studio, busy: busy, pickedDay: pickedDay, pickedPost: pickedPost, pickedHour: pickedHour,
@@ -957,6 +988,85 @@
                 onClick: function () { props.onRevise(open.id, { restore: version.id }); },
               }, "Bring this version back"));
           })) : h("p", { className: "hs-note" }, "Choose an asset to see its versions and where it has been used.")),
+    );
+  }
+
+  function CampaignsDesk(props) {
+    const board = (props.studio && props.studio.campaigns) || { campaigns: [], kinds: ["launch", "seasonal", "evergreen"] };
+    const [openId, setOpenId] = useState("");
+    const [draft, setDraft] = useState({ name: "", kind: "launch", goal: "", goal_posts: "", start: "", end: "", note: "" });
+    const open = (board.campaigns || []).find(function (item) { return item.id === openId; }) || null;
+    function setField(field, value) {
+      setDraft(function (current) { return Object.assign({}, current, { [field]: value }); });
+    }
+    function save(event) {
+      event.preventDefault();
+      props.onSave({
+        name: draft.name,
+        kind: draft.kind,
+        goal: draft.goal,
+        goal_posts: draft.goal_posts ? Number(draft.goal_posts) : "",
+        start: draft.start,
+        end: draft.end,
+        note: draft.note,
+      });
+      setDraft({ name: "", kind: draft.kind, goal: "", goal_posts: "", start: "", end: "", note: "" });
+    }
+    return h("div", { className: "hs-main" },
+      h("p", { className: "hs-note" }, "A campaign holds the posts, the assets, the goal, and the dates. Progress is how many pieces are in it. Performance is what those pieces already earned."),
+      h("form", { className: "hs-cols", onSubmit: save },
+        h("input", { className: "hs-field", value: draft.name, placeholder: "Campaign name", onChange: function (event) { setField("name", event.target.value); } }),
+        h("select", { className: "hs-field", value: draft.kind, onChange: function (event) { setField("kind", event.target.value); } },
+          (board.kinds || []).map(function (kind) { return h("option", { key: kind, value: kind }, kind); })),
+        h("input", { className: "hs-field", value: draft.goal, placeholder: "Goal, in words", onChange: function (event) { setField("goal", event.target.value); } }),
+        h("input", { className: "hs-field", value: draft.goal_posts, placeholder: "How many posts", onChange: function (event) { setField("goal_posts", event.target.value); } }),
+        h("input", { className: "hs-field", type: "date", value: draft.start, onChange: function (event) { setField("start", event.target.value); } }),
+        h("input", { className: "hs-field", type: "date", value: draft.end, onChange: function (event) { setField("end", event.target.value); } }),
+        h("input", { className: "hs-field", value: draft.note, placeholder: "Note", onChange: function (event) { setField("note", event.target.value); } }),
+        h("button", { type: "submit", className: "hs-button", disabled: props.busy || !draft.name.trim() }, "Save campaign")),
+      (board.campaigns || []).length ? board.campaigns.map(function (item) {
+        const progress = item.progress || {};
+        const performance = item.performance || {};
+        return h("div", { key: item.id, className: "hs-pillar" },
+          h("button", { type: "button", className: "hs-post", onClick: function () { setOpenId(item.id === openId ? "" : item.id); } },
+            h("div", { className: "hs-name" }, item.name + " · " + item.kind),
+            h("div", { className: "hs-meta" }, progress.phase + " · " + progress.posts + (progress.goal_posts ? " of " + progress.goal_posts : "") + " posts · " + progress.assets + " assets")),
+          open && open.id === item.id ? h("div", null,
+            item.goal ? h("p", { className: "hs-voice" }, item.goal) : null,
+            h("p", { className: "hs-note" }, [item.start, item.end].filter(Boolean).join(" – ") || "No dates"),
+            h("p", { className: "hs-note" }, progress.making + " still being made · " + progress.out + " in the queue"),
+            h("p", { className: "hs-note" }, performance.detail),
+            performance.posts ? h("p", { className: "hs-note" }, performance.engagements + " engagements · " + performance.shares + " shares" + (performance.saves == null ? "" : " · " + performance.saves + " saves")) : null,
+            (item.pieces || []).map(function (piece) {
+              return h("button", { key: piece.id, type: "button", className: "hs-post", onClick: function () { props.onOpen(piece.id); } }, piece.status + " · " + piece.idea);
+            }),
+            (item.assets || []).map(function (asset) {
+              return h("div", { key: asset.id, className: "hs-note" }, asset.kind + " · " + asset.name);
+            }),
+            h("div", { className: "hs-row" },
+              h("select", {
+                className: "hs-field",
+                value: "",
+                onChange: function (event) {
+                  if (event.target.value) props.onAttach(item.id, { piece_ids: [event.target.value] });
+                  event.target.value = "";
+                },
+              }, h("option", { value: "" }, "Add a piece"),
+                (props.pieces || []).filter(function (piece) {
+                  return !(item.pieces || []).some(function (row) { return row.id === piece.id; });
+                }).map(function (piece) { return h("option", { key: piece.id, value: piece.id }, piece.idea.slice(0, 60)); })),
+              h("select", {
+                className: "hs-field",
+                value: "",
+                onChange: function (event) {
+                  if (event.target.value) props.onAttach(item.id, { asset_ids: [event.target.value] });
+                  event.target.value = "";
+                },
+              }, h("option", { value: "" }, "Add an asset"),
+                ((props.library && props.library.assets) || []).filter(function (asset) {
+                  return !(item.assets || []).some(function (row) { return row.id === asset.id; });
+                }).map(function (asset) { return h("option", { key: asset.id, value: asset.id }, asset.kind + " · " + asset.name); })))) : null);
+      }) : h("p", { className: "hs-note" }, "No campaigns yet."),
     );
   }
 

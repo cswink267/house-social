@@ -19,6 +19,7 @@ Each brand has the same desks.
 | Library | Images, video, carousels, templates, logos, and copy blocks. Tags, search, folders, and version history. Use on a piece or a live post, and the card shows the engagements that use actually earned. |
 | Calendar | Month, week, and day. Planned, drafted, ready, scheduled, and published. Drag a piece onto a day. Filter by platform, format, pillar, or campaign. |
 | Queue | What is going out. Drafts stay on the making side. Pending approval, scheduled, and failed are the pipeline. Bulk actions move pieces. A suggested hour appears only when past performance shows a real gap. Platform rules block a schedule that is not allowed. Nothing is sent. |
+| Campaigns | A named effort with a kind, a goal, dates, the pieces, and the assets. Progress is how much of that work is in the campaign. Performance is what those pieces have already earned. |
 | Analytics | Reach, engagement, saves, shares, follower change, top posts, and format performance for 7, 28, or 90 days, or the whole history. This window sits beside the one before it. A campaign is compared with the other posts only when both sides have three and the gap is real. A missing number stays missing. |
 | Learning | A comparison is kept only when both sides have at least three posts and the gap is real. An impression count of zero is never turned into a rate. |
 
@@ -77,6 +78,7 @@ brands.py                brands, pillars, desks
 adapt.py                 one idea, three different drafts
 assist.py                voice-bound rewrites, variations, hooks, and captions
 queue_desk.py            the publishing queue, still local
+campaigns.py             named efforts, goals, and dates
 voice.py                 guides and the voice checklist
 library.py               assets, versions, and use
 store.py                 state, connections, calendar, pulls

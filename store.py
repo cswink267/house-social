@@ -49,6 +49,7 @@ def empty_state() -> dict:
         "pulls": {},
         "voices": {},
         "assets": [],
+        "campaigns": [],
     }
 
 
@@ -67,6 +68,7 @@ def load(path: Path | None = None) -> dict:
     pulls = raw.get("pulls")
     voices = raw.get("voices")
     assets = raw.get("assets")
+    campaigns = raw.get("campaigns")
     return {
         "version": 1,
         "channels": channels if isinstance(channels, dict) else {},
@@ -77,6 +79,7 @@ def load(path: Path | None = None) -> dict:
         "pulls": pulls if isinstance(pulls, dict) else {},
         "voices": voices if isinstance(voices, dict) else {},
         "assets": assets if isinstance(assets, list) else [],
+        "campaigns": campaigns if isinstance(campaigns, list) else [],
     }
 
 
@@ -169,6 +172,14 @@ def update_piece(
         next_piece["hypothesis"] = _label(hypothesis, 240)
     if campaign is not None:
         next_piece["campaign"] = _label(campaign, 48)
+        match = next(
+            (
+                item for item in updated.get("campaigns") or []
+                if item.get("brand_id") == brand.id and str(item.get("name") or "").lower() == next_piece["campaign"].lower()
+            ),
+            None,
+        )
+        next_piece["campaign_id"] = match["id"] if match and next_piece["campaign"] else ""
     if status is not None:
         if status not in STATUSES:
             raise DraftError("Status must be draft, planned, ready, pending, scheduled, or failed.")
@@ -351,6 +362,7 @@ def studio(state: dict, brand_id: str, ledger: dict | None = None, today=None) -
         },
         "voice": _voice_view(state, brand_id),
         "queue": _queue_view(state, brand_id, posts),
+        "campaigns": _campaigns_view(state, brand_id, posts, when),
     }
 
 
@@ -582,6 +594,12 @@ def _queue_view(state: dict, brand_id: str, posts: list[dict]) -> dict:
     from queue_desk import queue_for
 
     return queue_for(state, brand_id, posts)
+
+
+def _campaigns_view(state: dict, brand_id: str, posts: list[dict], today) -> dict:
+    from campaigns import campaigns_for
+
+    return campaigns_for(state, brand_id, posts, today)
 
 
 def resolve_brand(state: dict, brand_id: str) -> Brand:

@@ -34,6 +34,7 @@ from store import (
     voice_check_brand,
     brand_history,
 )
+from campaigns import attach_campaign, revise_campaign, save_campaign
 from queue_desk import bulk_queue
 from voice import guide_for
 from learn import read_ledger
@@ -204,6 +205,30 @@ def post_queue(brand_id: str, body: dict) -> dict:
             scheduled_for=str(body.get("scheduled_for") or ""),
             posts=posts,
         )
+    except DraftError as exc:
+        _fail(exc)
+
+
+@router.post("/brands/{brand_id}/campaigns")
+def post_campaign(brand_id: str, body: dict) -> dict:
+    try:
+        return save_campaign(load(), brand_id, body)
+    except DraftError as exc:
+        _fail(exc)
+
+
+@router.patch("/campaigns/{campaign_id}")
+def patch_campaign(campaign_id: str, body: dict) -> dict:
+    try:
+        return revise_campaign(load(), campaign_id, body)
+    except DraftError as exc:
+        _fail(exc)
+
+
+@router.post("/campaigns/{campaign_id}/attach")
+def post_campaign_attach(campaign_id: str, body: dict) -> dict:
+    try:
+        return attach_campaign(load(), campaign_id, body)
     except DraftError as exc:
         _fail(exc)
 
