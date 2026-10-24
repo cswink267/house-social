@@ -570,3 +570,50 @@ What happened: fill_series and set_series_pause work, and the tests cover them. 
 Why: A series can be paused, and a fill can use a pillar the brand already has. Without a control, that only happens from code.
 
 Next: Add pause and fill on the Series desk. Do not invent a topic. Nothing is sent.
+
+## Audit 2026-10-24 — path to full autonomy
+
+Chris asked for a full audit with the end goal in mind: once a brand is in Fully Autonomous mode and posting is switched on, Hermes should act as a master social media manager and content creator. It should learn, create content, fully engage with followers, increase followers, drive engagement, and promote. It should not spend money (no boosting, no ad creation), but it should suggest posts worth boosting or ads that could be created.
+
+### Current state
+
+Publishing of original posts is implemented. A worker posts scheduled, approved pieces when their time arrives (locks, late-post cutoff, per-platform handling for Facebook, Instagram, Threads). Modes exist (manual, approval, auto). Agent tools can draft, inspect the queue, schedule, and post, respecting the brand mode. Historical ingest, memory, prediction, formats, feedback, engagement map (display-only), series, and approval email are present. Learning continues to require three posts on both sides of any comparison and never invents a rate from zero impressions.
+
+### Critical gap
+
+Engagement is still read-only. The inbox pulls comments, mentions, and messages, can suggest a reply, and can save the reply as a draft. `sending` remains false. Nothing is sent. Fully Autonomous mode can publish original content but cannot reply to followers. That is the largest missing piece for the stated end goal.
+
+### Fixes necessary
+
+- Inbox send path: make reply sending mode-aware, using the same rules as posts (manual = suggest only, approval = email for sign-off, auto = send within voice and guards, with rate limits and logging).
+- Confirm that every autonomous failure (generation, publish, inbox pull) is written to the activity log with piece id, platform, and a redacted error so later TODO appends have a source.
+- Verify that Fully Autonomous cannot post when the house posting switch or the brand posting switch is off, and that the UI always surfaces which switch is blocking.
+
+### Improvements
+
+- Expand the activity log so every generate, schedule, post, reply attempt, and failure is recorded with mode and outcome.
+- Add a short “engagement health” line on the Brief desk (count of comments older than a set number of hours that still need a reply, when the data exists).
+- Let the Engagement Map refresh after a successful pull or ingest without a manual reload.
+
+### Features to add
+
+1. Autonomous engagement (highest priority).  
+   Mode-aware replies to comments and mentions. Manual suggests only. Autonomous-with-approval generates drafts and emails them for approval (reuse the existing approval-mail path). Fully Autonomous posts replies that stay inside the voice guide and hard guards, subject to a per-day reply limit, and writes every send or failure to the activity log. Direct messages stay draft-only or require an extra explicit confirmation.
+
+2. Boost / ad suggestion surface.  
+   A function that selects posts which are at least 3× the brand average, have a clear format or pillar, and meet a minimum engagement count the user sets. Show them on the Brief or Analytics desk with the reason and a “Copy suggestion” action. Never call any ads or boosting API.
+
+3. Engagement outcome learning.  
+   Once replies can be sent, record whether the reply received further likes, replies, or other engagement. Feed that signal into the same learning path used for posts (three-post rule still applies).
+
+4. Hermes TODO writer.  
+   Implement the capability already specified in section 10 so runtime issues and small evidence-based improvements are appended to this file. Off by default, rate-limited, append-only, duplicate-checked, token in the vault.
+
+### How to implement
+
+- Autonomous engagement: add a send path in inbox.py that checks mode, guards, and limits; extend the existing worker tick (or add a sibling tick) to process approved reply drafts; reuse approval_mail for the approval mode; log every outcome.
+- Boost suggestions: new helper (analytics_desk.py or a small boost.py) that applies the three-post rule and a user-set minimum; surface on an existing desk; no external spend calls.
+- Hermes TODO writer: follow the notes already in section 10; call it from failure paths in publish.py, inbox.py, and the generation path.
+- Keep every existing rule: three posts on both sides for comparisons, missing numbers stay missing, nothing is sent until the mode and the posting switches allow it, tokens stay in the vault.
+
+These items are the remaining distance between the current plugin and the master social media manager described in the request. Original-content autonomy is largely in place; follower engagement autonomy is not.
