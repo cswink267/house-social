@@ -2238,7 +2238,10 @@
     const entries = (props.calendar && props.calendar.entries) || [];
     const advice = (props.calendar && props.calendar.advice) || { gaps: [], mix: [], warnings: [], slot: { clear: false, detail: "" } };
     const recurrences = (props.calendar && props.calendar.recurrences) || [];
-    const [view, setView] = useState(function () { return recall("calendar-view") || "month"; });
+    const [view, setView] = useState(function () {
+      const saved = recall("calendar-view");
+      return ["month", "week", "day"].indexOf(saved) >= 0 ? saved : "month";
+    });
     const [cursor, setCursor] = useState(todayET);
     const [colorBy, setColorBy] = useState("status");
     const [platform, setPlatform] = useState("all");
