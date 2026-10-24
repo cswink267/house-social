@@ -2,7 +2,7 @@
 
 Chris, Oct 22 2026. These are extras. The order is locked. One at a time, when he asks. Do not pull the next one forward. Do not delete an item. Mark it complete when it is done.
 
-Item 1 through item 10 are complete. The rest are not started.
+Item 1 through item 10 are complete. The suggested improvement is complete.
 
 Ingest history, then make the knowledge visible and correctable, then apply it while writing, then capture reusable formats and explicit feedback, then, only if he still wants it, look across brands.
 
@@ -560,6 +560,8 @@ Hermes adding to the TODO is a convenience for capturing real issues and small, 
 ## Suggested improvements
 
 ### Series fill is not on the desk
+
+**Status: complete.** Pause and Fill are on the Series desk. Fill uses a pillar this brand already has and shows the lines. It does not save a draft. A paused series cannot be filled or opened in the composer. Nothing is sent.
 
 2026-10-24. Desk: Series.
 

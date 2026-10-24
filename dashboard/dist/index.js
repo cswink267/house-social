@@ -927,6 +927,25 @@
               setSection("create");
               await refresh(brand.id);
             },
+            onPause: async function (id, paused) {
+              const saved = await run(function () {
+                return SDK.fetchJSON("/api/plugins/house-social/brands/" + brand.id + "/support", {
+                  method: "POST",
+                  headers: { "Content-Type": "application/json" },
+                  body: JSON.stringify({ action: "series", id: id, paused: paused }),
+                });
+              });
+              if (saved) await refresh(brand.id);
+            },
+            onFill: function (id) {
+              return run(function () {
+                return SDK.fetchJSON("/api/plugins/house-social/brands/" + brand.id + "/support", {
+                  method: "POST",
+                  headers: { "Content-Type": "application/json" },
+                  body: JSON.stringify({ action: "fill", id: id }),
+                });
+              });
+            },
           }) : null,
           section === "calendar" ? h(Calendar, {
             onWhy: function (patternId) { setMemoryFocus(patternId || ""); setSection("memory"); },
@@ -2092,15 +2111,18 @@
   }
 
   function SeriesApply(props) {
-    const rows = (props.series && props.series.items) || [];
+    const saved = (props.series && props.series.items) || [];
+    const rows = saved.filter(function (item) { return !item.paused; });
     const [picked, setPicked] = useState(rows[0] ? rows[0].id : "");
     const [topic, setTopic] = useState("");
-    if (!rows.length) return null;
+    const current = rows.some(function (item) { return item.id === picked; }) ? picked : (rows[0] ? rows[0].id : "");
+    if (!saved.length) return null;
+    if (!rows.length) return h("p", { className: "hs-note" }, "Every saved series is paused.");
     return h("form", { className: "hs-row", onSubmit: function (event) {
       event.preventDefault();
-      if (picked && topic.trim() && props.onApply) props.onApply(picked, topic.trim());
+      if (current && topic.trim() && props.onApply) props.onApply(current, topic.trim());
     } },
-      h("select", { className: "hs-field", value: picked, onChange: function (event) { setPicked(event.target.value); } },
+      h("select", { className: "hs-field", value: current, onChange: function (event) { setPicked(event.target.value); } },
         rows.map(function (item) { return h("option", { key: item.id, value: item.id }, item.name); })),
       h("input", { className: "hs-field", value: topic, placeholder: "New topic for this series", onChange: function (event) { setTopic(event.target.value); } }),
       h("button", { type: "submit", className: "hs-button", disabled: props.busy || !topic.trim() }, "Open in the composer"));
@@ -2109,6 +2131,7 @@
   function SeriesDesk(props) {
     const desk = (props.studio && props.studio.series) || { items: [], suggestions: [] };
     const [draft, setDraft] = useState({ name: "", structure: "", hook: "", media: "", examples: "", tags: "" });
+    const [filled, setFilled] = useState({});
     const [q, setQ] = useState("");
     const [tag, setTag] = useState("");
     const items = (desk.items || []).filter(function (item) {
@@ -2118,7 +2141,7 @@
       return true;
     });
     return h("div", { className: "hs-main" },
-      h("p", { className: "hs-note" }, "A series is a structure you can reuse with a new topic. A suggestion appears only when that shape is already ahead. Stats wait for three uses with numbers. A refresh note does not delete anything. A series stays on this brand."),
+      h("p", { className: "hs-note" }, "A series is a structure you can reuse with a new topic. Pause holds it. Fill uses a pillar this brand already has and shows the lines here. It does not save a draft. A suggestion appears only when that shape is already ahead. Stats wait for three uses with numbers. A refresh note does not delete anything. A series stays on this brand. Nothing is sent."),
       h(SeriesApply, { series: desk, busy: props.busy, onApply: props.onApply }),
       (desk.suggestions || []).map(function (item) {
         return h("div", { key: item.id, className: "hs-pillar" },
@@ -2155,6 +2178,23 @@
           item.media ? h("p", { className: "hs-note" }, item.media) : null,
           h("p", { className: "hs-note" }, item.stats && item.stats.detail),
           item.notice ? h("p", { className: "hs-bad" }, item.notice) : null,
+          h("div", { className: "hs-row" },
+            h("button", {
+              type: "button", className: "hs-tab", disabled: props.busy,
+              onClick: function () { if (props.onPause) props.onPause(item.id, !item.paused); },
+            }, item.paused ? "Resume" : "Pause"),
+            h("button", {
+              type: "button", className: "hs-tab", disabled: props.busy || item.paused,
+              onClick: async function () {
+                const saved = props.onFill ? await props.onFill(item.id) : null;
+                if (saved && saved.lines) setFilled(function (current) { return Object.assign({}, current, { [item.id]: saved }); });
+              },
+            }, "Fill from a pillar")),
+          item.paused ? h("p", { className: "hs-note" }, "Paused. Fill and the composer stay off until you resume it.") : null,
+          filled[item.id] ? h("div", null,
+            h("p", { className: "hs-note" }, "Filled with " + filled[item.id].topic + ". This is not saved. Nothing is sent."),
+            (filled[item.id].lines || []).map(function (line, index) { return h("p", { key: "fill-" + index, className: "hs-voice" }, line); })
+          ) : null,
           (item.examples || []).map(function (example) {
             return h("p", { key: example.id, className: "hs-note" }, (example.engagements == null ? "Not in the pull" : example.engagements + " engagements") + " · " + example.preview);
           }));

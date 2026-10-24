@@ -71,6 +71,21 @@ def test_apply_stays_on_the_brand_and_stats_wait_for_three_uses(tmp_path: Path):
     assert view["items"][0]["stats"]["detail"].startswith("Not enough")
 
 
+def test_a_paused_series_stays_on_the_desk_and_cannot_open(tmp_path: Path):
+    from support import set_series_pause
+
+    path = tmp_path / "state.json"
+    saved = save_series(empty_state(), "okay", {"name": "Ask", "structure": ["{topic}", "Ask."]}, path)
+    assert series_for(load(path), "okay")["items"][0]["paused"] is False
+    set_series_pause(load(path), "okay", saved["id"], True, path)
+    card = series_for(load(path), "okay")["items"][0]
+    assert card["paused"] is True
+    assert card["name"] == "Ask"
+    with pytest.raises(DraftError, match="paused"):
+        apply_series(load(path), "okay", saved["id"], "the rent", path)
+    assert load(path)["pieces"] == []
+
+
 def test_keep_uses_the_ahead_shape_and_a_later_drop_is_only_a_notice(tmp_path: Path):
     path = tmp_path / "state.json"
     state = empty_state()

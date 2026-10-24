@@ -35,11 +35,12 @@ def series_for(state: dict, brand_id: str, posts: list[dict] | None = None, q: s
     history = list(posts) if posts is not None else brand_history(state, brand.id)[0]
     needle = q.strip().lower()
     wanted = tag.strip().lower()
+    flags = state.get("series_paused") if isinstance(state.get("series_paused"), dict) else {}
     rows = []
     for item in state.get("series") or []:
         if item.get("brand_id") != brand.id:
             continue
-        card = _public(item, history)
+        card = {**_public(item, history), "paused": bool(flags.get(item.get("id")))}
         if wanted and wanted not in {name.lower() for name in card["tags"]}:
             continue
         haystack = " ".join([card["name"], card["hook"], card["media"], " ".join(card["structure"]), " ".join(card["tags"])]).lower()
@@ -132,6 +133,8 @@ def apply_series(state: dict, brand_id: str, series_id: str, topic: str, path: P
 
     brand = resolve_brand(state, brand_id)
     row = _find(state, brand.id, series_id)
+    if (state.get("series_paused") or {}).get(row["id"]):
+        raise DraftError("That series is paused.")
     subject = _clip(topic, 120)
     if not subject:
         raise DraftError("A series needs a topic.")
