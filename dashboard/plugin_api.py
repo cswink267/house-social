@@ -67,7 +67,17 @@ def _fail(exc: DraftError) -> None:
 
 @router.get("/roster")
 def get_roster() -> dict:
-    return {"posting": False, "platforms": list(PLATFORMS), "limits": LIMITS, "card_limit": JOSIE_CARD, "brands": roster(load())}
+    from store import apps_view
+
+    state = load()
+    return {
+        "posting": False,
+        "platforms": list(PLATFORMS),
+        "limits": LIMITS,
+        "card_limit": JOSIE_CARD,
+        "brands": roster(state),
+        "apps": apps_view(state),
+    }
 
 
 @router.post("/brands")
@@ -220,6 +230,66 @@ def post_apps(body: dict) -> dict:
 def post_connection(body: dict) -> dict:
     try:
         return save_connection(load(), body)
+    except DraftError as exc:
+        _fail(exc)
+
+
+@router.post("/brands/{brand_id}/connect")
+def post_connect(brand_id: str, body: dict) -> dict:
+    from connect import start_connect
+
+    body = body if isinstance(body, dict) else {}
+    try:
+        return start_connect(load(), brand_id, str(body.get("provider") or ""), str(body.get("redirect_uri") or ""))
+    except DraftError as exc:
+        _fail(exc)
+
+
+@router.post("/connect/finish")
+def post_connect_finish(body: dict) -> dict:
+    from connect import finish_connect
+
+    body = body if isinstance(body, dict) else {}
+    try:
+        return finish_connect(load(), str(body.get("state") or ""), str(body.get("code") or ""))
+    except DraftError as exc:
+        _fail(exc)
+
+
+@router.get("/connect/choices/{choice_id}")
+def get_connect_choice(choice_id: str) -> dict:
+    from connect import read_choice
+
+    try:
+        return read_choice(load(), choice_id)
+    except DraftError as exc:
+        _fail(exc)
+
+
+@router.post("/connect/choices/{choice_id}")
+def post_connect_choice(choice_id: str, body: dict) -> dict:
+    from connect import choose_accounts
+
+    try:
+        return choose_accounts(load(), choice_id, body if isinstance(body, dict) else {})
+    except DraftError as exc:
+        _fail(exc)
+
+
+@router.delete("/connect/choices/{choice_id}")
+def delete_connect_choice(choice_id: str) -> dict:
+    from connect import cancel_choice
+
+    return cancel_choice(choice_id)
+
+
+@router.post("/brands/{brand_id}/disconnect")
+def post_disconnect(brand_id: str, body: dict) -> dict:
+    from connect import disconnect
+
+    body = body if isinstance(body, dict) else {}
+    try:
+        return disconnect(load(), brand_id, str(body.get("platform") or ""))
     except DraftError as exc:
         _fail(exc)
 

@@ -218,7 +218,7 @@ SECTIONS = (
     # Setup — brand foundation
     {"id": "brief", "label": "Brief", "group": "Setup"},
     {"id": "voice", "label": "Voice", "group": "Setup"},
-    {"id": "pages", "label": "Pages", "group": "Setup"},
+    {"id": "pages", "label": "Accounts", "group": "Setup"},
     # Create — ideas and drafting
     {"id": "ideas", "label": "Ideas", "group": "Create"},
     {"id": "create", "label": "Composer", "group": "Create"},

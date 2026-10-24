@@ -36,7 +36,7 @@ def refresh_inbox(state: dict, brand_id: str, path: Path | None = None, reader=N
     brand = resolve_brand(state, brand_id)
     mine = [item for item in state.get("connections") or [] if item.get("brand_id") == brand.id]
     if not mine:
-        raise DraftError("Add a Meta app for this brand first.")
+        raise DraftError("Connect this brand's Facebook Page, Instagram, or Threads account under Accounts first.")
     read = reader or _read_vault
     fetch = gather or gather_inbox
     pulled = ((state.get("pulls") or {}).get(brand.id) or {}).get("posts") or []
