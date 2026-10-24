@@ -22,6 +22,7 @@ from store import (  # noqa: E402
     load,
     roster,
     set_channels,
+    set_site,
     studio,
     pull_brand,
     save_connection,
@@ -143,7 +144,21 @@ def test_threads_clip_and_empty_idea():
         shape(brand, "   ")
 
 
-def test_custom_brand_and_channel_edit_roundtrip(tmp_path: Path):
+def test_the_brief_can_set_and_clear_a_brand_site(tmp_path: Path):
+    path = tmp_path / "state.json"
+    saved = set_site(empty_state(), "morgan-rae", "https://morgan.example", path)
+    assert saved["site"] == "https://morgan.example"
+    row = next(item for item in roster(load(path)) if item["id"] == "morgan-rae")
+    assert row["site"] == "https://morgan.example"
+    cleared = set_site(load(path), "morgan-rae", "  ", path)
+    assert next(item for item in roster(load(path)) if item["id"] == "morgan-rae")["site"] == ""
+    assert cleared["site"] == ""
+    add_brand(load(path), {"id": "north-room", "name": "North Room", "site": "https://example.com"}, path)
+    moved = set_site(load(path), "north-room", "http://north.example", path)
+    assert moved["site"] == "http://north.example"
+    assert next(item for item in roster(load(path)) if item["id"] == "north-room")["site"] == "http://north.example"
+    with pytest.raises(DraftError, match="https://"):
+        set_site(load(path), "morgan-rae", "javascript:alert(1)", path)
     path = tmp_path / "state.json"
     state = empty_state()
     add_brand(

@@ -616,7 +616,18 @@
                   })));
             })),
           section === "brief" ? h(Brief, {
+            key: brand.id,
             brand: brand, handles: handles, setHandles: setHandles, busy: busy, onSave: saveChannels,
+            onSaveSite: async function (site) {
+              const saved = await run(function () {
+                return SDK.fetchJSON("/api/plugins/house-social/brands/" + brand.id + "/site", {
+                  method: "POST",
+                  headers: { "Content-Type": "application/json" },
+                  body: JSON.stringify({ site: site }),
+                });
+              });
+              if (saved) await refresh(brand.id);
+            },
             studio: studio,
             onPull: async function () {
               const saved = await run(function () {
@@ -1368,6 +1379,8 @@
 
   function Brief(props) {
     const brand = props.brand;
+    const [site, setSite] = useState(brand.site || "");
+    const link = /^https?:\/\//.test(site.trim()) ? site.trim() : "";
     return h("div", { className: "hs-main" },
       h("p", { className: "hs-voice" }, brand.audience || brand.voice),
       h(StudioRead, { read: props.studio && props.studio.studio_read, busy: props.busy, onPull: props.onPull }),
@@ -1380,6 +1393,16 @@
           h("div", { className: "hs-name" }, item.name),
           h("p", { className: "hs-note" }, item.note));
       })),
+      h("label", { className: "hs-meta" }, "Website",
+        h("input", {
+          className: "hs-field",
+          value: site,
+          placeholder: "https://",
+          onChange: function (event) { setSite(event.target.value); },
+        })),
+      link ? h("p", { className: "hs-note" }, h("a", { href: link, target: "_blank", rel: "noopener noreferrer" }, link)) : null,
+      h("div", { className: "hs-row" },
+        h("button", { type: "button", className: "hs-button", disabled: props.busy, onClick: function () { props.onSaveSite(site.trim()); } }, "Save website")),
       h("div", { className: "hs-cols" }, PLATFORMS.map(function (pair) {
         return h("label", { key: pair[0], className: "hs-meta" }, pair[1],
           h("input", {

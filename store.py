@@ -74,6 +74,7 @@ def empty_state() -> dict:
         "prediction_hidden": {},
         "series": [],
         "feedback": [],
+        "sites": {},
     }
 
 
@@ -116,6 +117,7 @@ def load(path: Path | None = None) -> dict:
     prediction_hidden = raw.get("prediction_hidden")
     series = raw.get("series")
     feedback = raw.get("feedback")
+    sites = raw.get("sites")
     return {
         "version": 1,
         "channels": channels if isinstance(channels, dict) else {},
@@ -150,6 +152,7 @@ def load(path: Path | None = None) -> dict:
         "prediction_hidden": prediction_hidden if isinstance(prediction_hidden, dict) else {},
         "series": series if isinstance(series, list) else [],
         "feedback": feedback if isinstance(feedback, list) else [],
+        "sites": sites if isinstance(sites, dict) else {},
     }
 
 
@@ -164,11 +167,11 @@ def save(state: dict, path: Path | None = None) -> None:
 def roster(state: dict) -> list[dict]:
     hidden = set(state.get("hidden_brands") or [])
     rows = [
-        brand_dict(brand, _merged_channels(brand.id, brand.channels, state))
+        _with_site(state, brand_dict(brand, _merged_channels(brand.id, brand.channels, state)))
         for brand in _seeds()
         if brand.id not in hidden
     ]
-    rows.extend(_custom_row(custom, state) for custom in state["custom_brands"])
+    rows.extend(_with_site(state, _custom_row(custom, state)) for custom in state["custom_brands"])
     return rows
 
 
@@ -338,6 +341,43 @@ def add_brand(state: dict, spec: dict, path: Path | None = None) -> dict:
     return custom
 
 
+def set_site(state: dict, brand_id: str, site: str, path: Path | None = None) -> dict:
+    brand = resolve_brand(state, brand_id)
+    clean = _site_url(site)
+    updated = _copy(state)
+    custom = next((item for item in updated.get("custom_brands") or [] if item.get("id") == brand.id), None)
+    sites = dict(updated.get("sites") or {})
+    if custom is not None:
+        custom["site"] = clean
+        sites.pop(brand.id, None)
+    elif clean:
+        sites[brand.id] = clean
+    else:
+        sites.pop(brand.id, None)
+    updated["sites"] = sites
+    save(updated, path)
+    shown = sites.get(brand.id, custom.get("site") if custom is not None else brand.site)
+    return {"id": brand.id, "site": shown}
+
+
+def _site_url(site: str) -> str:
+    text = str(site or "").strip()
+    if not text:
+        return ""
+    if len(text) > 200 or any(char.isspace() for char in text):
+        raise DraftError("The site needs to start with https://.")
+    if not text.startswith(("https://", "http://")) or text in {"https://", "http://"}:
+        raise DraftError("The site needs to start with https://.")
+    return text
+
+
+def _with_site(state: dict, row: dict) -> dict:
+    sites = state.get("sites") or {}
+    if row.get("id") in sites:
+        return {**row, "site": str(sites[row["id"]] or "")}
+    return row
+
+
 def remove_brand(state: dict, brand_id: str, path: Path | None = None, root: Path | None = None) -> dict:
     name = str(brand_id or "").strip()
     if not brand_removable(name):
@@ -372,7 +412,7 @@ def remove_brand(state: dict, brand_id: str, path: Path | None = None, root: Pat
         "feedback",
     ):
         updated[key] = [item for item in updated.get(key) or [] if item.get("brand_id") != name]
-    for key in ("channels", "pulls", "voices", "approval_steps", "inbox_errors", "voice_versions", "ingest_maps", "memory_marks", "studio_reads", "prediction_hidden"):
+    for key in ("channels", "pulls", "voices", "approval_steps", "inbox_errors", "voice_versions", "ingest_maps", "memory_marks", "studio_reads", "prediction_hidden", "sites"):
         current = dict(updated.get(key) or {})
         current.pop(name, None)
         updated[key] = current

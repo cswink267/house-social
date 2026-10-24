@@ -41,6 +41,7 @@ from store import (
     save_recurrence,
     save_voice,
     set_channels,
+    set_site,
     studio,
     update_piece,
     voice_check_brand,
@@ -89,6 +90,14 @@ def delete_brand(brand_id: str) -> dict:
 def put_channels(brand_id: str, body: dict) -> dict:
     try:
         return {"channels": set_channels(load(), brand_id, body)}
+    except DraftError as exc:
+        _fail(exc)
+
+
+@router.post("/brands/{brand_id}/site")
+def post_site(brand_id: str, body: dict) -> dict:
+    try:
+        return set_site(load(), brand_id, str((body or {}).get("site") or ""))
     except DraftError as exc:
         _fail(exc)
 
