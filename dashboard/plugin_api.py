@@ -241,7 +241,9 @@ def post_draft_read(brand_id: str, body: dict) -> dict:
     if brand.id == "josie-blackthorn":
         ledger = read_ledger(ledger_dir())
     posts, _days = brand_history(state, brand.id, ledger)
-    return read_draft(str((body or {}).get("text") or ""), posts)
+    from memory import marks_for
+
+    return read_draft(str((body or {}).get("text") or ""), posts, marks=marks_for(state, brand.id))
 
 
 @router.post("/brands/{brand_id}/assist")
@@ -639,6 +641,32 @@ def post_ingest_preview(brand_id: str, body: dict) -> dict:
 def post_ingest(brand_id: str, body: dict) -> dict:
     try:
         return commit_ingest(load(), brand_id, body if isinstance(body, dict) else {})
+    except DraftError as exc:
+        _fail(exc)
+
+
+@router.post("/brands/{brand_id}/memory")
+def post_memory(brand_id: str, body: dict) -> dict:
+    from memory import correct_memory, reset_memory, sync_memory
+
+    state = load()
+    action = str((body or {}).get("action") or "").strip().lower()
+    try:
+        if action == "reset":
+            return reset_memory(state, brand_id)
+        if action == "sync":
+            return sync_memory(state, brand_id)
+        return correct_memory(state, brand_id, str((body or {}).get("pattern_id") or ""), action)
+    except DraftError as exc:
+        _fail(exc)
+
+
+@router.get("/brands/{brand_id}/memory/export")
+def get_memory_export(brand_id: str, kind: str = "markdown") -> dict:
+    from memory import export_memory
+
+    try:
+        return export_memory(load(), brand_id, kind)
     except DraftError as exc:
         _fail(exc)
 

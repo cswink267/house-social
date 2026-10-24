@@ -68,6 +68,8 @@ def empty_state() -> dict:
         "studio_reads": {},
         "ingest_log": [],
         "ingest_maps": {},
+        "memory_marks": {},
+        "memory_log": [],
     }
 
 
@@ -104,6 +106,8 @@ def load(path: Path | None = None) -> dict:
     studio_reads = raw.get("studio_reads")
     ingest_log = raw.get("ingest_log")
     ingest_maps = raw.get("ingest_maps")
+    memory_marks = raw.get("memory_marks")
+    memory_log = raw.get("memory_log")
     return {
         "version": 1,
         "channels": channels if isinstance(channels, dict) else {},
@@ -132,6 +136,8 @@ def load(path: Path | None = None) -> dict:
         "studio_reads": studio_reads if isinstance(studio_reads, dict) else {},
         "ingest_log": ingest_log if isinstance(ingest_log, list) else [],
         "ingest_maps": ingest_maps if isinstance(ingest_maps, dict) else {},
+        "memory_marks": memory_marks if isinstance(memory_marks, dict) else {},
+        "memory_log": memory_log if isinstance(memory_log, list) else [],
     }
 
 
@@ -347,9 +353,11 @@ def remove_brand(state: dict, brand_id: str, path: Path | None = None, root: Pat
         "history",
         "goals",
         "recurrences",
+        "ingest_log",
+        "memory_log",
     ):
         updated[key] = [item for item in updated.get(key) or [] if item.get("brand_id") != name]
-    for key in ("channels", "pulls", "voices", "approval_steps", "inbox_errors", "voice_versions"):
+    for key in ("channels", "pulls", "voices", "approval_steps", "inbox_errors", "voice_versions", "ingest_maps", "memory_marks", "studio_reads"):
         current = dict(updated.get(key) or {})
         current.pop(name, None)
         updated[key] = current
@@ -626,6 +634,7 @@ def studio(state: dict, brand_id: str, ledger: dict | None = None, today=None) -
         "reports": _reports_view(state, brand_id),
         "studio_read": _studio_read_view(state, brand_id),
         "ingest": _ingest_view(state, brand_id),
+        "memory": _memory_view(state, brand_id, posts, pieces),
     }
 
 
@@ -1118,12 +1127,19 @@ def _calendar(pieces: list[dict], posts: list[dict], today) -> dict:
     return {"days": days, "unscheduled": unscheduled, "entries": entries}
 
 
+def _memory_view(state: dict, brand_id: str, posts: list[dict], pieces: list[dict]) -> dict:
+    from memory import memory_for
+
+    return memory_for(state, brand_id, posts, pieces)
+
+
 def _calendar_view(state: dict, brand_id: str, pieces: list[dict], posts: list[dict], today) -> dict:
     from calendar_desk import advise
+    from memory import marks_for
 
     desk = _calendar(pieces, posts, today)
     pillars = next((item.get("pillars") or [] for item in roster(state) if item["id"] == brand_id), [])
-    desk["advice"] = advise(desk["entries"], pillars, posts, today)
+    desk["advice"] = advise(desk["entries"], pillars, posts, today, marks=marks_for(state, brand_id))
     desk["recurrences"] = [
         {
             "id": item.get("id"),

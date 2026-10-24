@@ -57,6 +57,7 @@
     const [studio, setStudio] = useState(null);
     const [brandId, setBrandId] = useState("josie-blackthorn");
     const [section, setSection] = useState("brief");
+    const [memoryFocus, setMemoryFocus] = useState("");
     const [idea, setIdea] = useState("");
     const [pillar, setPillar] = useState("");
     const [format, setFormat] = useState("quote-image");
@@ -729,6 +730,7 @@
             onHashtag: applyHashtag,
             onRead: function () { readDraft(assistText()); },
             onImprove: improveDraft,
+            onWhy: function (patternId) { setMemoryFocus(patternId || ""); setSection("memory"); },
             draftRead: draftRead,
             onHold: function (date) {
               if (active && active.brand_id === brand.id) placePiece(active.id, date);
@@ -758,6 +760,7 @@
             onFail: function (text) { setError(text); },
           }) : null,
           section === "calendar" ? h(Calendar, {
+            onWhy: function (patternId) { setMemoryFocus(patternId || ""); setSection("memory"); },
             brand: brand,
             calendar: studio && studio.calendar,
             ideas: studio && studio.ideas,
@@ -884,6 +887,36 @@
               });
               if (saved) await refresh(brand.id);
               return saved;
+            },
+          }) : null,
+          section === "memory" ? h(MemoryDesk, {
+            studio: studio,
+            busy: busy,
+            focus: memoryFocus,
+            onSync: async function () {
+              const saved = await run(function () {
+                return SDK.fetchJSON("/api/plugins/house-social/brands/" + brand.id + "/memory", {
+                  method: "POST",
+                  headers: { "Content-Type": "application/json" },
+                  body: JSON.stringify({ action: "sync" }),
+                });
+              });
+              if (saved) await refresh(brand.id);
+            },
+            onCorrect: async function (action, patternId) {
+              const saved = await run(function () {
+                return SDK.fetchJSON("/api/plugins/house-social/brands/" + brand.id + "/memory", {
+                  method: "POST",
+                  headers: { "Content-Type": "application/json" },
+                  body: JSON.stringify({ action: action, pattern_id: patternId || "" }),
+                });
+              });
+              if (saved) await refresh(brand.id);
+            },
+            onExport: async function (kind) {
+              return run(function () {
+                return SDK.fetchJSON("/api/plugins/house-social/brands/" + brand.id + "/memory/export?kind=" + encodeURIComponent(kind));
+              });
             },
           }) : null,
           section === "hashtags" ? h(HashtagDesk, {
@@ -1330,6 +1363,10 @@
         h("p", { className: "hs-note" }, props.draftRead.hook),
         h("p", { className: "hs-note" }, props.draftRead.cta),
         h("p", { className: "hs-voice" }, props.draftRead.improve),
+        (props.draftRead.pattern_ids || []).length ? h("button", {
+          type: "button", className: "hs-tab",
+          onClick: function () { if (props.onWhy) props.onWhy(props.draftRead.pattern_ids[0]); },
+        }, "Why this recommendation?") : null,
         (props.draftRead.similar || []).length ? (props.draftRead.similar || []).map(function (item) {
           return h("p", { key: item.id, className: "hs-note" }, item.engagements + " engagements" + (item.ahead ? " · ahead of the others" : "") + " · " + item.preview);
         }) : h("p", { className: "hs-note" }, "No saved post shares words with this draft.")) : null,
@@ -2117,6 +2154,10 @@
       })),
       h("p", { className: "hs-note" }, balanceLine(visible, spanDates, brand.pillars)),
       advice.slot && advice.slot.detail ? h("p", { className: advice.slot.clear ? "hs-ok" : "hs-note" }, advice.slot.clear ? ("Open slot: " + advice.slot.label + ". " + advice.slot.detail) : advice.slot.detail) : null,
+      (advice.slot && (advice.slot.pattern_ids || []).length) ? h("button", {
+        type: "button", className: "hs-tab",
+        onClick: function () { if (props.onWhy) props.onWhy(advice.slot.pattern_ids[0]); },
+      }, "Why this recommendation?") : null,
       advice.slot && advice.slot.clear && advice.slot.date ? h("button", {
         type: "button", className: "hs-tab", disabled: props.busy,
         onClick: function () { setPlanDate(advice.slot.date); },
@@ -2183,6 +2224,43 @@
     );
   }
 
+
+
+  function MemoryDesk(props) {
+    const desk = (props.studio && props.studio.memory) || { sections: [], timeline: [] };
+    const [exported, setExported] = useState("");
+    useEffect(function () { props.onSync(); }, []);
+    useEffect(function () {
+      if (!props.focus) return;
+      const node = document.getElementById("hs-memory-" + props.focus);
+      if (node && node.scrollIntoView) node.scrollIntoView({ block: "center" });
+    }, [props.focus, desk.sections]);
+    return h("div", { className: "hs-main" },
+      h("p", { className: "hs-note" }, "These are the patterns the posts already showed. A thin count stays thin. A deleted pattern stays here, and it stays off the recommendations, until you restore it. Reset clears the corrections. The posts stay."),
+      h("div", { className: "hs-row" },
+        h("button", { type: "button", className: "hs-tab", disabled: props.busy, onClick: function () { props.onCorrect("reset", ""); } }, "Reset learned patterns"),
+        h("button", { type: "button", className: "hs-tab", disabled: props.busy, onClick: async function () { const found = await props.onExport("markdown"); if (found) setExported(found.body || ""); } }, "Export markdown"),
+        h("button", { type: "button", className: "hs-tab", disabled: props.busy, onClick: async function () { const found = await props.onExport("json"); if (found) setExported(found.body || ""); } }, "Export JSON")),
+      exported ? h("textarea", { className: "hs-area", readOnly: true, value: exported }) : null,
+      (desk.sections || []).map(function (section) {
+        return h("div", { key: section.id },
+          h("div", { className: "hs-name" }, section.label),
+          (section.lines || []).map(function (line) {
+            return h("div", { key: line.id, id: "hs-memory-" + line.id, className: "hs-pillar" },
+              h("div", { className: "hs-name" }, line.title + " · " + line.standing + (line.thin ? " · thin" : "")),
+              h("p", { className: line.standing === "deleted" ? "hs-bad" : "hs-note" }, line.detail),
+              h("div", { className: "hs-row" },
+                line.standing !== "pinned" ? h("button", { type: "button", className: "hs-tab", disabled: props.busy, onClick: function () { props.onCorrect("pin", line.id); } }, "Pin") : null,
+                line.standing !== "demoted" ? h("button", { type: "button", className: "hs-tab", disabled: props.busy, onClick: function () { props.onCorrect("demote", line.id); } }, "Lower") : null,
+                line.standing !== "deleted" ? h("button", { type: "button", className: "hs-tab", disabled: props.busy, onClick: function () { props.onCorrect("delete", line.id); } }, "Delete") : null,
+                line.standing !== "open" ? h("button", { type: "button", className: "hs-tab", disabled: props.busy, onClick: function () { props.onCorrect("restore", line.id); } }, "Restore") : null));
+          }));
+      }),
+      h("div", { className: "hs-name" }, "Changes"),
+      (desk.timeline || []).length ? (desk.timeline || []).map(function (item) {
+        return h("p", { key: item.id, className: "hs-note" }, (item.kind || "") + (item.pattern_id ? " · " + item.pattern_id : "") + (item.after ? " · " + item.after : ""));
+      }) : h("p", { className: "hs-note" }, "No changes yet."));
+  }
 
   function IngestDesk(props) {
     const desk = (props.studio && props.studio.ingest) || { fields: [], mapping: {}, log: [], insights: [] };

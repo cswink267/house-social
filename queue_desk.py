@@ -56,10 +56,18 @@ def queue_for(state: dict, brand_id: str, posts: list[dict] | None = None) -> di
         if piece.get("brand_id") == brand.id
     ]
     items.sort(key=lambda item: (item.get("date") or "9999", item.get("time") or "", item.get("idea") or ""))
+    from memory import marks_for, mute_lesson
+
+    marks = marks_for(state, brand.id)
+    formats = [
+        row
+        for row in format_hours(history)
+        if marks.get("format") not in {"deleted", "demoted"} and marks.get("type:" + row["format"]) not in {"deleted", "demoted"}
+    ]
     return {
         "items": items,
-        "suggestion": suggest_hour(history),
-        "formats": format_hours(history),
+        "suggestion": mute_lesson(suggest_hour(history), marks, "hour", "hour"),
+        "formats": formats,
         "pace": pace_line([piece for piece in state.get("pieces") or [] if piece.get("brand_id") == brand.id]),
         "stages": [{"id": stage_id, "label": label} for stage_id, label in _STAGES],
         "rules": rules_for(brand),
@@ -134,13 +142,16 @@ def format_hours(posts: list[dict]) -> list[dict]:
     return found
 
 
-def best_time(posts: list[dict], format_name: str) -> dict:
+def best_time(posts: list[dict], format_name: str, marks: dict | None = None) -> dict:
+    from memory import mute_lesson
+
+    held = marks or {}
     named = str(format_name or "")
-    if named and named != "unknown":
+    if named and named != "unknown" and held.get("format") not in {"deleted", "demoted"} and held.get("type:" + named) not in {"deleted", "demoted"}:
         lesson = suggest_hour([post for post in posts if str(post.get("format") or "") == named])
         if lesson.get("clear"):
             return {**lesson, "scope": "format"}
-    brand = suggest_hour(posts)
+    brand = mute_lesson(suggest_hour(posts), held, "hour", "hour")
     if brand.get("clear"):
         return {**brand, "scope": "brand"}
     detail = brand.get("detail") or "Not enough hours to suggest a time."
@@ -220,7 +231,9 @@ def _one(
         else:
             use = when
             if not use and not piece.get("scheduled_for"):
-                chosen = best_time(posts, str(piece.get("format") or ""))
+                from memory import marks_for
+
+                chosen = best_time(posts, str(piece.get("format") or ""), marks_for(state, brand_id))
                 if not chosen.get("clear"):
                     raise DraftError("A scheduled piece needs a time, and no hour is clearly ahead.")
                 use = next_local_hour(int(chosen["hour"]))

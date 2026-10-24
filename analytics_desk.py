@@ -490,11 +490,19 @@ def _hour_from(published: str) -> int | None:
     return parsed.astimezone(ZoneInfo("America/New_York")).hour
 
 
-def read_draft(text: str, posts: list[dict]) -> dict:
+def read_draft(text: str, posts: list[dict], marks: dict | None = None) -> dict:
     """What the posts can say about a draft. No predicted score."""
     body = str(text or "").strip()
     context = _context(posts, [])
     found = {item["id"]: item for item in _patterns(posts, [], context)}
+    held = marks or {}
+    for pattern_id, pattern in list(found.items()):
+        standing = held.get(pattern_id)
+        if standing not in {"deleted", "demoted"}:
+            continue
+        word = "deleted" if standing == "deleted" else "lowered"
+        note = f"The {pattern.get('title') or pattern_id} pattern was {word}."
+        found[pattern_id] = {**pattern, "clear": False, "detail": (str(pattern.get("detail") or "") + " " + note).strip()}
     misses = []
     lines = []
     if body:
@@ -522,6 +530,9 @@ def read_draft(text: str, posts: list[dict]) -> dict:
         improve = "These are the patterns this draft misses."
     hook = found.get("hook") or {}
     cta = found.get("cta") or {}
+    used = [pattern_id for pattern_id in ("hook", "question", "cta", "length") if (found.get(pattern_id) or {}).get("clear")]
+    pinned = [pattern_id for pattern_id in used if (marks or {}).get(pattern_id) == "pinned"]
+    pattern_ids = pinned + [pattern_id for pattern_id in used if pattern_id not in pinned]
     return {
         "lines": lines,
         "misses": misses[:6],
@@ -530,6 +541,7 @@ def read_draft(text: str, posts: list[dict]) -> dict:
         "cta": cta.get("detail") if cta.get("clear") else "A question or a link is not a pattern yet.",
         "similar": _similar(body, posts),
         "remix": _remix_post(posts),
+        "pattern_ids": pattern_ids,
     }
 
 

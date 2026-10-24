@@ -12,9 +12,11 @@ from zoneinfo import ZoneInfo
 
 from analytics_desk import _weekday_pattern
 from learn import MIN_SAMPLE, format_table, suggest_hour
+from memory import mute_lesson
 
 
-def advise(entries: list[dict], pillars: list[dict], posts: list[dict], today: date) -> dict:
+def advise(entries: list[dict], pillars: list[dict], posts: list[dict], today: date, marks: dict | None = None) -> dict:
+    marks = marks or {}
     window = [(today + timedelta(days=offset)).isoformat() for offset in range(1, 8)]
     held = [item for item in entries if item.get("kind") == "piece" and item.get("date") in set(window)]
     gaps = []
@@ -28,13 +30,22 @@ def advise(entries: list[dict], pillars: list[dict], posts: list[dict], today: d
         gaps.append("This brand has no pillars to check.")
     elif not gaps:
         gaps.append("Every pillar on this brand has something in the next 7 days.")
-    hour = suggest_hour(posts)
-    day = _weekday_pattern(posts)
+    hour = mute_lesson(suggest_hour(posts), marks, "hour", "hour")
+    day = mute_lesson(_weekday_pattern(posts), marks, "weekday", "day")
+    slot = _slot(today, entries, hour, day)
+    ids = []
+    if slot.get("clear"):
+        if hour.get("clear"):
+            ids.append("hour")
+        if day.get("clear") and isinstance(day.get("weekday"), int):
+            ids.append("weekday")
+    pinned = [item for item in ids if (marks or {}).get(item) == "pinned"]
+    slot = {**slot, "pattern_ids": pinned + [item for item in ids if item not in pinned]}
     return {
         "gaps": gaps,
         "mix": mix,
         "warnings": _warnings(held, posts),
-        "slot": _slot(today, entries, hour, day),
+        "slot": slot,
     }
 
 

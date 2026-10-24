@@ -126,6 +126,9 @@ def commit_ingest(state: dict, brand_id: str, spec: dict, path: Path | None = No
     own_log = [item for item in state.get("ingest_log") or [] if item.get("brand_id") == brand_id]
     other_log = [item for item in state.get("ingest_log") or [] if item.get("brand_id") != brand_id]
     updated = {**state, "history": history, "ingest_maps": maps, "ingest_log": [audit, *own_log][:24] + other_log}
+    from memory import remember_import
+
+    updated = remember_import(updated, brand_id, insights["lines"])
     save(updated, path)
     return {"accepted": len(accepted), "skipped": skipped, "incomplete": incomplete, "insights": insights["lines"], "audit": audit}
 
