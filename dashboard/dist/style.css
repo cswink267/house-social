@@ -930,16 +930,73 @@ label:has(> input[type="checkbox"]) > input[type="checkbox"] { margin-top: 1px; 
 .hs-post:hover { background: var(--hs-hover); }
 .hs-post.is-on { background: var(--hs-accent-soft); }
 
-/* ---- Charts ---------------------------------------------------------- */
+/* ---- Charts -------------------------------------------------------- */
 
-.hs-chart { width: 100%; height: 160px; display: block; }
-.hs-bar {
-  fill: color-mix(in srgb, var(--hs-accent) 55%, transparent);
-  cursor: pointer;
-  transition: fill 0.12s ease;
+.hs-chart { margin: 0; display: flex; flex-direction: column; gap: 8px; min-width: 0; }
+.hs-bars {
+  display: grid;
+  grid-template-columns: repeat(var(--hs-bars, 1), minmax(0, 1fr));
+  gap: 3px;
+  align-items: end;
+  height: 140px;
+  padding-bottom: 1px;
+  border-bottom: 1px solid var(--hs-border-strong);
 }
-.hs-bar:hover { fill: color-mix(in srgb, var(--hs-accent) 80%, transparent); }
-.hs-bar.is-on { fill: var(--hs-accent); }
+.hs-bar-col {
+  display: flex;
+  align-items: flex-end;
+  height: 100%;
+  min-width: 0;
+  padding: 0;
+  border: 0;
+  background: transparent;
+  font: inherit;
+}
+button.hs-bar-col { cursor: pointer; }
+.hs-bar-fill {
+  display: block;
+  width: 100%;
+  border-radius: 3px 3px 0 0;
+  background: color-mix(in srgb, var(--hs-accent) 50%, transparent);
+  transition: background-color 0.12s ease;
+}
+.hs-bar-col:hover .hs-bar-fill, .hs-bar-col:focus-visible .hs-bar-fill { background: color-mix(in srgb, var(--hs-accent) 78%, transparent); }
+.hs-bar-col.is-on .hs-bar-fill { background: var(--hs-accent); }
+.hs-bar-axis {
+  height: auto;
+  border: 0;
+  padding: 0;
+  margin-top: -4px;
+  align-items: start;
+}
+.hs-bar-axis span {
+  overflow: visible;
+  white-space: nowrap;
+  font-size: 0.68rem;
+  color: var(--hs-subtle);
+  font-variant-numeric: tabular-nums;
+}
+.hs-line-chart { width: 100%; height: auto; display: block; overflow: visible; }
+.hs-grid-line { stroke: var(--hs-border); stroke-width: 1; }
+.hs-axis-text { fill: var(--hs-subtle); font-size: 12px; font-family: inherit; }
+.hs-heat { display: flex; flex-direction: column; gap: 2px; overflow-x: auto; }
+.hs-heat-row { display: grid; grid-template-columns: 36px repeat(24, minmax(12px, 1fr)); gap: 2px; align-items: center; }
+.hs-heat-day, .hs-heat-hour { font-size: 0.68rem; color: var(--hs-subtle); font-variant-numeric: tabular-nums; }
+.hs-heat-cell {
+  height: 18px;
+  border-radius: 3px;
+  background: color-mix(in srgb, var(--hs-accent) calc(var(--hs-heat, 0) * 100%), transparent);
+}
+.hs-heat-cell.is-empty { background: color-mix(in srgb, var(--hs-fg) 4%, transparent); }
+.hs-dl { display: grid; grid-template-columns: 1fr auto; gap: 4px 12px; margin: 0; font-size: 0.86rem; }
+.hs-dl dt { color: var(--hs-muted); }
+.hs-dl dd { margin: 0; text-align: right; font-weight: 600; font-variant-numeric: tabular-nums; }
+.hs-more > summary { cursor: pointer; color: var(--hs-muted); font-size: 0.84rem; }
+.hs-more > summary:hover { color: var(--hs-fg); }
+.hs-more[open] > summary { margin-bottom: 6px; }
+.hs-align-start { align-items: start; }
+.hs-list-row.is-focus { box-shadow: inset 3px 0 0 var(--hs-accent); background: var(--hs-accent-soft); }
+.hs-list-row.is-muted .hs-list-main { opacity: 0.6; }
 
 /* ---- Calendar -------------------------------------------------------- */
 
