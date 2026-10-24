@@ -846,10 +846,10 @@
           onInsight: function (id) { return act("POST", "/reports/" + encodeURIComponent(id) + "/insight", undefined, "Insight written."); },
         });
         case "across": return h(AcrossDesk, {
-          studio: studio, busy: busy,
+          studio: studio, busy: busy, onGo: pickSection,
           onAccept: function (key) { return act("POST", on("/cross"), { accept: true, key: key }, "Accepted."); },
         });
-        case "learning": return h(Learning, { studio: studio });
+        case "learning": return h(Learning, { studio: studio, onGo: pickSection });
         default: return null;
       }
     }
@@ -2720,78 +2720,6 @@
         h("button", { type: "submit", className: "hs-tab", disabled: props.busy || !topic.trim() }, "Open in the composer"))
         : h("p", { className: "hs-note" }, "Every saved series is paused."));
   }
-  function SeriesDesk(props) {
-    const desk = (props.studio && props.studio.series) || { items: [], suggestions: [] };
-    const [draft, setDraft] = useState({ name: "", structure: "", hook: "", media: "", examples: "", tags: "" });
-    const [filled, setFilled] = useState({});
-    const [q, setQ] = useState("");
-    const [tag, setTag] = useState("");
-    const items = (desk.items || []).filter(function (item) {
-      const blob = (item.name + " " + item.hook + " " + (item.structure || []).join(" ") + " " + (item.tags || []).join(" ")).toLowerCase();
-      if (q.trim() && blob.indexOf(q.trim().toLowerCase()) < 0) return false;
-      if (tag.trim() && (item.tags || []).map(function (name) { return name.toLowerCase(); }).indexOf(tag.trim().toLowerCase()) < 0) return false;
-      return true;
-    });
-    return h("div", { className: "hs-main" },
-      h(SeriesApply, { series: desk, busy: props.busy, onApply: props.onApply }),
-      (desk.suggestions || []).map(function (item) {
-        return h("div", { key: item.id, className: "hs-pillar" },
-          h("p", { className: "hs-note" }, item.detail),
-          h(FeedbackButtons, { kind: "series", target: item.id, busy: props.busy, onFeedback: props.onFeedback }),
-          h("button", { type: "button", className: "hs-tab", disabled: props.busy, onClick: function () { props.onKeep(item.id); } }, "Keep " + item.name));
-      }),
-      h("form", { className: "hs-cols", onSubmit: function (event) {
-        event.preventDefault();
-        props.onSave({
-          name: draft.name,
-          structure: draft.structure,
-          hook: draft.hook,
-          media: draft.media,
-          examples: draft.examples.split(",").map(function (item) { return item.trim(); }).filter(Boolean),
-          tags: draft.tags.split(",").map(function (item) { return item.trim(); }).filter(Boolean),
-        });
-      } },
-        h("input", { className: "hs-field", value: draft.name, placeholder: "Name", onChange: function (event) { setDraft(Object.assign({}, draft, { name: event.target.value })); } }),
-        h("textarea", { className: "hs-area", value: draft.structure, placeholder: "Structure, one section a line. Use {topic} where the new topic goes.", onChange: function (event) { setDraft(Object.assign({}, draft, { structure: event.target.value })); } }),
-        h("input", { className: "hs-field", value: draft.hook, placeholder: "Typical hook", onChange: function (event) { setDraft(Object.assign({}, draft, { hook: event.target.value })); } }),
-        h("input", { className: "hs-field", value: draft.media, placeholder: "Media note", onChange: function (event) { setDraft(Object.assign({}, draft, { media: event.target.value })); } }),
-        h("input", { className: "hs-field", value: draft.examples, placeholder: "Example post ids, comma separated", onChange: function (event) { setDraft(Object.assign({}, draft, { examples: event.target.value })); } }),
-        h("input", { className: "hs-field", value: draft.tags, placeholder: "Tags, pillar or free text", onChange: function (event) { setDraft(Object.assign({}, draft, { tags: event.target.value })); } }),
-        h("button", { type: "submit", className: "hs-button", disabled: props.busy || !draft.name.trim() || !draft.structure.trim() }, "Save series")),
-      h("div", { className: "hs-row" },
-        h("input", { className: "hs-field", value: q, placeholder: "Search", onChange: function (event) { setQ(event.target.value); } }),
-        h("input", { className: "hs-field", value: tag, placeholder: "Tag", onChange: function (event) { setTag(event.target.value); } })),
-      items.length ? items.map(function (item) {
-        return h("div", { key: item.id, className: "hs-pillar" },
-          h("div", { className: "hs-name" }, item.name),
-          (item.structure || []).map(function (line, index) { return h("p", { key: index, className: "hs-note" }, line); }),
-          item.hook ? h("p", { className: "hs-note" }, item.hook) : null,
-          item.media ? h("p", { className: "hs-note" }, item.media) : null,
-          h("p", { className: "hs-note" }, item.stats && item.stats.detail),
-          item.notice ? h("p", { className: "hs-bad" }, item.notice) : null,
-          h("div", { className: "hs-row" },
-            h("button", {
-              type: "button", className: "hs-tab", disabled: props.busy,
-              onClick: function () { if (props.onPause) props.onPause(item.id, !item.paused); },
-            }, item.paused ? "Resume" : "Pause"),
-            h("button", {
-              type: "button", className: "hs-tab", disabled: props.busy || item.paused,
-              onClick: async function () {
-                const saved = props.onFill ? await props.onFill(item.id) : null;
-                if (saved && saved.lines) setFilled(function (current) { return Object.assign({}, current, { [item.id]: saved }); });
-              },
-            }, "Fill from a pillar")),
-          item.paused ? h("p", { className: "hs-note" }, "Paused. Fill and the composer stay off until you resume it.") : null,
-          filled[item.id] ? h("div", null,
-            h("p", { className: "hs-note" }, "Filled with " + filled[item.id].topic + ". This is not saved. Nothing is sent."),
-            (filled[item.id].lines || []).map(function (line, index) { return h("p", { key: "fill-" + index, className: "hs-voice" }, line); })
-          ) : null,
-          (item.examples || []).map(function (example) {
-            return h("p", { key: example.id, className: "hs-note" }, (example.engagements == null ? "Not in the pull" : example.engagements + " engagements") + " · " + example.preview);
-          }));
-      }) : h("p", { className: "hs-note" }, "No series saved for this brand."));
-  }
-
   function IdeasBoard(props) {
     const board = (props.studio && props.studio.ideas) || { ideas: [], sources: ["spark", "competitor", "trend", "question"], priorities: ["low", "normal", "high"] };
     const [mode, setMode] = useState("board");
@@ -2911,95 +2839,6 @@
             h("div", { className: "hs-list-main" }, h("div", null, item.text), item.author ? h("div", { className: "hs-meta" }, item.author) : null),
             h("button", { type: "button", className: "hs-tab hs-tab-sm", disabled: props.busy, onClick: function () { props.onSave({ text: item.text, source: "comment", inbox_id: item.id, note: item.author || "" }); } }, "Keep as an idea"));
         })) : h("p", { className: "hs-note" }, "No comment is asking for a post yet.")),
-    );
-  }
-
-  function CampaignsDesk(props) {
-    const board = (props.studio && props.studio.campaigns) || { campaigns: [], kinds: ["launch", "seasonal", "evergreen"], lessons: [] };
-    const [openId, setOpenId] = useState("");
-    const [draft, setDraft] = useState({ name: "", kind: "launch", goal: "", goal_posts: "", start: "", end: "", note: "", template: false });
-    const open = (board.campaigns || []).find(function (item) { return item.id === openId; }) || null;
-    function setField(field, value) {
-      setDraft(function (current) { return Object.assign({}, current, { [field]: value }); });
-    }
-    function save(event) {
-      event.preventDefault();
-      props.onSave({
-        name: draft.name,
-        kind: draft.kind,
-        goal: draft.goal,
-        goal_posts: draft.goal_posts ? Number(draft.goal_posts) : "",
-        start: draft.start,
-        end: draft.end,
-        note: draft.note,
-        template: draft.template,
-      });
-      setDraft({ name: "", kind: draft.kind, goal: "", goal_posts: "", start: "", end: "", note: "", template: false });
-    }
-    return h("div", { className: "hs-main" },
-      (board.lessons || []).map(function (item) {
-        return h("p", { key: item.kind || item.detail, className: item.ahead ? "hs-ok" : "hs-note" }, item.detail + (item.approach ? " " + item.approach : ""));
-      }),
-      h("form", { className: "hs-cols", onSubmit: save },
-        h("input", { className: "hs-field", value: draft.name, placeholder: "Campaign name", onChange: function (event) { setField("name", event.target.value); } }),
-        h("select", { className: "hs-field", value: draft.kind, onChange: function (event) { setField("kind", event.target.value); } },
-          (board.kinds || []).map(function (kind) { return h("option", { key: kind, value: kind }, kind); })),
-        h("input", { className: "hs-field", value: draft.goal, placeholder: "Goal, in words", onChange: function (event) { setField("goal", event.target.value); } }),
-        h("input", { className: "hs-field", value: draft.goal_posts, placeholder: "How many posts", onChange: function (event) { setField("goal_posts", event.target.value); } }),
-        h("input", { className: "hs-field", type: "date", value: draft.start, onChange: function (event) { setField("start", event.target.value); } }),
-        h("input", { className: "hs-field", type: "date", value: draft.end, onChange: function (event) { setField("end", event.target.value); } }),
-        h("input", { className: "hs-field", value: draft.note, placeholder: "Note", onChange: function (event) { setField("note", event.target.value); } }),
-        h("label", { className: "hs-note" },
-          h("input", { type: "checkbox", checked: draft.template, onChange: function (event) { setField("template", event.target.checked); } }),
-          " Keep as a template"),
-        h("button", { type: "submit", className: "hs-button", disabled: props.busy || !draft.name.trim() }, "Save campaign")),
-      (board.campaigns || []).length ? board.campaigns.map(function (item) {
-        const progress = item.progress || {};
-        const performance = item.performance || {};
-        const retro = item.retrospective || {};
-        return h("div", { key: item.id, className: "hs-pillar" },
-          h("button", { type: "button", className: "hs-post", onClick: function () { setOpenId(item.id === openId ? "" : item.id); } },
-            h("div", { className: "hs-name" }, item.name + " · " + item.kind + (item.template ? " · template" : "")),
-            h("div", { className: "hs-meta" }, progress.phase + " · " + progress.posts + (progress.goal_posts ? " of " + progress.goal_posts : "") + " posts · " + progress.assets + " assets")),
-          open && open.id === item.id ? h("div", null,
-            item.goal ? h("p", { className: "hs-voice" }, item.goal) : null,
-            h("p", { className: "hs-note" }, [item.start, item.end].filter(Boolean).join(" – ") || "No dates"),
-            h("p", { className: "hs-note" }, progress.making + " still being made · " + progress.out + " in the queue"),
-            h("p", { className: "hs-note" }, performance.detail),
-            performance.posts ? h("p", { className: "hs-note" }, performance.engagements + " engagements · " + performance.shares + " shares" + (performance.saves == null ? "" : " · " + performance.saves + " saves")) : null,
-            h("p", { className: "hs-note" }, retro.detail || ""),
-            (item.pieces || []).map(function (piece) {
-              return h("button", { key: piece.id, type: "button", className: "hs-post", onClick: function () { props.onOpen(piece.id); } }, piece.status + " · " + piece.idea);
-            }),
-            (item.assets || []).map(function (asset) {
-              return h("div", { key: asset.id, className: "hs-note" }, asset.kind + " · " + asset.name);
-            }),
-            h("div", { className: "hs-row" },
-              h("button", { type: "button", className: "hs-tab", disabled: props.busy, onClick: function () { props.onClone(item.id); } }, "Clone"),
-              retro.ready && retro.ahead ? h("button", { type: "button", className: "hs-tab", disabled: props.busy, onClick: function () { props.onKeep(item.id); } }, "Keep the lesson") : null,
-              h("select", {
-                className: "hs-field",
-                value: "",
-                onChange: function (event) {
-                  if (event.target.value) props.onAttach(item.id, { piece_ids: [event.target.value] });
-                  event.target.value = "";
-                },
-              }, h("option", { value: "" }, "Add a piece"),
-                (props.pieces || []).filter(function (piece) {
-                  return !(item.pieces || []).some(function (row) { return row.id === piece.id; });
-                }).map(function (piece) { return h("option", { key: piece.id, value: piece.id }, piece.idea.slice(0, 60)); })),
-              h("select", {
-                className: "hs-field",
-                value: "",
-                onChange: function (event) {
-                  if (event.target.value) props.onAttach(item.id, { asset_ids: [event.target.value] });
-                  event.target.value = "";
-                },
-              }, h("option", { value: "" }, "Add an asset"),
-                ((props.library && props.library.assets) || []).filter(function (asset) {
-                  return !(item.assets || []).some(function (row) { return row.id === asset.id; });
-                }).map(function (asset) { return h("option", { key: asset.id, value: asset.id }, asset.kind + " · " + asset.name); })))) : null);
-      }) : h("p", { className: "hs-note" }, "No campaigns yet."),
     );
   }
 
@@ -3194,76 +3033,6 @@
         })) : h("p", { className: "hs-note" }, "No changes yet."),
         timeline.length > 10 ? h("button", { type: "button", className: "hs-link-button", onClick: function () { setHistory(!history); } }, history ? "Show fewer" : "Show all " + timeline.length) : null));
   }
-
-  function IngestDesk(props) {
-    const desk = (props.studio && props.studio.ingest) || { fields: [], mapping: {}, log: [], insights: [] };
-    const [text, setText] = useState("");
-    const [xlsx, setXlsx] = useState("");
-    const [filename, setFilename] = useState("paste");
-    const [preview, setPreview] = useState(null);
-    const [mapping, setMapping] = useState({});
-    const [result, setResult] = useState(null);
-    const fields = ["", "caption", "published_at", "platform", "likes", "comments", "shares", "saves", "impressions", "reach", "video_views", "permalink", "format", "pillar"];
-    async function previewFile() {
-      const found = await props.onPreview({ text: xlsx ? "" : text, xlsx: xlsx, filename: filename });
-      if (!found) return;
-      setPreview(found);
-      setMapping(found.suggested || {});
-      setResult(null);
-    }
-    async function commitFile(event) {
-      event.preventDefault();
-      const saved = await props.onCommit({ text: xlsx ? "" : text, xlsx: xlsx, filename: filename, mapping: mapping });
-      if (saved) setResult(saved);
-    }
-    return h("div", { className: "hs-main" },
-      h("textarea", { className: "hs-area", value: text, placeholder: "Paste CSV, tab-separated rows, or JSON", onChange: function (event) { setText(event.target.value); setXlsx(""); } }),
-      h("input", {
-        className: "hs-field", type: "file", accept: ".csv,.json,.xlsx,text/csv,application/json",
-        onChange: function (event) {
-          const file = event.target.files && event.target.files[0];
-          if (!file) return;
-          setFilename(file.name);
-          const reader = new FileReader();
-          if (/\.xlsx$/i.test(file.name)) {
-            reader.onload = function () {
-              const value = String(reader.result || "");
-              setXlsx(value.slice(value.indexOf(",") + 1));
-              setText("");
-            };
-            reader.readAsDataURL(file);
-          } else {
-            reader.onload = function () { setText(String(reader.result || "")); setXlsx(""); };
-            reader.readAsText(file);
-          }
-        },
-      }),
-      h("div", { className: "hs-row" },
-        h("button", { type: "button", className: "hs-button", disabled: props.busy || (!text.trim() && !xlsx), onClick: previewFile }, "Preview columns")),
-      preview ? h("form", { className: "hs-cols", onSubmit: commitFile },
-        h("p", { className: "hs-note" }, preview.rows + " rows. Map a column to the caption."),
-        (preview.columns || []).map(function (column) {
-          return h("label", { key: column, className: "hs-note" }, column,
-            h("select", {
-              className: "hs-field",
-              value: mapping[column] || "",
-              onChange: function (event) {
-                const value = event.target.value;
-                setMapping(function (current) { return Object.assign({}, current, { [column]: value }); });
-              },
-            }, fields.map(function (field) { return h("option", { key: field || "ignore", value: field }, field || "Ignore"); })));
-        }),
-        h("button", { type: "submit", className: "hs-button", disabled: props.busy }, "Import these rows")) : null,
-      result ? h("div", null,
-        h("p", { className: "hs-note" }, result.accepted + " added. " + result.skipped + " already here. " + result.incomplete + " missing a date or a count."),
-        (result.insights || []).map(function (line, index) { return h("p", { key: index, className: "hs-voice" }, line); })) : null,
-      (desk.insights || []).length && !result ? (desk.insights || []).map(function (line, index) { return h("p", { key: "old" + index, className: "hs-note" }, line); }) : null,
-      h("div", { className: "hs-name" }, "Imports"),
-      (desk.log || []).length ? (desk.log || []).map(function (item) {
-        return h("p", { key: item.id, className: "hs-note" }, item.filename + " · " + item.accepted + " added · " + item.skipped + " skipped · " + item.incomplete + " incomplete");
-      }) : h("p", { className: "hs-note" }, "No import yet."));
-  }
-
 
   function dayNumber(iso) {
     return Math.round(utcDate(String(iso).slice(0, 10)).getTime() / 86400000);
@@ -3636,129 +3405,348 @@
       h("div", { className: "hs-row" }, h("button", { type: "submit", className: "hs-tab", disabled: props.busy }, "Save result")));
   }
 
+  function SeriesForm(props) {
+    const blank = { name: "", structure: "", hook: "", media: "", examples: "", tags: "" };
+    const [draft, setDraft] = useState(blank);
+    function setField(name, value) {
+      setDraft(function (current) { return Object.assign({}, current, { [name]: value }); });
+    }
+    return h("form", {
+      className: "hs-stack",
+      onSubmit: async function (event) {
+        event.preventDefault();
+        const saved = await props.onSave({
+          name: draft.name,
+          structure: draft.structure,
+          hook: draft.hook,
+          media: draft.media,
+          examples: draft.examples.split(",").map(function (item) { return item.trim(); }).filter(Boolean),
+          tags: draft.tags.split(",").map(function (item) { return item.trim(); }).filter(Boolean),
+        });
+        if (saved) setDraft(blank);
+      },
+    },
+      h("div", { className: "hs-grid-2" },
+        field("Name", h("input", { className: "hs-field", value: draft.name, placeholder: "Unlearned", onChange: function (event) { setField("name", event.target.value); } })),
+        field("Typical hook", h("input", { className: "hs-field", value: draft.hook, placeholder: "What I had to unlearn about", onChange: function (event) { setField("hook", event.target.value); } }))),
+      field("Structure", h("textarea", { className: "hs-area hs-short", value: draft.structure, placeholder: "Hook: the thing I had to unlearn about {topic}\nThe old rule\nWhat broke it", onChange: function (event) { setField("structure", event.target.value); } }),
+        "One section a line. Write {topic} where the new topic goes."),
+      h("div", { className: "hs-grid-3" },
+        field("Media note", h("input", { className: "hs-field", value: draft.media, placeholder: "Quote card", onChange: function (event) { setField("media", event.target.value); } })),
+        field("Example post ids", h("input", { className: "hs-field", value: draft.examples, placeholder: "Comma separated", onChange: function (event) { setField("examples", event.target.value); } })),
+        field("Tags", h("input", { className: "hs-field", value: draft.tags, placeholder: "A pillar, or free text", onChange: function (event) { setField("tags", event.target.value); } }))),
+      h("div", { className: "hs-row" },
+        h("button", { type: "submit", className: "hs-button", disabled: props.busy || !draft.name.trim() || !draft.structure.trim() }, "Save series")));
+  }
+
+  function SeriesDesk(props) {
+    const desk = (props.studio && props.studio.series) || { items: [], suggestions: [] };
+    const [filled, setFilled] = useState({});
+    const [q, setQ] = useState("");
+    const [tag, setTag] = useState("all");
+    const all = desk.items || [];
+    const items = all.filter(function (item) {
+      const blob = (item.name + " " + item.hook + " " + (item.structure || []).join(" ") + " " + (item.tags || []).join(" ")).toLowerCase();
+      if (q.trim() && blob.indexOf(q.trim().toLowerCase()) < 0) return false;
+      if (tag !== "all" && (item.tags || []).indexOf(tag) < 0) return false;
+      return true;
+    });
+    return h("div", { className: "hs-main" },
+      h(SeriesApply, { series: desk, busy: props.busy, onApply: props.onApply }),
+      (desk.suggestions || []).length ? h(Section, { title: "Shapes that are already ahead", note: "Keep one to make it a series on this brand." },
+        h("ul", { className: "hs-options" }, desk.suggestions.map(function (item) {
+          return h("li", { key: item.id, className: "hs-option" },
+            h("div", { className: "hs-option-text" }, item.detail),
+            h("div", { className: "hs-row hs-spread" },
+              h("button", { type: "button", className: "hs-tab hs-tab-sm", disabled: props.busy, onClick: function () { props.onKeep(item.id); } }, "Keep " + item.name),
+              h(FeedbackButtons, { kind: "series", target: item.id, busy: props.busy, onFeedback: props.onFeedback })));
+        }))) : null,
+      h(Section, { title: "New series", collapsible: true, open: !all.length },
+        h(SeriesForm, { busy: props.busy, onSave: props.onSave })),
+      all.length > 2 ? h("div", { className: "hs-cal-filters" },
+        h("input", { className: "hs-field hs-grow", type: "search", "aria-label": "Search series", value: q, placeholder: "Search name, hook, or structure", onChange: function (event) { setQ(event.target.value); } }),
+        (desk.tags || []).length ? h("select", { className: "hs-field", "aria-label": "Tag", value: tag, onChange: function (event) { setTag(event.target.value); } },
+          h("option", { value: "all" }, "All tags"),
+          (desk.tags || []).map(function (name) { return h("option", { key: name, value: name }, name); })) : null) : null,
+      !all.length ? h(Empty, null, "No series on this brand yet. Save one above, or keep a shape that is already ahead.")
+        : items.length ? items.map(function (item) {
+          const fill = filled[item.id];
+          return h("section", { key: item.id, className: "hs-section" + (item.paused ? " is-paused" : "") },
+            h("div", { className: "hs-section-head" },
+              h("div", { className: "hs-section-titles" },
+                h("div", { className: "hs-row hs-gap-xs" },
+                  h("h3", { className: "hs-h3" }, item.name),
+                  item.paused ? h("span", { className: "hs-tag is-warn" }, "Paused") : null,
+                  (item.tags || []).map(function (name) { return h("span", { key: name, className: "hs-tag hs-tag-flat" }, name); })),
+                [item.hook, item.media].filter(Boolean).length ? h("p", { className: "hs-note" }, [item.hook, item.media].filter(Boolean).join(" · ")) : null),
+              h("div", { className: "hs-row hs-gap-sm" },
+                h("button", { type: "button", className: "hs-tab hs-tab-sm", disabled: props.busy || item.paused, title: item.paused ? "Resume it first" : "Fill with a pillar this brand already has", onClick: async function () {
+                  const saved = props.onFill ? await props.onFill(item.id) : null;
+                  if (saved && saved.lines) setFilled(function (current) { return Object.assign({}, current, { [item.id]: saved }); });
+                } }, "Fill from a pillar"),
+                h("button", { type: "button", className: "hs-tab hs-tab-sm", disabled: props.busy, onClick: function () { if (props.onPause) props.onPause(item.id, !item.paused); } }, item.paused ? "Resume" : "Pause"))),
+            h("ol", { className: "hs-steps" }, (item.structure || []).map(function (line, index) { return h("li", { key: index }, line); })),
+            item.stats && item.stats.detail ? h("p", { className: "hs-note" }, item.stats.detail) : null,
+            item.notice ? h("p", { className: "hs-warn" }, item.notice) : null,
+            item.paused ? h("p", { className: "hs-hint" }, "Paused. Fill and the composer stay off until you resume it.") : null,
+            fill ? h("div", { className: "hs-advice" },
+              h("div", { className: "hs-row hs-spread" },
+                h("div", { className: "hs-overline" }, "Filled with " + fill.topic + " · not saved"),
+                h("button", { type: "button", className: "hs-link-button", onClick: function () { setFilled(function (current) { const next = Object.assign({}, current); delete next[item.id]; return next; }); } }, "Clear")),
+              (fill.lines || []).map(function (line, index) { return h("p", { key: "fill-" + index, className: "hs-voice" }, line); })) : null,
+            (item.examples || []).length ? h("div", { className: "hs-stack hs-gap-xs" },
+              h("div", { className: "hs-overline" }, "Examples"),
+              h("ul", { className: "hs-list" }, item.examples.map(function (example) {
+                return h("li", { key: example.id, className: "hs-note" }, (example.engagements == null ? "Not in the pull" : example.engagements + " engagements") + " · " + example.preview);
+              }))) : null);
+        }) : h("p", { className: "hs-note" }, "No series matches. Clear the search or the tag."));
+  }
+
+  function CampaignForm(props) {
+    const kinds = props.kinds || ["launch", "seasonal", "evergreen"];
+    const blank = { name: "", kind: kinds[0], goal: "", goal_posts: "", start: "", end: "", note: "", template: false };
+    const [draft, setDraft] = useState(blank);
+    function setField(name, value) {
+      setDraft(function (current) { return Object.assign({}, current, { [name]: value }); });
+    }
+    return h("form", {
+      className: "hs-stack",
+      onSubmit: async function (event) {
+        event.preventDefault();
+        const saved = await props.onSave({
+          name: draft.name, kind: draft.kind, goal: draft.goal,
+          goal_posts: draft.goal_posts ? Number(draft.goal_posts) : "",
+          start: draft.start, end: draft.end, note: draft.note, template: draft.template,
+        });
+        if (saved) setDraft(Object.assign({}, blank, { kind: draft.kind }));
+      },
+    },
+      h("div", { className: "hs-grid-3" },
+        field("Name", h("input", { className: "hs-field", value: draft.name, onChange: function (event) { setField("name", event.target.value); } })),
+        field("Kind", h("select", { className: "hs-field", value: draft.kind, onChange: function (event) { setField("kind", event.target.value); } },
+          kinds.map(function (kind) { return h("option", { key: kind, value: kind }, kind); }))),
+        field("Posts", h("input", { className: "hs-field", inputMode: "numeric", value: draft.goal_posts, placeholder: "How many", onChange: function (event) { setField("goal_posts", event.target.value.replace(/[^0-9]/g, "")); } }))),
+      field("Goal", h("input", { className: "hs-field", value: draft.goal, placeholder: "In words", onChange: function (event) { setField("goal", event.target.value); } })),
+      h("div", { className: "hs-grid-3" },
+        field("Starts", h("input", { className: "hs-field", type: "date", value: draft.start, onChange: function (event) { setField("start", event.target.value); } })),
+        field("Ends", h("input", { className: "hs-field", type: "date", value: draft.end, min: draft.start || undefined, onChange: function (event) { setField("end", event.target.value); } })),
+        field("Note", h("input", { className: "hs-field", value: draft.note, onChange: function (event) { setField("note", event.target.value); } }))),
+      h("label", { className: "hs-note" },
+        h("input", { type: "checkbox", checked: draft.template, onChange: function (event) { setField("template", event.target.checked); } }),
+        h("span", null, h("span", { className: "hs-check-title" }, "Keep as a template"), " Clone it later for the next launch.")),
+      h("div", { className: "hs-row" },
+        h("button", { type: "submit", className: "hs-button", disabled: props.busy || !draft.name.trim() }, "Save campaign")));
+  }
+
+  function CampaignsDesk(props) {
+    const board = (props.studio && props.studio.campaigns) || { campaigns: [], kinds: ["launch", "seasonal", "evergreen"], lessons: [] };
+    const [openId, setOpenId] = useState("");
+    const campaigns = board.campaigns || [];
+    return h("div", { className: "hs-main" },
+      (board.lessons || []).length ? h("div", { className: "hs-advice" }, board.lessons.map(function (item) {
+        return h("p", { key: item.kind || item.detail, className: item.ahead ? "hs-ok" : "hs-note" }, item.detail + (item.approach ? " " + item.approach : ""));
+      })) : null,
+      h(Section, { title: "New campaign", collapsible: true, open: !campaigns.length },
+        h(CampaignForm, { kinds: board.kinds, busy: props.busy, onSave: props.onSave })),
+      !campaigns.length ? h(Empty, null, "No campaigns yet. A campaign holds the posts, the assets, the goal, and the dates.")
+        : h("ul", { className: "hs-rows" }, campaigns.map(function (item) {
+          const progress = item.progress || {};
+          const performance = item.performance || {};
+          const retro = item.retrospective || {};
+          const on = openId === item.id;
+          const share = progress.goal_posts ? Math.min(1, (progress.posts || 0) / progress.goal_posts) : null;
+          const loosePieces = (props.pieces || []).filter(function (piece) { return !(item.pieces || []).some(function (row) { return row.id === piece.id; }); });
+          const looseAssets = ((props.library && props.library.assets) || []).filter(function (asset) { return !(item.assets || []).some(function (row) { return row.id === asset.id; }); });
+          return h("li", { key: item.id },
+            h("button", { type: "button", className: "hs-row-button hs-row-tall" + (on ? " is-on" : ""), "aria-expanded": on, onClick: function () { setOpenId(on ? "" : item.id); } },
+              h("span", { className: "hs-list-main" },
+                h("span", { className: "hs-row hs-gap-xs" },
+                  h("strong", null, item.name),
+                  h("span", { className: "hs-tag hs-tag-flat" }, item.kind),
+                  item.template ? h("span", { className: "hs-tag" }, "Template") : null),
+                h("span", { className: "hs-meta" }, [progress.phase, (progress.posts || 0) + (progress.goal_posts ? " of " + progress.goal_posts : "") + " posts", (progress.assets || 0) + " assets", [item.start, item.end].filter(Boolean).join(" – ")].filter(Boolean).join(" · ")),
+                share != null ? h("span", { className: "hs-meter", "aria-hidden": "true" }, h("span", { style: { width: Math.round(share * 100) + "%" } })) : null),
+              h("span", { className: "hs-chevron", "aria-hidden": "true" }, on ? "▾" : "▸")),
+            on ? h("div", { className: "hs-review" },
+              item.goal ? h("p", { className: "hs-voice" }, item.goal) : null,
+              h("p", { className: "hs-note" }, (progress.making || 0) + " still being made · " + (progress.out || 0) + " in the queue"),
+              performance.detail ? h("p", { className: "hs-note" }, performance.detail) : null,
+              performance.posts ? h("p", { className: "hs-note" }, formatNumber(performance.engagements) + " engagements · " + formatNumber(performance.shares) + " shares" + (performance.saves == null ? "" : " · " + formatNumber(performance.saves) + " saves")) : null,
+              retro.detail ? h("p", { className: retro.ahead ? "hs-ok" : "hs-note" }, retro.detail) : null,
+              (item.pieces || []).length ? h("div", { className: "hs-stack hs-gap-xs" },
+                h("div", { className: "hs-overline" }, "Pieces"),
+                h("ul", { className: "hs-rows" }, item.pieces.map(function (piece) {
+                  return h("li", { key: piece.id },
+                    h("button", { type: "button", className: "hs-row-button", onClick: function () { props.onOpen(piece.id); } },
+                      h("span", { className: "hs-status is-" + (piece.status || "draft") }, statusLabel(piece.status)),
+                      h("span", { className: "hs-row-text" }, piece.idea)));
+                }))) : null,
+              (item.assets || []).length ? h("div", { className: "hs-stack hs-gap-xs" },
+                h("div", { className: "hs-overline" }, "Assets"),
+                h("div", { className: "hs-row hs-gap-xs" }, item.assets.map(function (asset) { return h("span", { key: asset.id, className: "hs-tag hs-tag-flat" }, asset.kind + " · " + asset.name); }))) : null,
+              h("div", { className: "hs-row" },
+                loosePieces.length ? h("select", {
+                  className: "hs-field hs-w-lg", value: "", "aria-label": "Add a piece",
+                  onChange: function (event) {
+                    if (event.target.value) props.onAttach(item.id, { piece_ids: [event.target.value] });
+                    event.target.value = "";
+                  },
+                }, h("option", { value: "" }, "Add a piece…"),
+                  loosePieces.map(function (piece) { return h("option", { key: piece.id, value: piece.id }, piece.idea.slice(0, 60)); })) : null,
+                looseAssets.length ? h("select", {
+                  className: "hs-field hs-w-lg", value: "", "aria-label": "Add an asset",
+                  onChange: function (event) {
+                    if (event.target.value) props.onAttach(item.id, { asset_ids: [event.target.value] });
+                    event.target.value = "";
+                  },
+                }, h("option", { value: "" }, "Add an asset…"),
+                  looseAssets.map(function (asset) { return h("option", { key: asset.id, value: asset.id }, asset.kind + " · " + asset.name); })) : null),
+              h("div", { className: "hs-row" },
+                h("button", { type: "button", className: "hs-tab hs-tab-sm", disabled: props.busy, onClick: function () { props.onClone(item.id); } }, "Clone"),
+                retro.ready && retro.ahead ? h("button", { type: "button", className: "hs-tab hs-tab-sm", disabled: props.busy, onClick: function () { props.onKeep(item.id); } }, "Keep the lesson") : null)) : null);
+        })));
+  }
+
   function HashtagDesk(props) {
     const desk = (props.studio && props.studio.hashtags) || { sets: [], tags: [], formats: { rows: [], detail: "" }, trends: [], feed: [], outside: [], kinds: ["topic", "sound", "format"], suggestion: { tags: [], detail: "" }, pillars: [], campaigns: [] };
-    const [setName, setSetName] = useState("");
-    const [setTags, setSetTags] = useState("");
-    const [pillar, setPillar] = useState("");
-    const [campaign, setCampaign] = useState("");
-    const [trend, setTrend] = useState({ kind: "topic", name: "", note: "" });
+    const [set, setSet] = useState({ name: "", tags: "", pillar: "", campaign: "" });
+    const [trend, setTrend] = useState({ kind: (desk.kinds || ["topic"])[0], name: "", note: "" });
     const formats = desk.formats || { rows: [], detail: "" };
     const suggestion = desk.suggestion || { tags: [], detail: "" };
-    return h("div", { className: "hs-main" },
-      h("p", { className: "hs-note" }, suggestion.detail || "No hashtag is clearly ahead for this brand."),
-      suggestion.tags && suggestion.tags.length ? h("div", null,
-        h("p", { className: "hs-ok" }, suggestion.tags.map(function (tag) { return "#" + tag; }).join(" ")),
-        suggestion.tags.map(function (tag) { return h(FeedbackButtons, { key: tag, kind: "hashtags", target: tag, busy: props.busy, onFeedback: props.onFeedback }); })) : null,
-      props.piece ? h("button", {
-        type: "button", className: "hs-tab", disabled: props.busy || !(suggestion.tags || []).length,
-        onClick: function () { props.onUse(props.piece.id, props.piece.pillar || ""); },
-      }, "Use these on the open draft") : h("p", { className: "hs-note" }, "Open a draft to use the tags that are ahead."),
-      h("form", { className: "hs-row", onSubmit: function (event) {
-        event.preventDefault();
-        props.onSaveSet({ name: setName, tags: setTags.split(/[,\s]+/).filter(Boolean), pillar: pillar, campaign: campaign });
-        setSetName("");
-        setSetTags("");
-      } },
-        h("input", { className: "hs-field", value: setName, placeholder: "Set name", onChange: function (event) { setSetName(event.target.value); } }),
-        h("input", { className: "hs-field", value: setTags, placeholder: "Tags, up to five", onChange: function (event) { setSetTags(event.target.value); } }),
-        h("select", { className: "hs-field", value: pillar, onChange: function (event) { setPillar(event.target.value); } },
-          h("option", { value: "" }, "No pillar"),
-          (desk.pillars || []).map(function (item) { return h("option", { key: item.id, value: item.id }, item.name); })),
-        h("select", { className: "hs-field", value: campaign, onChange: function (event) { setCampaign(event.target.value); } },
-          h("option", { value: "" }, "No campaign"),
-          (desk.campaigns || []).map(function (name) { return h("option", { key: name, value: name }, name); })),
-        h("button", { type: "submit", className: "hs-button", disabled: props.busy || !setName.trim() || !setTags.trim() }, "Save set")),
-      (desk.sets || []).length ? desk.sets.map(function (item) {
-        const performance = item.performance || {};
-        const where = [item.pillar, item.campaign].filter(Boolean).join(" · ");
-        return h("div", { key: item.id, className: "hs-pillar" },
-          h("div", { className: "hs-row" },
-            h("span", { className: "hs-name" }, item.name + (where ? " · " + where : "")),
-            h("span", { className: "hs-note" }, item.tags.map(function (tag) { return "#" + tag; }).join(" ")),
-            h("button", {
-              type: "button", className: "hs-tab", disabled: props.busy || !props.piece,
-              onClick: function () { props.onApply(item.id); },
-            }, props.piece ? "Use on the open draft" : "Open a draft to use this")),
-          performance.detail ? h("p", { className: performance.ahead ? "hs-ok" : "hs-note" }, performance.detail) : null);
-      }) : h("p", { className: "hs-note" }, "No saved sets yet."),
-      h("div", { className: "hs-name" }, "Tags these posts used"),
-      (desk.tags || []).length ? desk.tags.map(function (item) {
-        return h("p", { key: item.tag, className: item.ahead ? "hs-ok" : "hs-note" }, item.detail);
-      }) : h("p", { className: "hs-note" }, "No hashtags on the posts in this window."),
-      h("div", { className: "hs-name" }, "Formats"),
-      h("p", { className: "hs-note" }, formats.detail),
-      (formats.rows || []).map(function (item) {
-        return h("p", { key: item.id, className: "hs-note" }, item.label + " · " + item.mean + " · n=" + item.n);
-      }),
-      h("div", { className: "hs-name" }, "Notes"),
-      h("p", { className: "hs-note" }, desk.niche || ""),
-      h("form", { className: "hs-row", onSubmit: function (event) {
-        event.preventDefault();
-        props.onTrend(trend);
-        setTrend({ kind: trend.kind, name: "", note: "" });
-      } },
-        h("select", { className: "hs-field", value: trend.kind, onChange: function (event) { setTrend(Object.assign({}, trend, { kind: event.target.value })); } },
-          (desk.kinds || []).map(function (kind) { return h("option", { key: kind, value: kind }, kind); })),
-        h("input", { className: "hs-field", value: trend.name, placeholder: "Topic, sound, or format", onChange: function (event) { setTrend(Object.assign({}, trend, { name: event.target.value })); } }),
-        h("input", { className: "hs-field", value: trend.note, placeholder: "Where you noticed it", onChange: function (event) { setTrend(Object.assign({}, trend, { note: event.target.value })); } }),
-        h("button", { type: "submit", className: "hs-button", disabled: props.busy || !trend.name.trim() }, "Save note")),
-      h("div", { className: "hs-name" }, "In this brand's words"),
-      (desk.feed || []).length ? desk.feed.map(noteRow) : h("p", { className: "hs-note" }, "No saved note uses this brand's pillar or tag words."),
-      h("div", { className: "hs-name" }, "Saved, outside those words"),
-      (desk.outside || []).length ? desk.outside.map(noteRow) : h("p", { className: "hs-note" }, "Nothing saved outside those words."),
-    );
+    const ahead = suggestion.tags || [];
     function noteRow(item) {
-      return h("p", { key: item.id, className: "hs-note" }, item.kind + " · " + item.name + (item.note ? " · " + item.note : "") + (item.result ? " · " + item.result : ""));
+      return h("li", { key: item.id, className: "hs-list-row" },
+        h("div", { className: "hs-list-main" },
+          h("div", null, h("span", { className: "hs-tag hs-tag-flat" }, item.kind), " ", item.name),
+          [item.note, item.result].filter(Boolean).length ? h("div", { className: "hs-meta" }, [item.note, item.result].filter(Boolean).join(" · ")) : null));
     }
+    return h("div", { className: "hs-main" },
+      h(Section, { title: "Ahead on this brand", note: suggestion.detail || "No hashtag is clearly ahead for this brand." },
+        ahead.length ? h("ul", { className: "hs-options" }, ahead.map(function (tag) {
+          return h("li", { key: tag, className: "hs-option" },
+            h("div", { className: "hs-row hs-spread" },
+              h("strong", null, "#" + tag),
+              h(FeedbackButtons, { kind: "hashtags", target: tag, busy: props.busy, onFeedback: props.onFeedback })));
+        })) : null,
+        props.piece ? h("button", {
+          type: "button", className: "hs-button", disabled: props.busy || !ahead.length,
+          onClick: function () { props.onUse(props.piece.id, props.piece.pillar || ""); },
+        }, "Use these on the open draft") : ahead.length ? h("p", { className: "hs-hint" }, "Open a draft in the Composer to use the tags that are ahead.") : null),
+      h(Section, { title: "Saved sets", note: "Up to five tags, for a pillar or a campaign when you want one." },
+        (desk.sets || []).length ? h("ul", { className: "hs-rows" }, desk.sets.map(function (item) {
+          const performance = item.performance || {};
+          const where = [item.pillar, item.campaign].filter(Boolean).join(" · ");
+          return h("li", { key: item.id, className: "hs-list-row" },
+            h("div", { className: "hs-list-main" },
+              h("div", null, h("strong", null, item.name), where ? h("span", { className: "hs-meta" }, " · " + where) : null),
+              h("div", { className: "hs-row hs-gap-xs" }, item.tags.map(function (tag) { return h("span", { key: tag, className: "hs-tag hs-tag-flat" }, "#" + tag); })),
+              performance.detail ? h("div", { className: performance.ahead ? "hs-ok" : "hs-meta" }, performance.detail) : null),
+            h("button", {
+              type: "button", className: "hs-tab hs-tab-sm", disabled: props.busy || !props.piece,
+              title: props.piece ? "" : "Open a draft in the Composer first",
+              onClick: function () { props.onApply(item.id); },
+            }, "Use on the draft"));
+        })) : h("p", { className: "hs-note" }, "No saved sets yet."),
+        h("form", {
+          className: "hs-stack",
+          onSubmit: async function (event) {
+            event.preventDefault();
+            const saved = await props.onSaveSet({ name: set.name, tags: set.tags.split(/[,\s]+/).filter(Boolean), pillar: set.pillar, campaign: set.campaign });
+            if (saved) setSet({ name: "", tags: "", pillar: set.pillar, campaign: set.campaign });
+          },
+        },
+          h("div", { className: "hs-grid-2" },
+            field("Set name", h("input", { className: "hs-field", value: set.name, onChange: function (event) { setSet(Object.assign({}, set, { name: event.target.value })); } })),
+            field("Tags", h("input", { className: "hs-field", value: set.tags, placeholder: "misfit outcast metal", onChange: function (event) { setSet(Object.assign({}, set, { tags: event.target.value })); } }), "Up to five, with or without #.")),
+          h("div", { className: "hs-grid-2" },
+            field("Pillar", h("select", { className: "hs-field", value: set.pillar, onChange: function (event) { setSet(Object.assign({}, set, { pillar: event.target.value })); } },
+              h("option", { value: "" }, "Any pillar"),
+              (desk.pillars || []).map(function (item) { return h("option", { key: item.id, value: item.id }, item.name); }))),
+            field("Campaign", h("select", { className: "hs-field", value: set.campaign, onChange: function (event) { setSet(Object.assign({}, set, { campaign: event.target.value })); } },
+              h("option", { value: "" }, "No campaign"),
+              (desk.campaigns || []).map(function (name) { return h("option", { key: name, value: name }, name); })))),
+          h("div", { className: "hs-row" }, h("button", { type: "submit", className: "hs-tab", disabled: props.busy || !set.name.trim() || !set.tags.trim() }, "Save set")))),
+      h("div", { className: "hs-grid-2 hs-align-start" },
+        h(Section, { title: "Tags these posts used" },
+          (desk.tags || []).length ? h("ul", { className: "hs-list" }, desk.tags.map(function (item) {
+            return h("li", { key: item.tag, className: item.ahead ? "hs-ok" : "hs-note" }, item.detail);
+          })) : h("p", { className: "hs-note" }, "No hashtags on the posts in this window.")),
+        h(Section, { title: "Formats", note: formats.detail },
+          (formats.rows || []).length ? h("dl", { className: "hs-dl" }, (formats.rows || []).map(function (item) {
+            return [h("dt", { key: item.id + "t" }, item.label + " · n=" + item.n), h("dd", { key: item.id + "d" }, formatNumber(item.mean))];
+          })) : null)),
+      h(Section, { title: "Notes", note: desk.niche || "Topics, sounds, and formats you noticed. Filtered by this brand's own words; not a popularity chart." },
+        h("form", {
+          className: "hs-inline-form",
+          onSubmit: async function (event) {
+            event.preventDefault();
+            const saved = await props.onTrend(trend);
+            if (saved) setTrend({ kind: trend.kind, name: "", note: "" });
+          },
+        },
+          h("select", { className: "hs-field hs-w-sm", "aria-label": "Kind", value: trend.kind, onChange: function (event) { setTrend(Object.assign({}, trend, { kind: event.target.value })); } },
+            (desk.kinds || []).map(function (kind) { return h("option", { key: kind, value: kind }, kind); })),
+          h("input", { className: "hs-field hs-grow", "aria-label": "What you noticed", value: trend.name, placeholder: "Topic, sound, or format", onChange: function (event) { setTrend(Object.assign({}, trend, { name: event.target.value })); } }),
+          h("input", { className: "hs-field hs-grow", "aria-label": "Where you noticed it", value: trend.note, placeholder: "Where you noticed it", onChange: function (event) { setTrend(Object.assign({}, trend, { note: event.target.value })); } }),
+          h("button", { type: "submit", className: "hs-tab", disabled: props.busy || !trend.name.trim() }, "Save note")),
+        h("div", { className: "hs-overline" }, "In this brand's words"),
+        (desk.feed || []).length ? h("ul", { className: "hs-rows" }, desk.feed.map(noteRow)) : h("p", { className: "hs-note" }, "No saved note uses this brand's pillar or tag words."),
+        (desk.outside || []).length ? h("details", { className: "hs-more" },
+          h("summary", null, "Saved, outside those words · " + desk.outside.length),
+          h("ul", { className: "hs-rows" }, desk.outside.map(noteRow))) : null));
   }
+
+  const INBOX_VIEWS = [["attention", "Needs attention"], ["ahead", "On a post that is ahead"], ["all", "All"], ["comment", "Comments"], ["mention", "Mentions"], ["dm", "Messages"]];
 
   function InboxDesk(props) {
     const desk = (props.studio && props.studio.inbox) || { items: [], errors: [], sending: false };
     const [kind, setKind] = useState("attention");
     const [drafts, setDrafts] = useState({});
-    const items = (desk.items || []).filter(function (item) {
-      if (kind === "attention") return item.needs_attention;
-      if (kind === "ahead") return item.ahead;
-      if (kind === "all") return true;
-      return item.kind === kind;
-    });
+    const all = desk.items || [];
+    function matches(item, view) {
+      if (view === "attention") return item.needs_attention;
+      if (view === "ahead") return item.ahead;
+      if (view === "all") return true;
+      return item.kind === view;
+    }
+    const items = all.filter(function (item) { return matches(item, kind); });
     return h("div", { className: "hs-main" },
-      h("div", { className: "hs-row" },
-        h("button", { type: "button", className: "hs-button", disabled: props.busy, onClick: props.onRefresh }, "Refresh"),
-        [["attention", "Needs attention"], ["ahead", "On a post that is ahead"], ["all", "All"], ["comment", "Comments"], ["mention", "Mentions"], ["dm", "Messages"]].map(function (pair) {
-          return h("button", {
-            key: pair[0], type: "button",
-            className: "hs-tab" + (kind === pair[0] ? " is-on" : ""),
-            onClick: function () { setKind(pair[0]); },
-          }, pair[1]);
-        })),
-      (desk.errors || []).map(function (error) { return h("p", { key: error, className: "hs-bad" }, error); }),
-      items.length ? items.map(function (item) {
+      h("div", { className: "hs-cal-toolbar" },
+        h("select", { className: "hs-field hs-w-lg", "aria-label": "Show", value: kind, onChange: function (event) { setKind(event.target.value); } },
+          INBOX_VIEWS.map(function (pair) {
+            return h("option", { key: pair[0], value: pair[0] }, pair[1] + " · " + all.filter(function (item) { return matches(item, pair[0]); }).length);
+          })),
+        h("button", { type: "button", className: "hs-button", disabled: props.busy, onClick: props.onRefresh }, "Refresh")),
+      (desk.errors || []).map(function (error) { return h("p", { key: error, className: "hs-error" }, error); }),
+      items.length ? h("ul", { className: "hs-ideas" }, items.map(function (item) {
         const value = drafts[item.id] != null ? drafts[item.id] : (item.reply || "");
         const canIdea = item.kind !== "dm" && (item.question || item.ahead);
-        return h("div", { key: item.id, className: "hs-pillar" },
-          h("div", { className: "hs-name" }, item.kind + " · " + item.platform + " · " + item.author),
-          h("p", { className: "hs-voice" }, item.text),
+        const label = { comment: "Comment", mention: "Mention", dm: "Message" }[item.kind] || item.kind;
+        return h("li", { key: item.id, className: "hs-idea" },
+          h("div", { className: "hs-row hs-spread" },
+            h("div", { className: "hs-row hs-gap-xs" },
+              h("span", { className: "hs-tag hs-tag-flat" }, label),
+              h("span", { className: "hs-meta" }, platformName(item.platform) + " · " + item.author),
+              item.needs_attention ? h("span", { className: "hs-tag is-warn" }, "Needs attention") : null),
+            item.permalink ? h("a", { href: item.permalink, target: "_blank", rel: "noopener noreferrer", className: "hs-meta" }, "Open it") : null),
+          h("blockquote", { className: "hs-quote" }, item.text),
           item.prompt ? h("p", { className: item.ahead ? "hs-ok" : "hs-note" }, item.prompt) : null,
-          item.permalink ? h("a", { href: item.permalink, target: "_blank", rel: "noopener noreferrer" }, "Open it") : null,
-          h("textarea", {
-            className: "hs-area",
+          field("Your reply, as a draft", h("textarea", {
+            className: "hs-area hs-short",
             value: value,
-            placeholder: "Reply draft",
             onChange: function (event) {
               const next = event.target.value;
               setDrafts(function (current) { return Object.assign({}, current, { [item.id]: next }); });
             },
-          }),
-          h("div", { className: "hs-row" },
-            h("button", { type: "button", className: "hs-tab", disabled: props.busy, onClick: function () { props.onSuggest(item.id); } }, "Suggest a reply"),
-            h("button", { type: "button", className: "hs-button", disabled: props.busy, onClick: function () { props.onReply(item.id, { reply: value }); } }, "Save draft"),
-            canIdea ? h("button", { type: "button", className: "hs-tab", disabled: props.busy, onClick: function () { props.onIdea(item.id); } }, "Keep as an idea") : null,
-            h("button", { type: "button", className: "hs-tab", disabled: props.busy || !value.trim(), onClick: function () { props.onVoice(item.id, value); } }, "Keep this reply in the voice"),
-            h("button", { type: "button", className: "hs-tab", disabled: props.busy, onClick: function () { props.onReply(item.id, { reply: value, dismissed: true }); } }, "Dismiss")));
-      }) : h("p", { className: "hs-note" }, "Nothing in this view. Refresh after a page is connected."),
-    );
+          }), "Saved here only. Nothing is sent."),
+          h("div", { className: "hs-row hs-spread" },
+            h("div", { className: "hs-row hs-gap-sm" },
+              h("button", { type: "button", className: "hs-button", disabled: props.busy || value === (item.reply || ""), onClick: function () { props.onReply(item.id, { reply: value }); } }, "Save draft"),
+              h("button", { type: "button", className: "hs-tab hs-tab-sm", disabled: props.busy, onClick: function () { props.onSuggest(item.id); } }, "Suggest a reply"),
+              canIdea ? h("button", { type: "button", className: "hs-tab hs-tab-sm", disabled: props.busy, onClick: function () { props.onIdea(item.id); } }, "Keep as an idea") : null,
+              h("button", { type: "button", className: "hs-tab hs-tab-sm", disabled: props.busy || !value.trim(), title: "Keeps your reply as an on-brand example, not their words", onClick: function () { props.onVoice(item.id, value); } }, "Keep this reply in the voice")),
+            h("button", { type: "button", className: "hs-link-button", disabled: props.busy, onClick: function () { props.onReply(item.id, { reply: value, dismissed: true }); } }, "Dismiss")));
+      })) : h(Empty, null, all.length ? "Nothing in this view." : "No comments, mentions, or messages yet. Refresh after a page is connected."));
   }
 
   function downloadText(name, text, type) {
@@ -3790,87 +3778,163 @@
       }
     }
     return h("div", { className: "hs-main" },
-      h("div", { className: "hs-row" },
-        [["week", "Week"], ["month", "Month"]].map(function (pair) {
-          return h("button", {
-            key: pair[0], type: "button",
-            className: "hs-tab" + (period === pair[0] ? " is-on" : ""),
-            onClick: function () { setPeriod(pair[0]); },
-          }, pair[1]);
-        })),
-      h("textarea", {
-        className: "hs-area",
-        value: note,
-        placeholder: "Note for this report",
-        onChange: function (event) { setNote(event.target.value); },
-      }),
-      h("button", {
-        type: "button", className: "hs-button", disabled: props.busy,
-        onClick: function () { props.onGenerate(period, note); },
-      }, "Generate"),
-      rows.length ? rows.map(function (row) {
+      h(Section, { title: "New report" },
+        h("form", {
+          className: "hs-stack",
+          onSubmit: async function (event) {
+            event.preventDefault();
+            const saved = await props.onGenerate(period, note);
+            if (saved) setNote("");
+          },
+        },
+          h(Segmented, { label: "Period", value: period, options: [["week", "Last week"], ["month", "Last month"]], onChange: setPeriod }),
+          field("Note", h("textarea", { className: "hs-area hs-short", value: note, placeholder: "Optional. It leads the report.", onChange: function (event) { setNote(event.target.value); } })),
+          h("div", { className: "hs-row" }, h("button", { type: "submit", className: "hs-button", disabled: props.busy }, "Generate report")))),
+      rows.length ? rows.map(function (row, index) {
         const totals = (row.document && row.document.totals) || {};
         const recommendations = (row.document && row.document.recommendations) || [];
-        return h("div", { key: row.id, className: "hs-pillar" },
-          h("div", { className: "hs-name" }, row.title),
-          h("p", { className: "hs-note" }, row.note || "No note."),
-          h("p", { className: "hs-voice" },
-            "Engagements " + (totals.engagements == null ? "—" : totals.engagements) +
-            " · Shares " + (totals.shares == null ? "—" : totals.shares) +
-            " · Reach " + (totals.reach == null ? (totals.reach_note || "Not in the pull") : totals.reach)),
-          recommendations.length ? h("p", { className: "hs-note" }, recommendations[0]) : null,
-          h("pre", { className: "hs-report" }, row.markdown || ""),
-          h("div", { className: "hs-row" },
+        return h("section", { key: row.id, className: "hs-section" },
+          h("div", { className: "hs-section-head" },
+            h("div", { className: "hs-section-titles" },
+              h("h3", { className: "hs-h3" }, row.title),
+              h("p", { className: "hs-note" }, row.note || "No note.")),
+            h("button", { type: "button", className: "hs-tab hs-tab-sm", disabled: props.busy, onClick: function () { props.onInsight(row.id); } }, "Write the insight")),
+          h("div", { className: "hs-stats" },
+            h(Stat, { label: "Engagements", value: formatNumber(totals.engagements), missing: totals.engagements == null }),
+            h(Stat, { label: "Shares", value: formatNumber(totals.shares), missing: totals.shares == null }),
+            h(Stat, { label: "Reach", value: totals.reach == null ? (totals.reach_note || "Not in the pull") : formatNumber(totals.reach), missing: totals.reach == null })),
+          recommendations.length ? h("p", { className: "hs-voice" }, recommendations[0]) : null,
+          h("details", { className: "hs-more", open: index === 0 },
+            h("summary", null, "The full report"),
+            h("pre", { className: "hs-report" }, row.markdown || "")),
+          h("div", { className: "hs-row hs-gap-sm" },
+            h("button", { type: "button", className: "hs-tab hs-tab-sm", onClick: function () { copy(row.id + ":md", row.markdown || ""); } }, copied === row.id + ":md" ? "Copied" : "Copy markdown"),
+            h("button", { type: "button", className: "hs-tab hs-tab-sm", onClick: function () { downloadText(reportFileName(row.title, "md"), row.markdown || "", "text/markdown"); } }, "Download markdown"),
             h("button", {
-              type: "button", className: "hs-tab", disabled: props.busy,
-              onClick: function () { props.onInsight(row.id); },
-            }, "Write the insight"),
-            h("button", {
-              type: "button", className: "hs-tab",
-              onClick: function () { downloadText(reportFileName(row.title, "md"), row.markdown || "", "text/markdown"); },
-            }, "Download markdown"),
-            h("button", {
-              type: "button", className: "hs-tab",
+              type: "button", className: "hs-tab hs-tab-sm",
               onClick: function () {
-                const payload = {
-                  title: row.title, period: row.period, note: row.note || "",
-                  start: row.start, end: row.end, generated_at: row.generated_at,
-                  document: row.document || {},
-                };
+                const payload = { title: row.title, period: row.period, note: row.note || "", start: row.start, end: row.end, generated_at: row.generated_at, document: row.document || {} };
                 downloadText(reportFileName(row.title, "json"), JSON.stringify(payload, null, 2), "application/json");
               },
             }, "Download JSON"),
-            h("button", {
-              type: "button", className: "hs-tab",
-              onClick: function () { copy(row.id + ":md", row.markdown || ""); },
-            }, copied === row.id + ":md" ? "Copied" : "Copy"),
-            h("button", {
-              type: "button", className: "hs-tab",
-              onClick: function () { copy(row.id + ":id", row.id); },
-            }, copied === row.id + ":id" ? "Id copied" : "Copy the report id")));
-      }) : h("p", { className: "hs-note" }, "No report yet. Generate a week or a month."),
-    );
+            h("button", { type: "button", className: "hs-link-button", onClick: function () { copy(row.id + ":id", row.id); } }, copied === row.id + ":id" ? "Id copied" : "Copy the report id")));
+      }) : h(Empty, null, "No report yet. Generate a week or a month."));
   }
 
+  const INGEST_FIELDS = [
+    ["", "Ignore"], ["caption", "Caption"], ["published_at", "Published at"], ["platform", "Platform"], ["likes", "Likes"],
+    ["comments", "Comments"], ["shares", "Shares"], ["saves", "Saves"], ["impressions", "Impressions"], ["reach", "Reach"],
+    ["video_views", "Video views"], ["permalink", "Link"], ["format", "Format"], ["pillar", "Pillar"],
+  ];
+
+  function IngestDesk(props) {
+    const desk = (props.studio && props.studio.ingest) || { fields: [], mapping: {}, log: [], insights: [] };
+    const [text, setText] = useState("");
+    const [xlsx, setXlsx] = useState("");
+    const [filename, setFilename] = useState("paste");
+    const [preview, setPreview] = useState(null);
+    const [mapping, setMapping] = useState({});
+    const [result, setResult] = useState(null);
+    const hasCaption = Object.keys(mapping).some(function (column) { return mapping[column] === "caption"; });
+    async function previewFile() {
+      const found = await props.onPreview({ text: xlsx ? "" : text, xlsx: xlsx, filename: filename });
+      if (!found) return;
+      setPreview(found);
+      setMapping(found.suggested || {});
+      setResult(null);
+    }
+    async function commitFile(event) {
+      event.preventDefault();
+      const saved = await props.onCommit({ text: xlsx ? "" : text, xlsx: xlsx, filename: filename, mapping: mapping });
+      if (saved) { setResult(saved); setPreview(null); }
+    }
+    return h("div", { className: "hs-main" },
+      h(Section, { title: "1 · Bring the rows", note: "Paste rows, or choose a CSV, JSON, or Excel file." },
+        h("textarea", { className: "hs-area hs-mono", "aria-label": "Rows to import", value: text, placeholder: "caption,published_at,platform,likes,comments\n…", onChange: function (event) { setText(event.target.value); setXlsx(""); setFilename("paste"); setPreview(null); } }),
+        h("div", { className: "hs-row" },
+          h("input", {
+            className: "hs-field hs-w-lg", type: "file", "aria-label": "Choose a file", accept: ".csv,.json,.xlsx,text/csv,application/json",
+            onChange: function (event) {
+              const file = event.target.files && event.target.files[0];
+              if (!file) return;
+              setFilename(file.name);
+              setPreview(null);
+              const reader = new FileReader();
+              if (/\.xlsx$/i.test(file.name)) {
+                reader.onload = function () {
+                  const value = String(reader.result || "");
+                  setXlsx(value.slice(value.indexOf(",") + 1));
+                  setText("");
+                };
+                reader.readAsDataURL(file);
+              } else {
+                reader.onload = function () { setText(String(reader.result || "")); setXlsx(""); };
+                reader.readAsText(file);
+              }
+            },
+          }),
+          xlsx ? h("span", { className: "hs-meta" }, filename + " is ready.") : null,
+          h("button", { type: "button", className: "hs-button", disabled: props.busy || (!text.trim() && !xlsx), onClick: previewFile }, "Preview columns"))),
+      preview ? h(Section, { title: "2 · Map the columns", note: preview.rows + " rows. Map one column to the caption; the rest are optional." },
+        h("form", { className: "hs-stack", onSubmit: commitFile },
+          h("div", { className: "hs-grid-3" }, (preview.columns || []).map(function (column) {
+            return h("label", { key: column, className: "hs-note" }, column,
+              h("select", {
+                className: "hs-field",
+                value: mapping[column] || "",
+                onChange: function (event) {
+                  const value = event.target.value;
+                  setMapping(function (current) { return Object.assign({}, current, { [column]: value }); });
+                },
+              }, INGEST_FIELDS.map(function (pair) { return h("option", { key: pair[0] || "ignore", value: pair[0] }, pair[1]); })));
+          })),
+          h("div", { className: "hs-row" },
+            h("button", { type: "submit", className: "hs-button", disabled: props.busy || !hasCaption }, "Import " + preview.rows + " rows"),
+            !hasCaption ? h("span", { className: "hs-hint" }, "Map a column to the caption first.") : null))) : null,
+      result ? h(Section, { title: "Imported" },
+        h("div", { className: "hs-stats" },
+          h(Stat, { label: "Added", value: formatNumber(result.accepted) }),
+          h(Stat, { label: "Already here", value: formatNumber(result.skipped) }),
+          h(Stat, { label: "Missing a date or a count", value: formatNumber(result.incomplete) })),
+        (result.insights || []).map(function (line, index) { return h("p", { key: index, className: "hs-voice" }, line); })) : null,
+      !result && (desk.insights || []).length ? h(Section, { title: "What the imported posts show" },
+        h("ul", { className: "hs-list" }, desk.insights.map(function (line, index) { return h("li", { key: index, className: "hs-note" }, line); }))) : null,
+      h(Section, { title: "Imports", collapsible: true, open: false },
+        (desk.log || []).length ? h("ul", { className: "hs-rows" }, desk.log.map(function (item) {
+          return h("li", { key: item.id, className: "hs-list-row" },
+            h("div", { className: "hs-list-main" },
+              h("div", null, item.filename),
+              h("div", { className: "hs-meta" }, item.accepted + " added · " + item.skipped + " skipped · " + item.incomplete + " incomplete")));
+        })) : h("p", { className: "hs-note" }, "No import yet.")));
+  }
 
   function AcrossDesk(props) {
     const desk = (props.studio && props.studio.cross) || { enabled: false, brands: [], lines: [], accepted: [] };
+    const brands = desk.brands || [];
     return h("div", { className: "hs-main" },
-      h("p", { className: "hs-note" }, (desk.brands || []).length ? "Included: " + desk.brands.join(", ") : "No brand is included."),
-      (desk.lines || []).map(function (item, index) { return h("p", { key: item.key || index, className: item.clear ? "hs-ok" : "hs-note" }, item.detail); }),
-      (desk.accepted || []).length ? h("div", { className: "hs-name" }, "Accepted") : null,
-      (desk.accepted || []).map(function (item) { return h("p", { key: item.key, className: "hs-note" }, "Accepted. Not applied to a draft. " + item.detail); }));
+      h(Section, { title: "Included brands" },
+        brands.length ? h("div", { className: "hs-row hs-gap-xs" }, brands.map(function (name) { return h("span", { key: name, className: "hs-tag hs-tag-flat" }, name); })) : h("p", { className: "hs-note" }, "No brand is included yet."),
+        brands.length < 2 ? h("button", { type: "button", className: "hs-link-button", onClick: function () { props.onGo("brief"); } }, "Include this brand from its Brief →") : null),
+      h(Section, { title: "What the counts show", note: "Format, hour, and content counts only, and only when the gap is real." },
+        (desk.lines || []).length ? h("ul", { className: "hs-checks" }, desk.lines.map(function (item, index) {
+          return h("li", { key: item.key || index, className: item.clear ? "is-ok" : "" },
+            h("span", { className: "hs-check-mark", "aria-hidden": "true" }, item.clear ? "✓" : "·"),
+            h("span", { className: item.clear ? "" : "hs-note" }, item.detail));
+        })) : h("p", { className: "hs-note" }, brands.length < 2 ? "Comparisons start once two brands are included." : "Nothing is clear across the included brands yet.")),
+      (desk.accepted || []).length ? h(Section, { title: "Accepted", note: "Accepting does not change a draft." },
+        h("ul", { className: "hs-list" }, desk.accepted.map(function (item) { return h("li", { key: item.key, className: "hs-note" }, item.detail); }))) : null);
   }
 
   function Learning(props) {
     const lessons = (props.studio && props.studio.lessons) || [];
     return h("div", { className: "hs-main" },
-      lessons.length ? lessons.map(function (lesson) {
-        return h("div", { key: lesson.id, className: "hs-lesson" },
+      lessons.length ? h("ul", { className: "hs-ideas" }, lessons.map(function (lesson) {
+        return h("li", { key: lesson.id, className: "hs-idea" },
           h("div", { className: "hs-name" }, lesson.title),
           h("p", { className: "hs-voice" }, lesson.detail));
-      }) : h("p", { className: "hs-note" }, "No lessons yet."),
-    );
+      })) : h(Empty, null,
+        h("p", null, "No lessons yet. A lesson needs three observations on each side."),
+        h("button", { type: "button", className: "hs-link-button", onClick: function () { props.onGo("ingest"); } }, "Import past posts on Ingest →")));
   }
 
   window.__HERMES_PLUGINS__.register("house-social", HouseSocial);
