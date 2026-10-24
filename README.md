@@ -16,7 +16,7 @@ Each brand has the same desks.
 | Voice | Tone, personality, formality, humor, point of view, do and don't, visual notes, banned lines, preferred lines, required lines, and competitor notes. Pillars keep the angles you write. On-brand and off-brand examples can be written, pasted, or taken from posts when the gap is real. Create scores a draft and can ask for a rewrite. Each save keeps a version. |
 | Accounts | Connect with Facebook or Connect with Threads signs in through the house app. Back on the desk you pick this brand's Page and Instagram account, or confirm its Threads account. The tokens go to the vault. Change, disconnect, or paste a token by hand. Posting is switched on here for this brand. Check posting proves each account can post and leaves nothing visible. A test post is real and public, and Facebook and Threads tests can be deleted from the desk. |
 | Ideas | A board or a list of sparks, competitor notes, trends, questions, and comments. One click makes a draft and opens the composer. A pattern line appears only when the posts already show it. An idea is archived as ahead only when its draft has a post at least 3× the others. Suggest uses the voice, the pillars, those posts, and the trend notes you saved. |
-| Approval | Draft, then needs review, then approved, then scheduled. One name is a single step. Extra names are optional and go in order. Comments, the lines that changed between versions, and a trail that stays after a notice is marked read. An approved piece that already has a future time is scheduled at once. Nothing is mailed. |
+| Approval | Draft, then needs review, then approved, then scheduled. One name is a single step. Extra names are optional and go in order. Comments, the lines that changed between versions, and a trail that stays after a notice is marked read. An approved piece that already has a future time is scheduled at once. With approval email on, each step's approver gets the post by email and replies APPROVE or CHANGES; the link in the email opens the piece here. |
 | Composer | The creation hub. Start from a subject, an idea, an image, or a post that is at least 3× the others. Facebook, Instagram, and Threads each get a preview and a count. The assistant stays inside the brand voice. A variation shows the historical pattern it matches, and only when that pattern is clear. Improve this draft asks for a rewrite from those misses. What the posts say lists similar posts with the engagements they earned. Hold a day on the calendar, or save the words to the library. Saving does not post. |
 | Library | Images, video, carousels, templates, logos, and copy blocks. Hooks, CTAs, hashtags, and bios insert into the composer. Tags, search, folders, and versions. Mean engagement and last used come from the uses that have numbers. A version or a topic is called ahead only when both sides have three uses and the gap is real. Image tags come from tags this brand already uses, or from the vision model when it answers. |
 | Series | A structure you can open again with a new topic. Pause holds it. Fill uses a pillar this brand already has and does not save a draft. A shape is suggested only when it is already ahead. Stats wait for three uses with numbers. A later drop is a note, and the series stays. It does not move to another brand. Nothing is sent. |
@@ -99,6 +99,19 @@ Facebook takes text or one image. Instagram needs one image; a text piece skips 
 
 Set `HOUSE_SOCIAL_WORKER=0` to keep the dashboard from posting on its own; the agent tool and the House settings button still post what is due.
 
+## Approval email
+
+Approval email goes through [AgentMail](https://agentmail.to) or [Resend](https://resend.com). Set it up in House settings:
+
+- **AgentMail** sends from an inbox, such as `approvals@agentmail.to`, and reads the replies from it.
+- **Resend** sends from an address on a domain you verified there. Resend cannot hand replies back here, so put the AgentMail inbox in **Replies go to** if you want replies read; otherwise approvers use the link in the email.
+
+Each API key goes to the vault as `house-social.agentmail.api_key` or `house-social.resend.api_key`. Then add each approver's email next to their name under **Review steps** on a brand's Approval desk.
+
+When a piece goes for review, or moves to the next step, that step's approver gets the three versions, the time, and a link that opens the piece on the Approval desk. The subject carries a code such as `HS-K7QX2M`. Once a minute the desk reads new mail in the AgentMail inbox. A reply counts only when it comes from that step's approver and its first line starts with APPROVE, or CHANGES followed by what to change. Anything else is left with a notice on the Approval desk saying why. An approved piece with a future time is scheduled, and posts then while posting is on. Quiet hours on the Brief hold the mail until they end.
+
+Replies are read rather than pushed by webhook: the Hermes dashboard only answers requests that carry its session, so a mail service cannot call it directly. Reading the inbox once a minute gets the same answer without opening a public endpoint.
+
 There is no token, app secret, or page token in this repository. `brands.py` may include a public handle or a public page id. That is not a credential.
 
 If a pull fails, the error text is stored with `access_token` redacted.
@@ -143,6 +156,7 @@ library.py               assets, versions, and use
 store.py                 state, connections, calendar, pulls
 connect.py               sign-in through the house apps, and the account picker
 publish.py               posting, the once-a-minute run, checks, and test posts
+approval_mail.py         approval email through AgentMail or Resend, and reading replies
 learn.py                 performance and lessons
 analytics_desk.py        patterns, goals, and imported history
 calendar_desk.py         gaps, slots, and the mix for the next 7 days

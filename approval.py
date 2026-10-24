@@ -32,13 +32,31 @@ def approval_for(state: dict, brand_id: str) -> dict:
         _notice(item) for item in state.get("notices") or []
         if item.get("brand_id") == brand.id and not item.get("read")
     ]
-    return {"steps": steps, "pieces": pieces, "notices": notices}
+    emails = (state.get("approval_emails") or {}).get(brand.id) or {}
+    return {
+        "steps": steps,
+        "people": [{"name": name, "email": emails.get(name.lower(), "")} for name in steps],
+        "pieces": pieces,
+        "notices": notices,
+    }
 
 
 def save_steps(state: dict, brand_id: str, steps: list, path: Path | None = None) -> dict:
+    """Steps are names, or {"name", "email"} rows. An email lets that step be asked by mail."""
+    from approval_mail import _address
+
     brand = resolve_brand(state, brand_id)
-    names = _names(steps)
-    updated = {**state, "approval_steps": {**(state.get("approval_steps") or {}), brand.id: names}}
+    rows = steps if isinstance(steps, list) else _names(steps)
+    names = _names([row.get("name") if isinstance(row, dict) else row for row in rows])
+    emails = {}
+    for row in rows:
+        if isinstance(row, dict) and str(row.get("email") or "").strip():
+            emails[_person(row.get("name")).lower()] = _address(row.get("email"), f"{_person(row.get('name'))}'s email does not look like an address.")
+    updated = {
+        **state,
+        "approval_steps": {**(state.get("approval_steps") or {}), brand.id: names},
+        "approval_emails": {**(state.get("approval_emails") or {}), brand.id: emails},
+    }
     save(updated, path)
     return approval_for(updated, brand.id)
 
@@ -50,6 +68,8 @@ def submit_review(state: dict, piece_id: str, path: Path | None = None) -> dict:
     current = _with_piece(current, piece_id, _submit)
     current = _notify(current, _piece_row(current, piece_id), f"{_title(_piece_row(current, piece_id))} needs review.")
     save(current, path)
+    _mail_reviewer(piece_id, path)
+    current = load(path) if path else load()
     return _piece_row(current, piece_id)
 
 
@@ -113,6 +133,7 @@ def decide(state: dict, piece_id: str, spec: dict, path: Path | None = None) -> 
         updated = _with_piece(state, piece_id, lambda item: {**item, "approval": approval, "status": "pending"})
         updated = _notify(updated, piece, f"{_title(piece)} needs review from {steps[step + 1]}.")
         save(updated, path)
+        _mail_reviewer(piece_id, path)
         return {"status": "pending", "piece_id": piece_id, "waiting": steps[step + 1]}
     approval["complete"] = True
     approval["step"] = step
@@ -209,6 +230,8 @@ def _piece(piece: dict, steps: list[str]) -> dict:
             for index, item in enumerate(approval.get("versions") or [])
         ],
         "compare": compare_piece(piece),
+        "bodies": _bodies(piece),
+        "mail": {key: (approval.get("mail") or {}).get(key) for key in ("to", "sent_at", "error", "pending")},
     }
 
 
@@ -221,6 +244,8 @@ def _approval(piece: dict) -> dict:
         "versions": list(raw.get("versions") or []),
         "comments": list(raw.get("comments") or []),
         "trail": list(raw.get("trail") or []),
+        **({"mail": dict(raw["mail"])} if isinstance(raw.get("mail"), dict) else {}),
+        **({"by": raw["by"]} if raw.get("by") else {}),
     }
 
 
@@ -333,6 +358,18 @@ def _notice(notice: dict) -> dict:
 def _title(piece: dict) -> str:
     text = str(piece.get("idea") or "A piece").strip()
     return text[:80]
+
+
+def _mail_reviewer(piece_id: str, path: Path | None) -> None:
+    """Email whoever reviews next, when approval email is set up. Mail trouble never undoes the review."""
+    from approval_mail import send_review_mail
+
+    try:
+        send_review_mail(load(path) if path else load(), piece_id, path)
+    except Exception as exc:  # the review stands; the desk says what went wrong
+        current = load(path) if path else load()
+        piece = _piece_row(current, piece_id)
+        save(_notify(current, piece, f"Approval email was not sent. {str(exc)[:200]}"), path)
 
 
 def _future(value) -> str:

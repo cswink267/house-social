@@ -94,6 +94,8 @@ def empty_state() -> dict:
         "oauth_pending": [],
         "publishing": {"on": False, "brands": {}},
         "test_posts": [],
+        "mail": {},
+        "approval_emails": {},
     }
 
 
@@ -156,6 +158,8 @@ def load(path: Path | None = None) -> dict:
     oauth_pending = raw.get("oauth_pending")
     publishing = raw.get("publishing")
     test_posts = raw.get("test_posts")
+    mail = raw.get("mail")
+    approval_emails = raw.get("approval_emails")
     return {
         "version": 1,
         "channels": channels if isinstance(channels, dict) else {},
@@ -210,6 +214,8 @@ def load(path: Path | None = None) -> dict:
         "oauth_pending": oauth_pending if isinstance(oauth_pending, list) else [],
         "publishing": publishing if isinstance(publishing, dict) else {"on": False, "brands": {}},
         "test_posts": test_posts if isinstance(test_posts, list) else [],
+        "mail": mail if isinstance(mail, dict) else {},
+        "approval_emails": approval_emails if isinstance(approval_emails, dict) else {},
     }
 
 
