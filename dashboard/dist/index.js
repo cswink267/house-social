@@ -628,6 +628,16 @@
               });
               if (saved) await refresh(brand.id);
             },
+            onCross: async function (enabled) {
+              const saved = await run(function () {
+                return SDK.fetchJSON("/api/plugins/house-social/brands/" + brand.id + "/cross", {
+                  method: "POST",
+                  headers: { "Content-Type": "application/json" },
+                  body: JSON.stringify({ enabled: enabled }),
+                });
+              });
+              if (saved) await refresh(brand.id);
+            },
             studio: studio,
             onPull: async function () {
               const saved = await run(function () {
@@ -735,6 +745,17 @@
             },
           }) : null,
           section === "create" ? h(CreatePanel, {
+            cross: studio && studio.cross,
+            onAcceptCross: async function (key) {
+              const saved = await run(function () {
+                return SDK.fetchJSON("/api/plugins/house-social/brands/" + brand.id + "/cross", {
+                  method: "POST",
+                  headers: { "Content-Type": "application/json" },
+                  body: JSON.stringify({ accept: true, key: key }),
+                });
+              });
+              if (saved) await refresh(brand.id);
+            },
             brand: brand, idea: idea, setIdea: setIdea, pillar: pillar, setPillar: setPillar,
             format: format, setFormat: setFormat, hypothesis: hypothesis, setHypothesis: setHypothesis,
             busy: busy, onShape: shapeIdea, onCheck: checkVoice, voiceCheck: voiceCheck, active: active, pieces: pieces, onEdit: editVariant,
@@ -1086,6 +1107,20 @@
               if (saved) await refresh(brand.id);
             },
           }) : null,
+          section === "across" ? h(AcrossDesk, {
+            studio: studio,
+            busy: busy,
+            onAccept: async function (key) {
+              const saved = await run(function () {
+                return SDK.fetchJSON("/api/plugins/house-social/brands/" + brand.id + "/cross", {
+                  method: "POST",
+                  headers: { "Content-Type": "application/json" },
+                  body: JSON.stringify({ accept: true, key: key }),
+                });
+              });
+              if (saved) await refresh(brand.id);
+            },
+          }) : null,
           section === "learning" ? h(Learning, { studio: studio }) : null,
         ) : null,
       ),
@@ -1403,6 +1438,13 @@
       link ? h("p", { className: "hs-note" }, h("a", { href: link, target: "_blank", rel: "noopener noreferrer" }, link)) : null,
       h("div", { className: "hs-row" },
         h("button", { type: "button", className: "hs-button", disabled: props.busy, onClick: function () { props.onSaveSite(site.trim()); } }, "Save website")),
+      h("label", { className: "hs-note" },
+        h("input", {
+          type: "checkbox",
+          checked: !!brand.cross_enabled,
+          onChange: function (event) { if (props.onCross) props.onCross(event.target.checked); },
+        }),
+        " Include this brand in cross-brand. It stays off until you check it. Only the counts are compared."),
       h("div", { className: "hs-cols" }, PLATFORMS.map(function (pair) {
         return h("label", { key: pair[0], className: "hs-meta" }, pair[1],
           h("input", {
@@ -1424,7 +1466,12 @@
     const brand = props.brand;
     const mine = props.pieces.filter(function (piece) { return piece.brand_id === brand.id; });
     const [holdDay, setHoldDay] = useState("");
+    const offer = props.cross && props.cross.offer;
     return h("div", { className: "hs-main" },
+      offer ? h("div", { className: "hs-pillar" },
+        h("div", { className: "hs-name" }, "cross-brand"),
+        h("p", { className: "hs-note" }, offer.detail),
+        h("button", { type: "button", className: "hs-tab", disabled: props.busy, onClick: function () { if (props.onAcceptCross) props.onAcceptCross(offer.key); } }, "Accept")) : null,
       h("div", { className: "hs-cols" },
         h("select", { className: "hs-field", value: props.pillar, onChange: function (event) { props.setPillar(event.target.value); } },
           h("option", { value: "" }, "Pillar"),
@@ -2974,6 +3021,17 @@
             }, copied === row.id + ":id" ? "Id copied" : "Copy the report id")));
       }) : h("p", { className: "hs-note" }, "No report yet. Generate a week or a month."),
     );
+  }
+
+
+  function AcrossDesk(props) {
+    const desk = (props.studio && props.studio.cross) || { enabled: false, brands: [], lines: [], accepted: [] };
+    return h("div", { className: "hs-main" },
+      h("p", { className: "hs-note" }, "Cross-brand is off until you include at least two brands from Brief. It compares counts only. No caption, hook, voice line, or asset crosses."),
+      h("p", { className: "hs-note" }, (desk.brands || []).length ? "Included: " + desk.brands.join(", ") : "No brand is included."),
+      (desk.lines || []).map(function (item, index) { return h("p", { key: item.key || index, className: item.clear ? "hs-ok" : "hs-note" }, item.detail); }),
+      (desk.accepted || []).length ? h("div", { className: "hs-name" }, "Accepted") : null,
+      (desk.accepted || []).map(function (item) { return h("p", { key: item.key, className: "hs-note" }, "Accepted. Not applied to a draft. " + item.detail); }));
   }
 
   function Learning(props) {

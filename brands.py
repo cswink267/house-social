@@ -237,6 +237,7 @@ SECTIONS = (
     {"id": "hashtags", "label": "Hashtags", "group": "Learn"},
     {"id": "inbox", "label": "Inbox", "group": "Learn"},
     {"id": "reports", "label": "Reports", "group": "Learn"},
+    {"id": "across", "label": "Across", "group": "Learn"},
     {"id": "learning", "label": "Learning", "group": "Learn"},
 )
 

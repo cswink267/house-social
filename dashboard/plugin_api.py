@@ -102,6 +102,19 @@ def post_site(brand_id: str, body: dict) -> dict:
         _fail(exc)
 
 
+@router.post("/brands/{brand_id}/cross")
+def post_cross(brand_id: str, body: dict) -> dict:
+    from cross_brand import accept_cross, set_cross
+
+    spec = body if isinstance(body, dict) else {}
+    try:
+        if spec.get("accept"):
+            return accept_cross(load(), brand_id, str(spec.get("key") or ""))
+        return set_cross(load(), brand_id, bool(spec.get("enabled")))
+    except DraftError as exc:
+        _fail(exc)
+
+
 @router.get("/pieces")
 def get_pieces() -> dict:
     return {"posting": False, "pieces": load()["pieces"]}

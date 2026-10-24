@@ -75,6 +75,8 @@ def empty_state() -> dict:
         "series": [],
         "feedback": [],
         "sites": {},
+        "cross_enabled": {},
+        "cross_accepted": [],
     }
 
 
@@ -118,6 +120,8 @@ def load(path: Path | None = None) -> dict:
     series = raw.get("series")
     feedback = raw.get("feedback")
     sites = raw.get("sites")
+    cross_enabled = raw.get("cross_enabled")
+    cross_accepted = raw.get("cross_accepted")
     return {
         "version": 1,
         "channels": channels if isinstance(channels, dict) else {},
@@ -153,6 +157,8 @@ def load(path: Path | None = None) -> dict:
         "series": series if isinstance(series, list) else [],
         "feedback": feedback if isinstance(feedback, list) else [],
         "sites": sites if isinstance(sites, dict) else {},
+        "cross_enabled": cross_enabled if isinstance(cross_enabled, dict) else {},
+        "cross_accepted": cross_accepted if isinstance(cross_accepted, list) else [],
     }
 
 
@@ -374,8 +380,8 @@ def _site_url(site: str) -> str:
 def _with_site(state: dict, row: dict) -> dict:
     sites = state.get("sites") or {}
     if row.get("id") in sites:
-        return {**row, "site": str(sites[row["id"]] or "")}
-    return row
+        row = {**row, "site": str(sites[row["id"]] or "")}
+    return {**row, "cross_enabled": bool((state.get("cross_enabled") or {}).get(row.get("id")))}
 
 
 def remove_brand(state: dict, brand_id: str, path: Path | None = None, root: Path | None = None) -> dict:
@@ -410,9 +416,10 @@ def remove_brand(state: dict, brand_id: str, path: Path | None = None, root: Pat
         "predictions",
         "series",
         "feedback",
+        "cross_accepted",
     ):
         updated[key] = [item for item in updated.get(key) or [] if item.get("brand_id") != name]
-    for key in ("channels", "pulls", "voices", "approval_steps", "inbox_errors", "voice_versions", "ingest_maps", "memory_marks", "studio_reads", "prediction_hidden", "sites"):
+    for key in ("channels", "pulls", "voices", "approval_steps", "inbox_errors", "voice_versions", "ingest_maps", "memory_marks", "studio_reads", "prediction_hidden", "sites", "cross_enabled"):
         current = dict(updated.get(key) or {})
         current.pop(name, None)
         updated[key] = current
@@ -694,6 +701,7 @@ def studio(state: dict, brand_id: str, ledger: dict | None = None, today=None) -
         "ingest": _ingest_view(state, brand_id),
         "memory": _memory_view(state, brand_id, posts, pieces),
         "series": _series_view(state, brand_id, posts),
+        "cross": _cross_view(state, brand_id),
     }
 
 
@@ -1184,6 +1192,12 @@ def _calendar(pieces: list[dict], posts: list[dict], today) -> dict:
         days.append({"date": key, "label": f"{day.strftime('%a')} {day.day}", "pieces": items})
     unscheduled = [item for item in entries if item.get("kind") == "piece" and not item.get("date")]
     return {"days": days, "unscheduled": unscheduled, "entries": entries}
+
+
+def _cross_view(state: dict, brand_id: str) -> dict:
+    from cross_brand import cross_for
+
+    return cross_for(state, brand_id)
 
 
 def _series_view(state: dict, brand_id: str, posts: list[dict]) -> dict:
