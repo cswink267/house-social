@@ -737,6 +737,7 @@ def studio(state: dict, brand_id: str, ledger: dict | None = None, today=None) -
         "cross": _cross_view(state, brand_id),
         "modes": _modes_view(state, brand_id, posts),
         "support": _support_view(state, brand_id, posts),
+        "map": _map_view(posts, page_days),
     }
 
 
@@ -1227,6 +1228,12 @@ def _calendar(pieces: list[dict], posts: list[dict], today) -> dict:
         days.append({"date": key, "label": f"{day.strftime('%a')} {day.day}", "pieces": items})
     unscheduled = [item for item in entries if item.get("kind") == "piece" and not item.get("date")]
     return {"days": days, "unscheduled": unscheduled, "entries": entries}
+
+
+def _map_view(posts: list[dict], page_days: list[dict]) -> dict:
+    from engagement_map import map_for
+
+    return map_for(posts, page_days)
 
 
 def _support_view(state: dict, brand_id: str, posts: list[dict]) -> dict:

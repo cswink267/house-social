@@ -988,6 +988,7 @@
               if (saved) await refresh(brand.id);
             },
           }) : null,
+          section === "map" ? h(MapDesk, { studio: studio }) : null,
           section === "performance" ? h(Performance, {
             brand: brand, studio: studio, busy: busy, pickedDay: pickedDay, pickedPost: pickedPost, pickedHour: pickedHour,
             onDay: function (point) { setPickedDay(point.id); },
@@ -2725,6 +2726,70 @@
       (desk.log || []).length ? (desk.log || []).map(function (item) {
         return h("p", { key: item.id, className: "hs-note" }, item.filename + " · " + item.accepted + " added · " + item.skipped + " skipped · " + item.incomplete + " incomplete");
       }) : h("p", { className: "hs-note" }, "No import yet."));
+  }
+
+
+  function MapLines(props) {
+    const series = props.series || [];
+    const colors = { facebook: "#c4a574", instagram: "#7d9a92", threads: "#d4c4a8" };
+    if (!series.length) return h("p", { className: "hs-note" }, "No numbers in this window.");
+    const points = series.reduce(function (all, row) { return all.concat(row.points || []); }, []);
+    const max = Math.max.apply(null, points.map(function (point) { return point.value || 0; }).concat([1]));
+    const width = 640;
+    const height = 160;
+    return h("svg", { className: "hs-chart", viewBox: "0 0 " + width + " " + height, role: "img", "aria-label": "Daily engagements" },
+      series.map(function (row) {
+        const step = width / Math.max(1, (row.points || []).length - 1);
+        const d = (row.points || []).map(function (point, index) {
+          const x = (row.points.length === 1 ? width / 2 : index * step);
+          const y = height - 16 - ((point.value || 0) / max) * (height - 28);
+          return (index ? "L" : "M") + x + " " + y;
+        }).join(" ");
+        return h("path", { key: row.platform, d: d, fill: "none", stroke: colors[row.platform] || "#8aa4b5", "stroke-width": 2 });
+      }));
+  }
+
+  function MapDesk(props) {
+    const map = (props.studio && props.studio.map) || { windows: {}, posts: [], hourly: false, demographics: false };
+    const [size, setSize] = useState("28");
+    const [view, setView] = useState("overview");
+    const [postId, setPostId] = useState("");
+    const window = (map.windows && map.windows[size]) || { cards: {}, series: [], formats: [], heatmap: [], top: [], change: [], followers: [], rates: [] };
+    const post = (map.posts || []).find(function (item) { return item.id === postId; }) || (map.posts || [])[0];
+    const cards = window.cards || {};
+    return h("div", { className: "hs-main" },
+      h("p", { className: "hs-note" }, "Display only. A missing number stays blank. A format with fewer than three posts says it is thin. Nothing is sent."),
+      h("div", { className: "hs-row" },
+        ["7", "28", "90"].map(function (item) { return h("button", { key: item, type: "button", className: "hs-tab" + (size === item ? " is-on" : ""), onClick: function () { setSize(item); } }, item + " days"); }),
+        ["overview", "post", "formats", "audience"].map(function (item) { return h("button", { key: item, type: "button", className: "hs-tab" + (view === item ? " is-on" : ""), onClick: function () { setView(item); } }, item); })),
+      view === "overview" ? h("div", null,
+        h(MapLines, { series: window.series }),
+        ["facebook", "instagram", "threads"].map(function (name) {
+          const card = cards[name] || { detail: "No numbers in this window.", rows: [] };
+          return h("div", { key: name, className: "hs-pillar" },
+            h("div", { className: "hs-name" }, name),
+            card.detail ? h("p", { className: "hs-note" }, card.detail) : null,
+            (card.rows || []).map(function (row) { return h("p", { key: row.label, className: "hs-note" }, row.label + ": " + (row.value == null ? "—" : row.value)); }));
+        }),
+        (window.change || []).map(function (item) { return h("p", { key: item.platform, className: "hs-note" }, item.platform + " · " + item.detail); }),
+        (window.followers || []).map(function (item) { return h("p", { key: item.platform, className: "hs-note" }, item.detail); })) : null,
+      view === "post" ? h("div", null,
+        map.hourly ? null : h("p", { className: "hs-note" }, "Hourly counts are not in the pull."),
+        h("select", { className: "hs-field", value: post ? post.id : "", onChange: function (event) { setPostId(event.target.value); } },
+          (map.posts || []).map(function (item) { return h("option", { key: item.id, value: item.id }, (item.platform || "") + " · " + (item.preview || item.id)); })),
+        post ? h("div", { className: "hs-pillar" },
+          h("p", { className: "hs-voice" }, post.preview || "No caption in the pull."),
+          h("p", { className: "hs-note" }, [post.platform, post.format, post.at].filter(Boolean).join(" · ")),
+          h("p", { className: "hs-note" }, "Engagements: " + (post.engagements == null ? "—" : post.engagements) + ". Reach: " + (post.impressions == null ? "—" : post.impressions)),
+          (post.parts || []).map(function (part) { return h("p", { key: part.label, className: "hs-note" }, part.label + ": " + part.value); })) : h("p", { className: "hs-note" }, "No post in the pull.")) : null,
+      view === "formats" ? h("div", null,
+        (window.formats || []).length ? (window.formats || []).map(function (item) { return h("p", { key: item.format, className: "hs-note" }, item.format + " · " + item.detail); }) : h("p", { className: "hs-note" }, "No format in this window."),
+        (window.heatmap || []).slice(0, 24).map(function (cell) { return h("p", { key: cell.weekday + cell.hour, className: "hs-note" }, cell.weekday + " " + cell.hour + " · " + cell.mean + " (n=" + cell.n + ")"); }),
+        (window.top || []).map(function (item) { return h("p", { key: item.id, className: "hs-note" }, item.platform + " · " + item.format + " · " + (item.engagements == null ? "—" : item.engagements) + (item.rate == null ? "" : " · " + item.rate + " percent") + " · " + item.preview); })) : null,
+      view === "audience" ? h("div", null,
+        map.demographics ? null : h("p", { className: "hs-note" }, "No city or age breakdown was returned."),
+        (window.followers || []).length ? (window.followers || []).map(function (item) { return h("p", { key: item.platform, className: "hs-note" }, item.detail); }) : h("p", { className: "hs-note" }, "No follower numbers in this window."),
+        (window.rates || []).length ? (window.rates || []).map(function (item) { return h("p", { key: item.label, className: "hs-note" }, item.detail); }) : h("p", { className: "hs-note" }, "No rate. Reach was not in the pull.")) : null);
   }
 
   function Performance(props) {

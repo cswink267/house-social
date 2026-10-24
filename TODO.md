@@ -2,7 +2,7 @@
 
 Chris, Oct 22 2026. These are extras. The order is locked. One at a time, when he asks. Do not pull the next one forward. Do not delete an item. Mark it complete when it is done.
 
-Item 1 through item 8 are complete. The rest are not started.
+Item 1 through item 9 are complete. The rest are not started.
 
 Ingest history, then make the knowledge visible and correctable, then apply it while writing, then capture reusable formats and explicit feedback, then, only if he still wants it, look across brands.
 
@@ -419,7 +419,7 @@ These additions are progressive. The activity log, teach-from-rejection, dry-run
 
 ## 9. Graphical Engagement Map
 
-**Status: not started.**
+**Status: complete.** The Map desk has overview, post, formats, and audience. Daily lines are only the platforms that have posts. Reach stays blank when impressions are 0. A format under three posts says it is thin. A percent appears only when the prior window is not 0. Hourly curves and city or age bands stay hidden because those numbers are not in the pull. Nothing is sent.
 
 A set of detailed, visual dashboards that surface the engagement metrics Facebook, Instagram, and Threads actually return. These are display-only. They do not invent rates, confidence scores, or demographics the platforms did not supply. A missing number stays missing. Nothing is sent from these views.
 
