@@ -1,14 +1,16 @@
 # Later — do not start
 
-Chris, Oct 22 2026. These are extras. The order is locked. One at a time, when he asks. Do not pull the next one forward.
+Chris, Oct 22 2026. These are extras. The order is locked. One at a time, when he asks. Do not pull the next one forward. Do not delete an item. Mark it complete when it is done.
 
-Item 1 is the Ingest desk. The rest are not started.
+Item 1 is complete. The rest are not started.
 
 Ingest history, then make the knowledge visible and correctable, then apply it while writing, then capture reusable formats and explicit feedback, then, only if he still wants it, look across brands.
 
 A missing number stays missing. Nothing is sent. Tokens stay in the vault. A comparison still needs three on both sides and a real gap. Do not invent a percent, a popularity score, or a confidence number the posts did not earn.
 
 ## 1. Historical Content Ingest Center
+
+**Status: complete.** The Ingest desk maps a paste, CSV, JSON, or Excel file, keeps a missing count missing, skips a row already imported, and writes the first lines from the posts that were actually dated. Recent posts are not weighted. Each dated post counts once.
 
 Highest priority extra. A dedicated flow for pulling in past content and metrics so the brand starts with a real baseline instead of learning only from new posts.
 
@@ -27,6 +29,8 @@ Implementation notes:
 
 ## 2. Memory / Context Panel
 
+**Status: not started.**
+
 A transparent view of what is currently held for the brand, so it can be understood, trusted, and corrected.
 
 User corrections are the signal. The panel is the control surface. It does not get to hide a pattern that was deleted.
@@ -44,6 +48,8 @@ Implementation notes:
 
 ## 3. Performance Prediction Score
 
+**Status: not started.**
+
 A visible range on a draft that reflects similarity to this brand's past posts. Build it only after the history exists.
 
 Implementation notes:
@@ -57,6 +63,8 @@ Implementation notes:
 - Similarity is computed locally from the stored posts; no external call is required for the score itself.
 
 ## 4. Content Series / Formats Library
+
+**Status: not started.**
 
 Proven structures that can be reused with a new topic.
 
@@ -73,6 +81,8 @@ Implementation notes:
 
 ## 5. Feedback Buttons
 
+**Status: not started.**
+
 Explicit signals on suggestions, so judgment is not only the eventual post performance.
 
 Implementation notes:
@@ -84,6 +94,8 @@ Implementation notes:
 - Feedback is local state. It does not leave the machine and is not sent anywhere.
 
 ## 6. Cross-Brand Insights
+
+**Status: not started.**
 
 Optional. Last. Only after one brand's loop is solid.
 
@@ -98,6 +110,8 @@ Implementation notes:
 Do not build this while a single brand's history, memory, and corrections are still unfinished.
 
 ## 7. Operating Modes
+
+**Status: not started.**
 
 Three modes for how Hermes acts on a brand. The user chooses the mode per brand. The mode is stored with the brand and can be changed at any time. Nothing is sent until the mode and the approval rules allow it. Tokens stay in the vault.
 
@@ -183,6 +197,8 @@ Implementation notes:
 The three modes are progressive. Manual is the starting point. Autonomous-with-approval builds the trust and the feedback data. Fully Autonomous is available only after that data exists and the user chooses it. A brand can move between modes at any time. Nothing is sent until the active mode and the approval rules allow it.
 
 ## 8. Additional features that support the modes and the learning loop
+
+**Status: not started.**
 
 These are optional. None of them are started. They can be built after the three modes exist, or alongside them when they make a mode safer or clearer. A missing number stays missing. Nothing is sent until the active mode and the approval rules allow it. Tokens stay in the vault. A comparison still needs three on both sides and a real gap.
 
@@ -402,6 +418,8 @@ Implementation notes:
 These additions are progressive. The activity log, teach-from-rejection, dry-run, and brand health summary most directly support the three modes. The rest can follow. A brand can use any of them while remaining in Manual mode; none of them force a piece to be sent.
 
 ## 9. Graphical Engagement Map
+
+**Status: not started.**
 
 A set of detailed, visual dashboards that surface the engagement metrics Facebook, Instagram, and Threads actually return. These are display-only. They do not invent rates, confidence scores, or demographics the platforms did not supply. A missing number stays missing. Nothing is sent from these views.
 
