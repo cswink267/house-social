@@ -25,6 +25,7 @@ from store import (  # noqa: E402
     set_site,
     studio,
     pull_brand,
+    save_apps,
     save_connection,
     save_voice,
     update_piece,
@@ -357,6 +358,68 @@ def test_connection_stores_a_vault_name_not_the_token(tmp_path: Path):
     assert "fixture-token" not in str(saved)
     assert saved["token_vault"] == "vault:house-social.jamhaul.facebook.token"
     assert seen["value"] == "fixture-token"
+
+
+def test_house_apps_stay_global_and_the_secret_never_lands_in_state(tmp_path: Path):
+    seen = {}
+
+    def writer(name, value):
+        seen[name] = value
+        return True
+
+    path = tmp_path / "state.json"
+    secret = "fixture-secret"
+    saved = save_apps(
+        empty_state(),
+        {"meta": {"app_id": "100000000000001", "secret": secret}, "threads": {"app_id": "200000000000002"}},
+        path,
+        writer,
+    )
+    assert saved["publishing"] is False
+    assert saved["meta"] == {"app_id": "100000000000001", "secret_saved": True}
+    assert saved["threads"]["secret_saved"] is False
+    raw = path.read_text(encoding="utf-8")
+    assert secret not in raw
+    assert secret not in str(saved)
+    assert seen["house-social.meta.app_secret"] == secret
+    again = save_apps(
+        load(path),
+        {"threads": {"app_id": "200000000000002", "secret": secret}},
+        path,
+        writer,
+    )
+    assert again["meta"]["secret_saved"] is True
+    assert again["threads"]["secret_saved"] is True
+    facebook = save_connection(
+        load(path),
+        {"brand_id": "okay", "platform": "facebook", "external_id": "1447", "app_id": "999", "token": "fixture-token"},
+        path,
+        writer,
+    )
+    assert facebook["app_id"] == "100000000000001"
+    threads = save_connection(
+        load(path),
+        {"brand_id": "okay", "platform": "threads", "external_id": "1784", "token": "fixture-token"},
+        path,
+        writer,
+    )
+    assert threads["app_id"] == "200000000000002"
+    view = studio(load(path), "okay")
+    assert view["apps"]["meta"]["app_id"] == "100000000000001"
+    assert view["posting"] is False
+    assert secret not in str(view)
+    with pytest.raises(DraftError, match="house Meta app"):
+        save_connection(
+            empty_state(),
+            {"brand_id": "okay", "platform": "instagram", "external_id": "1", "token": "fixture-token"},
+            path,
+            writer,
+        )
+    with pytest.raises(DraftError, match="digits"):
+        save_apps(empty_state(), {"meta": {"app_id": secret}}, path, writer)
+    with pytest.raises(DraftError, match="did not reach the vault"):
+        save_apps(empty_state(), {"meta": {"app_id": "100000000000001", "secret": secret}}, path, lambda _name, _value: False)
+    assert secret not in path.read_text(encoding="utf-8")
 
 
 def test_pulled_facebook_posts_teach_what_worked(tmp_path: Path):

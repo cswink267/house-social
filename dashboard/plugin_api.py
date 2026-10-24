@@ -206,6 +206,16 @@ def get_pieces() -> dict:
     return {"posting": False, "pieces": load()["pieces"]}
 
 
+@router.post("/apps")
+def post_apps(body: dict) -> dict:
+    from store import save_apps
+
+    try:
+        return save_apps(load(), body if isinstance(body, dict) else {})
+    except DraftError as exc:
+        _fail(exc)
+
+
 @router.post("/connections")
 def post_connection(body: dict) -> dict:
     try:

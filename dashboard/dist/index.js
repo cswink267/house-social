@@ -94,7 +94,7 @@
   const DESK_NOTES = {
     brief: "Who this brand speaks to, the rules it keeps, and how far the desk may act on its own.",
     voice: "The memory of this brand. Composer checks a draft against it. A suggestion is saved only when you accept it, and only when the posts actually show the gap.",
-    pages: "Connect the Meta app for each platform, then pull what already went out. Tokens go to the vault, not to the saved state.",
+    pages: "The Meta app and the Threads app are set once for the house. Each brand connects its own Page, Instagram, or Threads account. Tokens and app secrets go to the vault. Nothing is sent.",
     ideas: "Sparks, competitor notes, trends, questions, and comments. Make this a draft opens it in the composer. A pattern line appears only when the posts already show one. Nothing here is a predicted score.",
     create: "One idea becomes a Facebook, Instagram, and Threads version. The assistant stays inside the brand voice.",
     library: "Images, video, carousels, templates, logos, and copy for this brand. A new save of the words or the file keeps the older version. Files stay beside the desk, not in git.",
@@ -690,6 +690,10 @@
         });
         case "pages": return h(Pages, {
           brand: brand, studio: studio, busy: busy,
+          onSaveApps: function (body) {
+            const secret = body && ((body.meta && body.meta.secret) || (body.threads && body.threads.secret));
+            return act("POST", "/apps", body, secret ? "House apps saved. The secret went to the vault." : "House apps saved.");
+          },
           onSave: function (body) { return act("POST", "/connections", Object.assign({ brand_id: brand.id }, body), "Connection saved. The token went to the vault."); },
           onPull: function () { return act("POST", on("/pull"), undefined, function (pulled) { return (pulled && pulled.count != null ? pulled.count + " posts pulled." : "Pulled."); }); },
         });
@@ -1184,25 +1188,59 @@
       rows.length > limit ? h("button", { type: "button", className: "hs-link-button", onClick: function () { setAll(!all); } }, all ? "Show fewer" : "Show all " + rows.length) : null);
   }
 
+  function HouseApps(props) {
+    const apps = props.apps || {};
+    const meta = apps.meta || {};
+    const threads = apps.threads || {};
+    const [metaId, setMetaId] = useState(meta.app_id || "");
+    const [threadsId, setThreadsId] = useState(threads.app_id || "");
+    const [metaSecret, setMetaSecret] = useState("");
+    const [threadsSecret, setThreadsSecret] = useState("");
+    function submit(event) {
+      event.preventDefault();
+      const body = { meta: { app_id: metaId.trim() }, threads: { app_id: threadsId.trim() } };
+      if (metaSecret.trim()) body.meta.secret = metaSecret.trim();
+      if (threadsSecret.trim()) body.threads.secret = threadsSecret.trim();
+      Promise.resolve(props.onSave(body)).then(function (saved) {
+        if (saved) { setMetaSecret(""); setThreadsSecret(""); }
+      });
+    }
+    return h(Section, {
+      title: "House apps",
+      note: "One Meta app for Facebook and Instagram. One app for Threads. These belong to the whole house, not this brand. A secret is written to the vault and is not shown again. Sending stays off.",
+    },
+      h("form", { className: "hs-stack", onSubmit: submit },
+        h("div", { className: "hs-grid-2" },
+          field("Meta app id", h("input", { className: "hs-field", value: metaId, inputMode: "numeric", autoComplete: "off", onChange: function (event) { setMetaId(event.target.value); } }), meta.secret_saved ? "Secret saved in the vault." : "No secret yet."),
+          field("Meta app secret", h("input", { className: "hs-field", type: "password", value: metaSecret, autoComplete: "new-password", placeholder: meta.secret_saved ? "Saved. Paste a new one to replace it." : "Paste once", onChange: function (event) { setMetaSecret(event.target.value); } })),
+          field("Threads app id", h("input", { className: "hs-field", value: threadsId, inputMode: "numeric", autoComplete: "off", onChange: function (event) { setThreadsId(event.target.value); } }), threads.secret_saved ? "Secret saved in the vault." : "No secret yet."),
+          field("Threads app secret", h("input", { className: "hs-field", type: "password", value: threadsSecret, autoComplete: "new-password", placeholder: threads.secret_saved ? "Saved. Paste a new one to replace it." : "Paste once", onChange: function (event) { setThreadsSecret(event.target.value); } }))),
+        h("div", { className: "hs-row" },
+          h("button", { type: "submit", className: "hs-button", disabled: props.busy }, "Save house apps"))));
+  }
+
   function Pages(props) {
     const connections = (props.studio && props.studio.connections) || [];
     const pull = (props.studio && props.studio.pull) || {};
     const feed = (props.studio && props.studio.feed) || [];
-    const [form, setForm] = useState({ platform: "facebook", external_id: "", app_id: "", token: "" });
+    const apps = (props.studio && props.studio.apps) || {};
+    const [form, setForm] = useState({ platform: "facebook", external_id: "", token: "" });
     function setField(name, value) {
       setForm(function (current) { return Object.assign({}, current, { [name]: value }); });
     }
+    const houseId = form.platform === "threads" ? ((apps.threads && apps.threads.app_id) || "") : ((apps.meta && apps.meta.app_id) || "");
+    const houseName = form.platform === "threads" ? "Threads" : "Meta";
     async function submit(event) {
       event.preventDefault();
       const saved = await props.onSave({
         platform: form.platform,
         external_id: form.external_id,
-        app_id: form.app_id,
         token: form.token,
       });
-      if (saved) setForm({ platform: form.platform, external_id: "", app_id: "", token: "" });
+      if (saved) setForm({ platform: form.platform, external_id: "", token: "" });
     }
     return h("div", { className: "hs-main" },
+      h(HouseApps, { apps: apps, busy: props.busy, onSave: props.onSaveApps }),
       h(Section, {
         title: "Connections",
         actions: connections.length ? [h("button", { key: "pull", type: "button", className: "hs-button", disabled: props.busy, onClick: props.onPull }, "Pull posts")] : null,
@@ -1223,11 +1261,12 @@
             field("Platform", h("select", { className: "hs-field", value: form.platform, onChange: function (event) { setField("platform", event.target.value); } },
               PLATFORMS.map(function (pair) { return h("option", { key: pair[0], value: pair[0] }, pair[1]); }))),
             field(form.platform === "facebook" ? "Page id" : "Account id", h("input", { className: "hs-field", value: form.external_id, autoComplete: "off", onChange: function (event) { setField("external_id", event.target.value); } })),
-            field("Meta app id", h("input", { className: "hs-field", value: form.app_id, autoComplete: "off", onChange: function (event) { setField("app_id", event.target.value); } })),
             field(form.platform === "facebook" ? "Page token" : "User token", h("input", { className: "hs-field", type: "password", value: form.token, autoComplete: "off", onChange: function (event) { setField("token", event.target.value); } }),
               "Written to the vault. Leave it empty to keep the saved one.")),
+          h("p", { className: "hs-hint" }, houseId ? "Uses the house " + houseName + " app " + houseId + ". Nothing is sent." : "Set the house " + houseName + " app above before connecting."),
+          form.platform === "instagram" ? h("p", { className: "hs-hint" }, "Pulling the Facebook Page finds a linked Instagram account and uses that Page token. Connect Instagram here when you already have its id.") : null,
           h("div", { className: "hs-row" },
-            h("button", { type: "submit", className: connections.length ? "hs-tab" : "hs-button", disabled: props.busy || !form.external_id.trim() || !form.app_id.trim() }, "Save connection")))),
+            h("button", { type: "submit", className: connections.length ? "hs-tab" : "hs-button", disabled: props.busy || !houseId || !form.external_id.trim() }, "Save connection")))),
       h(Section, { title: "On the page", note: "What already went out, newest first." },
         h(PostRows, { posts: feed, empty: "Pull the page to see what already went out." })),
     );

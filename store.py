@@ -90,6 +90,7 @@ def empty_state() -> dict:
         "todo_notes": {},
         "todo_notes_log": [],
         "todo_held": [],
+        "apps": {},
     }
 
 
@@ -148,6 +149,7 @@ def load(path: Path | None = None) -> dict:
     todo_notes = raw.get("todo_notes")
     todo_notes_log = raw.get("todo_notes_log")
     todo_held = raw.get("todo_held")
+    apps = raw.get("apps")
     return {
         "version": 1,
         "channels": channels if isinstance(channels, dict) else {},
@@ -198,6 +200,7 @@ def load(path: Path | None = None) -> dict:
         "todo_notes": todo_notes if isinstance(todo_notes, dict) else {},
         "todo_notes_log": todo_notes_log if isinstance(todo_notes_log, list) else [],
         "todo_held": todo_held if isinstance(todo_held, list) else [],
+        "apps": apps if isinstance(apps, dict) else {},
     }
 
 
@@ -748,7 +751,73 @@ def studio(state: dict, brand_id: str, ledger: dict | None = None, today=None) -
         "support": _support_view(state, brand_id, posts),
         "map": _map_view(posts, page_days),
         "todo_notes": _todo_notes_view(state, brand_id),
+        "apps": apps_view(state),
     }
+
+
+_HOUSE_APPS = {
+    "meta": "house-social.meta.app_secret",
+    "threads": "house-social.threads.app_secret",
+}
+
+
+def apps_view(state: dict) -> dict:
+    raw = state.get("apps") if isinstance(state.get("apps"), dict) else {}
+    view: dict = {"publishing": False}
+    for kind in _HOUSE_APPS:
+        row = raw.get(kind) if isinstance(raw.get(kind), dict) else {}
+        view[kind] = {"app_id": str(row.get("app_id") or ""), "secret_saved": bool(row.get("secret_vault"))}
+    return view
+
+
+def save_apps(state: dict, spec: dict, path: Path | None = None, vault_write=None) -> dict:
+    if not isinstance(spec, dict):
+        raise DraftError("The house apps need an id.")
+    updated = _copy(state)
+    book = {}
+    for kind, row in (updated.get("apps") or {}).items():
+        if kind in _HOUSE_APPS and isinstance(row, dict):
+            book[kind] = {key: row.get(key) for key in ("app_id", "secret_vault") if row.get(key)}
+    writer = vault_write or _write_vault
+    pending = []
+    for kind, vault_name in _HOUSE_APPS.items():
+        if kind not in spec:
+            continue
+        row_spec = spec.get(kind)
+        if not isinstance(row_spec, dict):
+            raise DraftError("A house app needs an id.")
+        current = dict(book.get(kind) or {})
+        if "app_id" in row_spec:
+            current["app_id"] = _app_id(row_spec.get("app_id"))
+        secret = str(row_spec.get("secret") or "").strip()
+        if secret:
+            if len(secret) < 8 or len(secret) > 200:
+                raise DraftError("That app secret does not look usable.")
+            pending.append((kind, vault_name, secret))
+        book[kind] = {key: value for key, value in current.items() if key in {"app_id", "secret_vault"} and value}
+    for kind, vault_name, secret in pending:
+        if not writer(vault_name, secret):
+            raise DraftError("The app secret did not reach the vault. Nothing was saved.")
+        book[kind] = {**book.get(kind, {}), "secret_vault": f"vault:{vault_name}"}
+    updated["apps"] = book
+    save(updated, path)
+    return apps_view(updated)
+
+
+def _house_app_id(state: dict, platform: str) -> str:
+    kind = "threads" if platform == "threads" else "meta"
+    raw = state.get("apps") if isinstance(state.get("apps"), dict) else {}
+    row = raw.get(kind) if isinstance(raw.get(kind), dict) else {}
+    return str(row.get("app_id") or "").strip()
+
+
+def _app_id(value: object) -> str:
+    text = str(value or "").strip()
+    if not text:
+        return ""
+    if not text.isdigit() or not 5 <= len(text) <= 32:
+        raise DraftError("An app id is digits.")
+    return text
 
 
 def save_connection(state: dict, spec: dict, path: Path | None = None, vault_write=None) -> dict:
@@ -757,9 +826,13 @@ def save_connection(state: dict, spec: dict, path: Path | None = None, vault_wri
     if platform not in PLATFORMS:
         raise DraftError("Channels are facebook, instagram, and threads.")
     external_id = _label(spec.get("external_id") or "", 64)
-    app_id = _label(spec.get("app_id") or "", 32)
-    if not external_id or not app_id:
-        raise DraftError("A connection needs the Meta app id and the page or account id.")
+    app_id = _house_app_id(state, platform) or _label(spec.get("app_id") or "", 32)
+    if not external_id:
+        raise DraftError("A connection needs the page or account id.")
+    if not app_id:
+        if platform == "threads":
+            raise DraftError("Set the house Threads app before connecting an account.")
+        raise DraftError("Set the house Meta app before connecting a Page.")
     token = str(spec.get("token") or "").strip()
     vault_name = f"house-social.{brand.id}.{platform}.token"
     existing = next(
