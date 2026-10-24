@@ -190,6 +190,17 @@ def post_support(brand_id: str, body: dict) -> dict:
         _fail(exc)
 
 
+@router.post("/brands/{brand_id}/todo-notes")
+def post_todo_notes(brand_id: str, body: dict) -> dict:
+    from todo_notes import set_notes
+
+    spec = body if isinstance(body, dict) else {}
+    try:
+        return set_notes(load(), brand_id, bool(spec.get("enabled")), str(spec.get("scope") or "global"))
+    except DraftError as exc:
+        _fail(exc)
+
+
 @router.get("/pieces")
 def get_pieces() -> dict:
     return {"posting": False, "pieces": load()["pieces"]}

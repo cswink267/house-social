@@ -642,6 +642,16 @@
               });
               if (saved) await refresh(brand.id);
             },
+            onTodoNotes: async function (enabled) {
+              const saved = await run(function () {
+                return SDK.fetchJSON("/api/plugins/house-social/brands/" + brand.id + "/todo-notes", {
+                  method: "POST",
+                  headers: { "Content-Type": "application/json" },
+                  body: JSON.stringify({ enabled: enabled, scope: "global" }),
+                });
+              });
+              if (saved) await refresh(brand.id);
+            },
             onSupport: async function (body) {
               const saved = await run(function () {
                 return SDK.fetchJSON("/api/plugins/house-social/brands/" + brand.id + "/support", {
@@ -1541,6 +1551,13 @@
           onChange: function (event) { if (props.onCross) props.onCross(event.target.checked); },
         }),
         " Include this brand in cross-brand. It stays off until you check it. Only the counts are compared."),
+      h("label", { className: "hs-note" },
+        h("input", {
+          type: "checkbox",
+          checked: !!(props.studio && props.studio.todo_notes && props.studio.todo_notes.global),
+          onChange: function (event) { if (props.onTodoNotes) props.onTodoNotes(event.target.checked); },
+        }),
+        " Josie may add to the todo. Off until this is checked. Two notes a day. Nothing already written is deleted."),
       h(ModePanel, { mode: props.studio && props.studio.modes, busy: props.busy, onMode: props.onMode }),
       h(SupportPanel, { support: props.studio && props.studio.support, log: props.studio && props.studio.modes && props.studio.modes.log, busy: props.busy, onSupport: props.onSupport }),
       h("div", { className: "hs-cols" }, PLATFORMS.map(function (pair) {

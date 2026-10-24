@@ -2,7 +2,7 @@
 
 Chris, Oct 22 2026. These are extras. The order is locked. One at a time, when he asks. Do not pull the next one forward. Do not delete an item. Mark it complete when it is done.
 
-Item 1 through item 9 are complete. The rest are not started.
+Item 1 through item 10 are complete. The rest are not started.
 
 Ingest history, then make the knowledge visible and correctable, then apply it while writing, then capture reusable formats and explicit feedback, then, only if he still wants it, look across brands.
 
@@ -509,6 +509,8 @@ Implementation notes:
 These four views are display-only. They consume the same stored metrics the rest of Analytics already uses. They do not create posts, send email, or change mode. A missing metric stays missing. Build them after the historical ingest and the basic Analytics desk are solid, so the charts have real posts to draw from.
 
 ## 10. Hermes can add to this TODO
+
+**Status: complete.** The switch is on Brief. The code stays off until it is checked. Two notes a day. A repeat is refused. A note is appended and nothing already written is deleted. Tokens and paths are stripped. Chris turned it on for the house on 2026-10-24.
 
 Hermes may append items to this file when it encounters a problem that needs fixing or when it has a concrete suggestion for a new feature or an improvement to an existing one. This is a controlled, logged action. It does not replace human review. Nothing is sent. Tokens stay in the vault.
 

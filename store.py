@@ -87,6 +87,9 @@ def empty_state() -> dict:
         "adapt_rules": {},
         "previews": [],
         "series_paused": {},
+        "todo_notes": {},
+        "todo_notes_log": [],
+        "todo_held": [],
     }
 
 
@@ -142,6 +145,9 @@ def load(path: Path | None = None) -> dict:
     adapt_rules = raw.get("adapt_rules")
     previews = raw.get("previews")
     series_paused = raw.get("series_paused")
+    todo_notes = raw.get("todo_notes")
+    todo_notes_log = raw.get("todo_notes_log")
+    todo_held = raw.get("todo_held")
     return {
         "version": 1,
         "channels": channels if isinstance(channels, dict) else {},
@@ -189,6 +195,9 @@ def load(path: Path | None = None) -> dict:
         "adapt_rules": adapt_rules if isinstance(adapt_rules, dict) else {},
         "previews": previews if isinstance(previews, list) else [],
         "series_paused": series_paused if isinstance(series_paused, dict) else {},
+        "todo_notes": todo_notes if isinstance(todo_notes, dict) else {},
+        "todo_notes_log": todo_notes_log if isinstance(todo_notes_log, list) else [],
+        "todo_held": todo_held if isinstance(todo_held, list) else [],
     }
 
 
@@ -738,6 +747,7 @@ def studio(state: dict, brand_id: str, ledger: dict | None = None, today=None) -
         "modes": _modes_view(state, brand_id, posts),
         "support": _support_view(state, brand_id, posts),
         "map": _map_view(posts, page_days),
+        "todo_notes": _todo_notes_view(state, brand_id),
     }
 
 
@@ -1228,6 +1238,12 @@ def _calendar(pieces: list[dict], posts: list[dict], today) -> dict:
         days.append({"date": key, "label": f"{day.strftime('%a')} {day.day}", "pieces": items})
     unscheduled = [item for item in entries if item.get("kind") == "piece" and not item.get("date")]
     return {"days": days, "unscheduled": unscheduled, "entries": entries}
+
+
+def _todo_notes_view(state: dict, brand_id: str) -> dict:
+    from todo_notes import notes_view
+
+    return notes_view(state, brand_id)
 
 
 def _map_view(posts: list[dict], page_days: list[dict]) -> dict:
