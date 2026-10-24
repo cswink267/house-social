@@ -3,7 +3,7 @@
 
   const SDK = window.__HERMES_PLUGIN_SDK__;
   const React = SDK.React;
-  const { useCallback, useEffect, useMemo, useState } = SDK.hooks;
+  const { useCallback, useEffect, useMemo, useRef, useState } = SDK.hooks;
   const h = React.createElement;
   const PLATFORMS = [["facebook", "Facebook"], ["instagram", "Instagram"], ["threads", "Threads"]];
   const FORMATS = ["feed", "quote-image", "carousel", "reel", "story", "thread", "text"];
@@ -51,14 +51,179 @@
     );
   }
 
+  const BASE = "/api/plugins/house-social";
+  const JSON_HEADERS = { "Content-Type": "application/json" };
+
+  function api(method, path, body) {
+    const init = { method: method };
+    if (body !== undefined) {
+      init.headers = JSON_HEADERS;
+      init.body = JSON.stringify(body);
+    }
+    return SDK.fetchJSON(BASE + path, init);
+  }
+
+  function brandPath(brandId, rest) {
+    return "/brands/" + encodeURIComponent(brandId) + (rest || "");
+  }
+
+  function recall(key) {
+    try { return window.localStorage.getItem("house-social:" + key) || ""; }
+    catch (err) { return ""; }
+  }
+
+  function remember(key, value) {
+    try { window.localStorage.setItem("house-social:" + key, value); }
+    catch (err) { /* private mode or blocked storage: the desk still works */ }
+  }
+
+  function slugOf(name) {
+    return String(name || "").toLowerCase().normalize("NFKD").replace(/[̀-ͯ]/g, "")
+      .replace(/[^a-z0-9]+/g, "-").replace(/^-+|-+$/g, "").slice(0, 40).replace(/-+$/g, "");
+  }
+
+  const DESK_NOTES = {
+    brief: "Who this brand speaks to, the rules it keeps, and how far the desk may act on its own.",
+    voice: "The memory of this brand. Composer checks a draft against it. A suggestion is saved only when you accept it, and only when the posts actually show the gap.",
+    pages: "Connect the Meta app for each platform, then pull what already went out. Tokens go to the vault, not to the saved state.",
+    ideas: "Sparks, competitor notes, trends, questions, and comments. Make this a draft opens it in the composer. A pattern line appears only when the posts already show one. Nothing here is a predicted score.",
+    create: "One idea becomes a Facebook, Instagram, and Threads version. The assistant stays inside the brand voice.",
+    library: "Images, video, carousels, templates, logos, and copy for this brand. A new save of the words or the file keeps the older version. Files stay beside the desk, not in git.",
+    series: "A structure you can reuse with a new topic. Pause holds it. Fill uses a pillar this brand already has and does not save a draft. A shape is suggested only when it is already ahead, and stats wait for three uses with numbers. A series stays on this brand.",
+    calendar: "Month, week, or day. Drag a piece onto a day to hold it, or into the tray to take it off. A pillar or campaign filter hides published posts, because a live post is not tagged with either.",
+    campaigns: "A campaign holds the posts, the assets, the goal, and the dates. Clone keeps the shape and leaves the pieces. A kind is ahead only when both sides have three posts and the gap is real.",
+    approval: "Draft, then needs review, then approved, then scheduled. One name is a single step; extra names are optional and go in order. The trail stays after a notice is marked read. Nothing is mailed.",
+    queue: "Draft, needs approval, approved, scheduled, on the record, or failed. On the record means a post is already tied to the draft, with its engagements.",
+    performance: "Numbers for this brand only. A missing pull stays missing. Nothing here is a rate unless the count exists.",
+    map: "Display only. A missing number stays blank. A format with fewer than three posts says it is thin.",
+    ingest: "Paste rows or choose a CSV, JSON, or Excel file. Map the columns, then import. A missing number stays missing, and a row already here is skipped.",
+    memory: "The patterns the posts already showed. A thin count stays thin. A deleted pattern stays off the recommendations until you restore it. Reset clears the corrections; the posts stay.",
+    hashtags: "Five tags in a set, for a pillar or a campaign. A tag is suggested only when this brand's posts already show it ahead. Notes are filtered by this brand's own words; they are not a popularity chart.",
+    inbox: "Recent comments, mentions, and messages. A comment is flagged when its post is at least 3× the others. Keep this reply in the voice stores the reply, not their words.",
+    reports: "A week or a month, set against the period before it. A next-period line appears only when a pattern is already clear. The report id is for this desk, not a public link. Nothing is mailed.",
+    across: "Off until at least two brands are included from Brief. Counts only: no caption, hook, voice line, or asset crosses.",
+    learning: "Standing rules stay on the Brief. A lesson here is only what the numbers support, and a comparison waits for three observations.",
+  };
+
+  const SUPPORT_DONE = {
+    preview: "Preview ready. Nothing was scheduled.",
+    discard: "Preview discarded.",
+    export: "Export ready below.",
+    clear: "Log cleared.",
+    promote: "Draft made from the preview.",
+    pause: "Pause saved.",
+    mail: "Mail settings saved.",
+    ban: "Phrase banned.",
+  };
+
+  const MODE_DONE = {
+    set: "Mode saved.",
+    prepare: "Batch prepared. Nothing is scheduled until you approve.",
+    run: "Ran once. Nothing is sent.",
+    approve: "Approved.",
+    reject: "Rejected.",
+  };
+
+  function deskBadges(studio) {
+    const out = {};
+    if (!studio) return out;
+    const pending = ((studio.approval && studio.approval.pieces) || []).filter(function (item) { return item.status === "pending"; }).length;
+    const notices = ((studio.approval && studio.approval.notices) || []).length;
+    if (pending || notices) out.approval = { n: pending || notices, tone: "warn", label: pending ? pending + " waiting for review" : notices + " unread notices" };
+    const attention = ((studio.inbox && studio.inbox.items) || []).filter(function (item) { return item.needs_attention; }).length;
+    if (attention) out.inbox = { n: attention, tone: "warn", label: attention + " need attention" };
+    const failed = ((studio.queue && studio.queue.items) || []).filter(function (item) { return item.status === "failed"; }).length;
+    if (failed) out.queue = { n: failed, tone: "danger", label: failed + " failed" };
+    return out;
+  }
+
+  function channelLine(brand) {
+    const known = (brand.channels || []).filter(function (channel) { return channel.known; });
+    if (!known.length) return "No channels yet";
+    return known.map(function (channel) {
+      const pair = PLATFORMS.find(function (item) { return item[0] === channel.platform; });
+      return pair ? pair[1] : channel.platform;
+    }).join(" · ");
+  }
+
+  function Toasts(props) {
+    return h("div", { className: "hs-toasts", role: "status", "aria-live": "polite" },
+      props.items.map(function (item) {
+        return h("div", { key: item.id, className: "hs-toast is-" + item.kind, role: item.kind === "error" ? "alert" : null },
+          h("span", { className: "hs-toast-text" }, item.text),
+          h("button", { type: "button", className: "hs-toast-close", "aria-label": "Dismiss", onClick: function () { props.onDismiss(item.id); } }, "×"));
+      }));
+  }
+
+  function DeskNav(props) {
+    return h("nav", { className: "hs-nav", "aria-label": "Desks" },
+      props.groups.map(function (group) {
+        const closed = !!props.closed[group.name];
+        const holdsCurrent = group.items.some(function (item) { return item.id === props.section; });
+        return h("div", { key: group.name, className: "hs-nav-group" },
+          h("button", {
+            type: "button", className: "hs-nav-label", "aria-expanded": !closed,
+            onClick: function () { props.onToggle(group.name); },
+          }, h("span", { className: "hs-chevron", "aria-hidden": "true" }, closed ? "▸" : "▾"), group.name),
+          closed && !holdsCurrent ? null : h("div", { className: "hs-nav-items" },
+            group.items.filter(function (item) { return !closed || item.id === props.section; }).map(function (item) {
+              const badge = props.badges[item.id];
+              return h("button", {
+                key: item.id, type: "button",
+                className: "hs-nav-item" + (props.section === item.id ? " is-on" : ""),
+                "aria-current": props.section === item.id ? "page" : null,
+                onClick: function () { props.onPick(item.id); },
+              }, h("span", null, item.label),
+                badge ? h("span", { className: "hs-count is-" + badge.tone, title: badge.label, "aria-label": badge.label }, badge.n) : null);
+            })));
+      }));
+  }
+
+  function AddBrand(props) {
+    const [form, setForm] = useState({ name: "", id: "", site: "", voice: "" });
+    const [touched, setTouched] = useState(false);
+    const id = touched ? form.id : slugOf(form.name);
+    function setField(field, value) {
+      setForm(function (current) { return Object.assign({}, current, { [field]: value }); });
+    }
+    return h("form", {
+      className: "hs-panel",
+      onSubmit: function (event) {
+        event.preventDefault();
+        props.onAdd({ id: id, name: form.name.trim(), site: form.site.trim(), voice: form.voice.trim() });
+      },
+    },
+      h("div", { className: "hs-panel-head" },
+        h("h2", { className: "hs-h2" }, "Add a brand"),
+        h("p", { className: "hs-note" }, "A new brand starts empty. Its voice, pillars, and pages are written on its own desks.")),
+      h("div", { className: "hs-grid-2" },
+        h("label", { className: "hs-note" }, "Name",
+          h("input", { className: "hs-field", value: form.name, autoFocus: true, placeholder: "Misfit Mindset", onChange: function (event) { setField("name", event.target.value); } })),
+        h("label", { className: "hs-note" }, "Id",
+          h("input", {
+            className: "hs-field", value: id, placeholder: "misfit-mindset",
+            onChange: function (event) { setTouched(true); setField("id", event.target.value); },
+          }),
+          h("span", { className: "hs-hint" }, "Lowercase words joined by hyphens. It cannot change later.")),
+        h("label", { className: "hs-note" }, "Website",
+          h("input", { className: "hs-field", value: form.site, placeholder: "https://", onChange: function (event) { setField("site", event.target.value); } })),
+        h("label", { className: "hs-note" }, "Voice, in a line",
+          h("input", { className: "hs-field", value: form.voice, placeholder: "Who it speaks to and how", onChange: function (event) { setField("voice", event.target.value); } }))),
+      h("div", { className: "hs-row" },
+        h("button", { type: "submit", className: "hs-button", disabled: props.busy || !form.name.trim() || !id }, "Add brand"),
+        h("button", { type: "button", className: "hs-tab", onClick: props.onCancel }, "Cancel")));
+  }
+
   function HouseSocial() {
     const [brands, setBrands] = useState([]);
     const [pieces, setPieces] = useState([]);
     const [studio, setStudio] = useState(null);
-    const [brandId, setBrandId] = useState("josie-blackthorn");
-    const [section, setSection] = useState("brief");
+    const [brandId, setBrandId] = useState(function () { return recall("brand"); });
+    const [section, setSection] = useState(function () { return recall("section") || "brief"; });
     const [memoryFocus, setMemoryFocus] = useState("");
-    const [closedGroups, setClosedGroups] = useState({});
+    const [closedGroups, setClosedGroups] = useState(function () {
+      try { return JSON.parse(recall("closed") || "{}"); } catch (err) { return {}; }
+    });
     const [idea, setIdea] = useState("");
     const [pillar, setPillar] = useState("");
     const [format, setFormat] = useState("quote-image");
@@ -68,11 +233,10 @@
     const [pickedDay, setPickedDay] = useState("");
     const [pickedPost, setPickedPost] = useState("");
     const [pickedHour, setPickedHour] = useState("");
-    const [error, setError] = useState("");
+    const [toasts, setToasts] = useState([]);
     const [busy, setBusy] = useState(false);
+    const [loaded, setLoaded] = useState(false);
     const [adding, setAdding] = useState(false);
-    const [confirmRemove, setConfirmRemove] = useState("");
-    const [fresh, setFresh] = useState({ id: "", name: "", site: "", voice: "" });
     const [voiceCheck, setVoiceCheck] = useState(null);
     const [library, setLibrary] = useState({ assets: [], folders: [], tags: [] });
     const [limits, setLimits] = useState({ facebook: 5000, instagram: 2200, threads: 500 });
@@ -80,32 +244,67 @@
     const [assist, setAssist] = useState(null);
     const [draftRead, setDraftRead] = useState(null);
     const [assistTarget, setAssistTarget] = useState("idea");
+    const brandRef = useRef(brandId);
+    const settled = useRef("");
+    const ticket = useRef(0);
+    brandRef.current = brandId;
 
     const brand = useMemo(function () {
-      return brands.find(function (item) { return item.id === brandId; }) || brands[0] || null;
+      return brands.find(function (item) { return item.id === brandId; }) || null;
     }, [brands, brandId]);
     const active = useMemo(function () {
       return pieces.find(function (item) { return item.id === activeId; }) || null;
     }, [pieces, activeId]);
 
-    const refresh = useCallback(async function (nextBrand) {
-      const roster = await SDK.fetchJSON("/api/plugins/house-social/roster");
-      const queue = await SDK.fetchJSON("/api/plugins/house-social/pieces");
-      const id = nextBrand || brandId;
-      const desk = await SDK.fetchJSON("/api/plugins/house-social/brands/" + id + "/studio");
-      const shelf = await SDK.fetchJSON("/api/plugins/house-social/brands/" + id + "/library");
-      setBrands(roster.brands || []);
+    function dismiss(id) {
+      setToasts(function (current) { return current.filter(function (item) { return item.id !== id; }); });
+    }
+
+    function notify(text, kind) {
+      if (!text) return;
+      const id = String(Date.now()) + Math.random().toString(16).slice(2);
+      const tone = kind || "ok";
+      setToasts(function (current) {
+        return current.filter(function (item) { return !(tone === "error" && item.kind === "error"); })
+          .concat([{ id: id, text: text, kind: tone }]).slice(-3);
+      });
+      if (tone !== "error") window.setTimeout(function () { dismiss(id); }, 3200);
+    }
+
+    const refresh = useCallback(async function () {
+      const mine = ++ticket.current;
+      const wanted = brandRef.current;
+      const first = await Promise.all([api("GET", "/roster"), api("GET", "/pieces")]);
+      const roster = first[0] || {};
+      const list = roster.brands || [];
+      const id = list.some(function (item) { return item.id === wanted; }) ? wanted : (list[0] ? list[0].id : "");
+      const desk = id ? await Promise.all([api("GET", brandPath(id, "/studio")), api("GET", brandPath(id, "/library"))]) : [null, null];
+      if (mine !== ticket.current) return null;
+      setBrands(list);
       setLimits(roster.limits || { facebook: 5000, instagram: 2200, threads: 500 });
       setCardLimit(roster.card_limit || 240);
-      setPieces(queue.pieces || []);
-      setStudio(desk);
-      setLibrary(shelf || { assets: [], folders: [], tags: [] });
-      return desk;
-    }, [brandId]);
+      setPieces((first[1] && first[1].pieces) || []);
+      setStudio(desk[0]);
+      setLibrary(desk[1] || { assets: [], folders: [], tags: [] });
+      setLoaded(true);
+      if (id !== wanted) {
+        settled.current = id;
+        setBrandId(id);
+      }
+      return desk[0];
+    }, []);
 
     useEffect(function () {
-      refresh(brandId).catch(function (err) { setError(messageOf(err)); });
+      if (brandId) remember("brand", brandId);
+      if (settled.current && settled.current === brandId) {
+        settled.current = "";
+        return;
+      }
+      refresh().catch(function (err) { notify(messageOf(err), "error"); setLoaded(true); });
     }, [brandId]);
+
+    useEffect(function () { remember("section", section); }, [section]);
+    useEffect(function () { remember("closed", JSON.stringify(closedGroups)); }, [closedGroups]);
 
     useEffect(function () {
       if (!brand) return;
@@ -118,25 +317,41 @@
 
     async function run(action) {
       setBusy(true);
-      setError("");
+      setToasts(function (current) { return current.filter(function (item) { return item.kind !== "error"; }); });
       try { return await action(); }
-      catch (err) { setError(messageOf(err)); return null; }
+      catch (err) { notify(messageOf(err), "error"); return null; }
       finally { setBusy(false); }
     }
 
+    // A request that does not change what the desk shows.
+    function ask(method, path, body) {
+      return run(function () { return api(method, path, body); });
+    }
+
+    // A request that changes state: reload the desk, then say what happened.
+    async function act(method, path, body, done) {
+      const saved = await ask(method, path, body);
+      if (!saved) return saved;
+      await refresh().catch(function (err) { notify(messageOf(err), "error"); });
+      if (done) notify(typeof done === "function" ? done(saved) : done);
+      return saved;
+    }
+
+    function on(path) { return brandPath(brand.id, path); }
+
+    function openPiece(id) {
+      setActiveId(id);
+      setSection("create");
+    }
+
     async function shapeIdea() {
-      const piece = await run(function () {
-        return SDK.fetchJSON("/api/plugins/house-social/pieces", {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ brand_id: brand.id, idea: idea, pillar: pillar, format: format, hypothesis: hypothesis }),
-        });
-      });
+      const piece = await ask("POST", "/pieces", { brand_id: brand.id, idea: idea, pillar: pillar, format: format, hypothesis: hypothesis });
       if (!piece) return;
       setActiveId(piece.id);
       setIdea("");
       setHypothesis("");
-      await refresh(brand.id);
+      await refresh();
+      notify("Three versions are ready below.");
     }
 
     async function checkVoice() {
@@ -146,13 +361,7 @@
           fields[pair[0]] = (active.variants[pair[0]] || {}).body || "";
         });
       }
-      const report = await run(function () {
-        return SDK.fetchJSON("/api/plugins/house-social/brands/" + brand.id + "/voice-check", {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify(fields),
-        });
-      });
+      const report = await ask("POST", on("/voice-check"), fields);
       if (report) setVoiceCheck(report);
     }
 
@@ -163,32 +372,19 @@
     }
 
     async function readDraft(text) {
-      const report = await run(function () {
-        return SDK.fetchJSON("/api/plugins/house-social/brands/" + brand.id + "/draft-read", {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({
-            text: text == null ? assistText() : text,
-            format: format,
-            pillar: pillar,
-            piece_id: active && active.brand_id === brand.id ? active.id : "",
-            has_media: Boolean(active && active.asset_ids && active.asset_ids.length),
-          }),
-        });
+      const report = await ask("POST", on("/draft-read"), {
+        text: text == null ? assistText() : text,
+        format: format,
+        pillar: pillar,
+        piece_id: active && active.brand_id === brand.id ? active.id : "",
+        has_media: Boolean(active && active.asset_ids && active.asset_ids.length),
       });
       if (report) setDraftRead(report);
       return report;
     }
 
-    async function sendFeedback(body) {
-      const saved = await run(function () {
-        return SDK.fetchJSON("/api/plugins/house-social/brands/" + brand.id + "/feedback", {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify(body || {}),
-        });
-      });
-      if (saved) await refresh(brand.id);
+    function sendFeedback(body) {
+      return act("POST", on("/feedback"), body || {}, body && body.action === "delete" ? "Mark removed." : "Noted.");
     }
 
     async function askAssist(action, misses) {
@@ -198,7 +394,7 @@
       if (action === "remix") {
         const reading = draftRead && draftRead.remix && draftRead.remix.ready ? draftRead : await readDraft(assistText());
         if (!reading || !reading.remix || !reading.remix.ready) {
-          setError((reading && reading.remix && reading.remix.detail) || "No post is at least 3× the others, so there is nothing to remix.");
+          notify((reading && reading.remix && reading.remix.detail) || "No post is at least 3× the others, so there is nothing to remix.", "error");
           return;
         }
         fields.text = reading.remix.preview;
@@ -209,24 +405,19 @@
           return ids.indexOf(asset.id) >= 0 && asset.mime && asset.mime.indexOf("image/") === 0;
         });
         if (!image) {
-          setError("Attach an image from the library before asking for a caption.");
+          notify("Attach an image from the library before asking for a caption.", "error");
           return;
         }
         fields.asset_id = image.id;
       }
-      const report = await run(function () {
-        return SDK.fetchJSON("/api/plugins/house-social/brands/" + brand.id + "/assist", {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify(fields),
-        });
-      });
+      const report = await ask("POST", on("/assist"), fields);
       if (report) setAssist(report);
     }
 
     async function improveDraft() {
       const reading = await readDraft(assistText());
       if (reading && reading.misses && reading.misses.length) askAssist("rewrite", reading.misses);
+      else if (reading) notify("This draft does not miss anything the posts have shown.");
     }
 
     function applyAssist(text) {
@@ -248,20 +439,13 @@
       editVariant("instagram", "hashtags", tags.slice(0, 5));
     }
 
-    async function saveChannels() {
+    function saveChannels() {
       const body = {};
       PLATFORMS.forEach(function (pair) {
         const existing = (brand.channels || []).find(function (channel) { return channel.platform === pair[0]; }) || {};
         body[pair[0]] = { handle: handles[pair[0]] || "", external_id: existing.external_id || "" };
       });
-      const saved = await run(function () {
-        return SDK.fetchJSON("/api/plugins/house-social/brands/" + brand.id + "/channels", {
-          method: "PUT",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify(body),
-        });
-      });
-      if (saved) await refresh(brand.id);
+      return act("PUT", on("/channels"), body, "Handles saved.");
     }
 
     function editVariant(platform, field, value) {
@@ -275,291 +459,98 @@
       });
     }
 
-    async function savePiece(extra) {
-      if (!active) return;
+    function savePiece(extra) {
+      if (!active) return null;
       const variants = {};
       PLATFORMS.forEach(function (pair) {
         const variant = active.variants[pair[0]] || {};
         variants[pair[0]] = { body: variant.body || "", hashtags: variant.hashtags || [], image_ready: !!variant.image_ready, first_comment: variant.first_comment || "" };
       });
-      const saved = await run(function () {
-        return SDK.fetchJSON("/api/plugins/house-social/pieces/" + active.id, {
-          method: "PATCH",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify(Object.assign({ variants: variants }, extra || {})),
-        });
-      });
-      if (saved) await refresh(brand.id);
-    }
-
-    async function saveApprovalSteps(steps) {
-      const saved = await run(function () {
-        return SDK.fetchJSON("/api/plugins/house-social/brands/" + brand.id + "/approval-steps", {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ steps: steps }),
-        });
-      });
-      if (saved) await refresh(brand.id);
-    }
-
-    async function sendReview(id) {
-      const saved = await run(function () {
-        return SDK.fetchJSON("/api/plugins/house-social/pieces/" + id + "/review", { method: "POST" });
-      });
-      if (saved) await refresh(brand.id);
-    }
-
-    async function decidePiece(id, body) {
-      const saved = await run(function () {
-        return SDK.fetchJSON("/api/plugins/house-social/pieces/" + id + "/decision", {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify(body),
-        });
-      });
-      if (saved) await refresh(brand.id);
-    }
-
-    async function commentPiece(id, body) {
-      const saved = await run(function () {
-        return SDK.fetchJSON("/api/plugins/house-social/pieces/" + id + "/comments", {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify(body),
-        });
-      });
-      if (saved) await refresh(brand.id);
-    }
-
-    async function readNotice(id) {
-      const saved = await run(function () {
-        return SDK.fetchJSON("/api/plugins/house-social/notices/" + id + "/read", { method: "POST" });
-      });
-      if (saved) await refresh(brand.id);
-    }
-
-    async function refreshInbox() {
-      const saved = await run(function () {
-        return SDK.fetchJSON("/api/plugins/house-social/brands/" + brand.id + "/inbox", { method: "POST" });
-      });
-      if (saved) await refresh(brand.id);
-    }
-
-    async function saveInboxDraft(id, body) {
-      const saved = await run(function () {
-        return SDK.fetchJSON("/api/plugins/house-social/inbox/" + encodeURIComponent(id) + "/reply", {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify(body),
-        });
-      });
-      if (saved) await refresh(brand.id);
-    }
-
-    async function suggestInbox(id) {
-      const saved = await run(function () {
-        return SDK.fetchJSON("/api/plugins/house-social/inbox/" + encodeURIComponent(id) + "/suggest", { method: "POST" });
-      });
-      if (saved) await refresh(brand.id);
-    }
-
-    async function generateReport(period, note) {
-      const saved = await run(function () {
-        return SDK.fetchJSON("/api/plugins/house-social/brands/" + brand.id + "/reports", {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ period: period, note: note }),
-        });
-      });
-      if (saved) await refresh(brand.id);
-    }
-
-    async function saveHashtagSet(body) {
-      const saved = await run(function () {
-        return SDK.fetchJSON("/api/plugins/house-social/brands/" + brand.id + "/hashtag-sets", {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify(body),
-        });
-      });
-      if (saved) await refresh(brand.id);
-    }
-
-    async function applyHashtagSet(setId) {
-      if (!active || active.brand_id !== brand.id) return;
-      const saved = await run(function () {
-        return SDK.fetchJSON("/api/plugins/house-social/hashtag-sets/" + setId + "/apply", {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ piece_id: active.id }),
-        });
-      });
-      if (saved) await refresh(brand.id);
-    }
-
-    async function saveTrendNote(body) {
-      const saved = await run(function () {
-        return SDK.fetchJSON("/api/plugins/house-social/brands/" + brand.id + "/trends", {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify(body),
-        });
-      });
-      if (saved) await refresh(brand.id);
-    }
-
-    async function saveIdea(body) {
-      const saved = await run(function () {
-        return SDK.fetchJSON("/api/plugins/house-social/brands/" + brand.id + "/ideas", {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify(body),
-        });
-      });
-      if (saved) await refresh(brand.id);
-    }
-
-    async function draftIdea(id) {
-      const saved = await run(function () {
-        return SDK.fetchJSON("/api/plugins/house-social/ideas/" + id + "/draft", { method: "POST" });
-      });
-      if (!saved) return;
-      if (saved.piece_id) {
-        setActiveId(saved.piece_id);
-        setSection("create");
-      }
-      await refresh(brand.id);
-    }
-
-    async function saveCampaign(body) {
-      const saved = await run(function () {
-        return SDK.fetchJSON("/api/plugins/house-social/brands/" + brand.id + "/campaigns", {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify(body),
-        });
-      });
-      if (saved) await refresh(brand.id);
-    }
-
-    async function attachCampaign(id, body) {
-      const saved = await run(function () {
-        return SDK.fetchJSON("/api/plugins/house-social/campaigns/" + id + "/attach", {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify(body),
-        });
-      });
-      if (saved) await refresh(brand.id);
+      const status = extra && extra.status;
+      const done = status === "ready" ? "Marked ready." : status === "planned" ? "Marked planned." : status === "scheduled" ? "Scheduled. Nothing is sent." : "Draft saved.";
+      return act("PATCH", "/pieces/" + active.id, Object.assign({ variants: variants }, extra || {}), done);
     }
 
     async function runQueue(action, ids) {
-      const saved = await run(function () {
-        return SDK.fetchJSON("/api/plugins/house-social/brands/" + brand.id + "/queue", {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ ids: ids, action: action }),
-        });
-      });
+      const saved = await act("POST", on("/queue"), { ids: ids, action: action });
       if (!saved) return;
       const bad = (saved.results || []).filter(function (item) { return !item.ok; });
-      if (bad.length) setError(bad.map(function (item) { return item.error; }).filter(Boolean).join(" "));
-      await refresh(brand.id);
+      const good = (saved.results || []).length - bad.length;
+      if (bad.length) notify(bad.map(function (item) { return item.error; }).filter(Boolean).join(" ") || bad.length + " did not move.", "error");
+      if (good) notify(good + (good === 1 ? " piece moved." : " pieces moved."));
     }
 
-    async function placePiece(id, date) {
-      const saved = await run(function () {
-        return SDK.fetchJSON("/api/plugins/house-social/pieces/" + id, {
-          method: "PATCH",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ scheduled_for: date }),
-        });
-      });
-      if (saved) await refresh(brand.id);
+    function placePiece(id, date) {
+      return act("PATCH", "/pieces/" + id, { scheduled_for: date }, date ? "Held on " + date + "." : "Taken off its day.");
     }
 
-    async function planPiece(body) {
-      const saved = await run(function () {
-        return SDK.fetchJSON("/api/plugins/house-social/pieces", {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify(Object.assign({ brand_id: brand.id, status: "planned" }, body)),
-        });
-      });
-      if (saved) await refresh(brand.id);
+    function planPiece(body) {
+      return act("POST", "/pieces", Object.assign({ brand_id: brand.id, status: "planned" }, body), "Held on the calendar.");
     }
 
-    async function saveAsset(body) {
-      const saved = await run(function () {
-        return SDK.fetchJSON("/api/plugins/house-social/brands/" + brand.id + "/assets", {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify(body),
-        });
-      });
-      if (saved) await refresh(brand.id);
+    function saveAsset(body) {
+      return act("POST", on("/assets"), body, "Saved to the library.");
     }
 
-    async function reviseAsset(id, body) {
-      const saved = await run(function () {
-        return SDK.fetchJSON("/api/plugins/house-social/assets/" + id, {
-          method: "PATCH",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify(body),
-        });
-      });
-      if (saved) await refresh(brand.id);
-    }
-
-    async function useAsset(id, body) {
-      const saved = await run(function () {
-        return SDK.fetchJSON("/api/plugins/house-social/assets/" + id + "/use", {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify(body),
-        });
-      });
-      if (saved) await refresh(brand.id);
+    function useAsset(id, body) {
+      return act("POST", "/assets/" + id + "/use", body, body && body.piece_id ? "Attached to the draft." : "Use recorded.");
     }
 
     async function removePiece(id) {
-      const done = await run(function () {
-        return SDK.fetchJSON("/api/plugins/house-social/pieces/" + id, { method: "DELETE" });
-      });
-      if (!done) return;
-      if (activeId === id) setActiveId("");
-      await refresh(brand.id);
+      const done = await act("DELETE", "/pieces/" + id, undefined, "Draft deleted.");
+      if (done && activeId === id) setActiveId("");
     }
 
-    async function addBrand(event) {
-      event.preventDefault();
-      const created = await run(function () {
-        return SDK.fetchJSON("/api/plugins/house-social/brands", {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify(fresh),
-        });
-      });
+    async function addBrand(body) {
+      const created = await ask("POST", "/brands", body);
       if (!created) return;
       setAdding(false);
-      setFresh({ id: "", name: "", site: "", voice: "" });
+      setSection("brief");
       setBrandId(created.id);
+      notify(created.name + " is on the roster.");
     }
 
     async function removeBrand(id) {
-      const done = await run(function () {
-        return SDK.fetchJSON("/api/plugins/house-social/brands/" + encodeURIComponent(id), { method: "DELETE" });
-      });
+      const gone = brands.find(function (item) { return item.id === id; });
+      const done = await ask("DELETE", "/brands/" + encodeURIComponent(id));
       if (!done) return;
-      setConfirmRemove("");
       const rest = brands.filter(function (item) { return item.id !== id; });
-      const next = rest[0] ? rest[0].id : "josie-blackthorn";
-      if (brandId === id) setBrandId(next);
-      else await refresh(brandId);
+      setBrandId(rest[0] ? rest[0].id : "");
+      notify((gone ? gone.name : "The brand") + " was removed.");
+    }
+
+    async function applySeries(seriesId, topic) {
+      const saved = await act("POST", on("/series/" + encodeURIComponent(seriesId) + "/apply"), { topic: topic });
+      if (!saved) return;
+      setIdea(saved.idea || topic);
+      setActiveId(saved.piece_id || "");
+      setSection("create");
+    }
+
+    function pickBrand(id) {
+      setBrandId(id);
+      setAdding(false);
+      setPickedDay("");
+      setPickedPost("");
+      setPickedHour("");
+      setAssist(null);
+      setDraftRead(null);
+      setVoiceCheck(null);
+    }
+
+    function pickSection(id) {
+      setSection(id);
+      setAdding(false);
+    }
+
+    function explain(patternId) {
+      setMemoryFocus(patternId || "");
+      setSection("memory");
     }
 
     const sections = (brand && brand.sections) || [];
+    const current = sections.find(function (item) { return item.id === section; }) || sections[0] || null;
+    const desk = current ? current.id : "";
     const groups = [];
     sections.forEach(function (item) {
       const name = item.group || "Desk";
@@ -570,627 +561,285 @@
       }
       found.items.push(item);
     });
+    const ready = !!(studio && brand && (!studio.brand || studio.brand.id === brand.id));
+    const badges = deskBadges(ready ? studio : null);
+    const mode = studio && studio.modes;
+
+    function renderDesk() {
+      switch (desk) {
+        case "brief": return h(Brief, {
+          key: brand.id,
+          brand: brand, handles: handles, setHandles: setHandles, busy: busy, onSave: saveChannels, studio: studio,
+          onSaveSite: function (site) { return act("POST", on("/site"), { site: site }, "Website saved."); },
+          onCross: function (enabled) { return act("POST", on("/cross"), { enabled: enabled }, enabled ? "Included in cross-brand." : "Left out of cross-brand."); },
+          onTodoNotes: function (enabled) { return act("POST", on("/todo-notes"), { enabled: enabled, scope: "global" }, enabled ? "Todo notes are on." : "Todo notes are off."); },
+          onSupport: function (body) { return act("POST", on("/support"), body || {}, SUPPORT_DONE[(body || {}).action] || "Saved."); },
+          onMode: function (body) { return act("POST", on("/mode"), body || {}, MODE_DONE[(body || {}).action] || "Saved."); },
+          onPull: function () { return act("POST", on("/studio-read"), undefined, "Read from Studio."); },
+          onRemove: function () { return removeBrand(brand.id); },
+        });
+        case "voice": return h(VoiceGuide, {
+          brand: brand, studio: studio, busy: busy,
+          onSave: function (body) { return act("POST", on("/voice"), body, "Voice saved. A version was kept."); },
+          onImport: function (body) { return act("POST", on("/voice/import"), body, "Posts added to the voice desk."); },
+          onAccept: function (id) { return act("POST", on("/voice/accept"), { id: id }, "Suggestion accepted."); },
+          onRestore: function (id) { return act("POST", on("/voice/restore"), { id: id }, "Version restored."); },
+        });
+        case "pages": return h(Pages, {
+          brand: brand, studio: studio, busy: busy,
+          onSave: function (body) { return act("POST", "/connections", Object.assign({ brand_id: brand.id }, body), "Connection saved. The token went to the vault."); },
+          onPull: function () { return act("POST", on("/pull"), undefined, function (pulled) { return (pulled && pulled.count != null ? pulled.count + " posts pulled." : "Pulled."); }); },
+        });
+        case "ideas": return h(IdeasBoard, {
+          studio: studio, busy: busy,
+          onSave: function (body) { return act("POST", on("/ideas"), body, "Idea saved."); },
+          onDraft: async function (id) {
+            const saved = await act("POST", "/ideas/" + id + "/draft");
+            if (saved && saved.piece_id) openPiece(saved.piece_id);
+          },
+          onSuggest: function () { return ask("POST", on("/ideas/suggest")); },
+          onKeep: function (postId) { return act("POST", on("/ideas/shapes/" + encodeURIComponent(postId)), undefined, "Shape kept."); },
+          onFeedback: sendFeedback,
+          onApplySeries: applySeries,
+        });
+        case "create": return h(CreatePanel, {
+          cross: studio && studio.cross,
+          onAcceptCross: function (key) { return act("POST", on("/cross"), { accept: true, key: key }, "Accepted. The draft did not change."); },
+          brand: brand, idea: idea, setIdea: setIdea, pillar: pillar, setPillar: setPillar,
+          format: format, setFormat: setFormat, hypothesis: hypothesis, setHypothesis: setHypothesis,
+          busy: busy, onShape: shapeIdea, onCheck: checkVoice, voiceCheck: voiceCheck, active: active, pieces: pieces, onEdit: editVariant,
+          onSave: savePiece, onDelete: removePiece, onOpen: function (piece) { setActiveId(piece.id); },
+          onClose: function () { setActiveId(""); },
+          library: library,
+          onInsert: function (asset) {
+            if (!asset || typeof asset === "string") {
+              const text = String(asset || "");
+              setIdea(function (value) { return value ? value + "\n\n" + text : text; });
+              return;
+            }
+            if (asset.role === "hashtags") {
+              const tags = String(asset.body || "").split(/[#,\s]+/).filter(Boolean).slice(0, 5);
+              if (active) editVariant("instagram", "hashtags", tags);
+              return;
+            }
+            const text = String(asset.body || "");
+            if (!text) return;
+            if (assistTarget === "idea" || !active) {
+              setIdea(function (value) { return value ? value + "\n\n" + text : text; });
+              return;
+            }
+            const variant = (active.variants && active.variants[assistTarget]) || {};
+            editVariant(assistTarget, "body", variant.body ? variant.body + "\n\n" + text : text);
+          },
+          onAttach: function (assetId) {
+            if (active && active.brand_id === brand.id) useAsset(assetId, { piece_id: active.id });
+          },
+          limits: limits, cardLimit: cardLimit,
+          assist: assist, assistTarget: assistTarget, setAssistTarget: setAssistTarget,
+          onAssist: askAssist, onApply: applyAssist, onHashtag: applyHashtag,
+          onDismissAssist: function () { setAssist(null); },
+          onRead: function () { readDraft(assistText()); },
+          onImprove: improveDraft,
+          onWhy: explain,
+          onFeedback: sendFeedback,
+          onUseChange: function (line) {
+            const text = String(line || "").trim();
+            if (!text) return;
+            setIdea(function (value) { return value ? value + "\n\n" + text : text; });
+          },
+          onHideRange: async function (hidden, scope) {
+            const saved = await ask("POST", on("/prediction-hide"), { hidden: hidden, scope: scope });
+            if (saved) await readDraft(assistText());
+          },
+          draftRead: draftRead,
+          onHold: function (date) {
+            if (active && active.brand_id === brand.id) placePiece(active.id, date);
+            else if (idea.trim()) planPiece({ idea: idea, scheduled_for: date, pillar: pillar, format: format });
+          },
+          onSaveCopy: function () {
+            const text = assistText().trim();
+            if (!text) return;
+            saveAsset({ kind: "copy", role: "copy", name: text.slice(0, 48), body: text, tags: [] });
+          },
+          onQueue: function (id) { runQueue("pending", [id]); },
+        });
+        case "library": return h(Library, {
+          library: library,
+          series: studio && studio.series,
+          busy: busy,
+          onApplySeries: applySeries,
+          piece: active && active.brand_id === brand.id ? active : null,
+          posts: (studio && studio.feed) || [],
+          onSave: saveAsset,
+          onRevise: function (id, body) { return act("PATCH", "/assets/" + id, body, body && body.restore ? "Version restored." : "Asset saved."); },
+          onUse: useAsset,
+          onTags: function (id) { return act("POST", "/assets/" + encodeURIComponent(id) + "/tags", undefined, "Tags read."); },
+          onFail: function (text) { notify(text, "error"); },
+        });
+        case "series": return h(SeriesDesk, {
+          studio: studio, busy: busy,
+          onFeedback: sendFeedback,
+          onSave: function (body) { return act("POST", on("/series"), body, "Series saved."); },
+          onKeep: function (shape) { return act("POST", on("/series/keep"), { shape: shape }, "Kept as a series."); },
+          onApply: applySeries,
+          onPause: function (id, paused) { return act("POST", on("/support"), { action: "series", id: id, paused: paused }, paused ? "Series paused." : "Series resumed."); },
+          onFill: function (id) { return ask("POST", on("/support"), { action: "fill", id: id }); },
+        });
+        case "calendar": return h(Calendar, {
+          onWhy: explain,
+          brand: brand,
+          calendar: studio && studio.calendar,
+          ideas: studio && studio.ideas,
+          library: library,
+          busy: busy,
+          onOpen: function (item) { openPiece(item.id); },
+          onMove: placePiece,
+          onPlan: planPiece,
+          onRecur: function (body) { return act("POST", on("/recurrences"), body, "Recurrence saved."); },
+          onApply: function (id) { return act("POST", "/recurrences/" + encodeURIComponent(id) + "/apply", undefined, "Those days are held."); },
+        });
+        case "queue": return h(QueueDesk, {
+          studio: studio, busy: busy,
+          onOpen: openPiece,
+          onBulk: runQueue,
+          onPull: function () { return act("POST", on("/studio-read"), undefined, "Read from Studio."); },
+        });
+        case "approval": return h(ApprovalDesk, {
+          studio: studio, busy: busy,
+          onOpen: openPiece,
+          onSteps: function (steps) { return act("POST", on("/approval-steps"), { steps: steps }, "Steps saved."); },
+          onReview: function (id) { return act("POST", "/pieces/" + id + "/review", undefined, "Sent for review."); },
+          onDecide: function (id, body) { return act("POST", "/pieces/" + id + "/decision", body, body.decision === "approved" ? "Approved." : "Changes asked for."); },
+          onComment: function (id, body) { return act("POST", "/pieces/" + id + "/comments", body, "Comment added."); },
+          onRead: function (id) { return act("POST", "/notices/" + id + "/read"); },
+        });
+        case "campaigns": return h(CampaignsDesk, {
+          studio: studio,
+          pieces: pieces.filter(function (piece) { return piece.brand_id === brand.id; }),
+          library: library,
+          busy: busy,
+          onOpen: openPiece,
+          onSave: function (body) { return act("POST", on("/campaigns"), body, "Campaign saved."); },
+          onAttach: function (id, body) { return act("POST", "/campaigns/" + id + "/attach", body, "Added to the campaign."); },
+          onClone: function (id) { return act("POST", "/campaigns/" + encodeURIComponent(id) + "/clone", undefined, "Campaign cloned."); },
+          onKeep: function (id) { return act("POST", "/campaigns/" + encodeURIComponent(id) + "/retrospective", undefined, "Lesson kept."); },
+        });
+        case "map": return h(MapDesk, { studio: studio });
+        case "performance": return h(Performance, {
+          brand: brand, studio: studio, busy: busy, pickedDay: pickedDay, pickedPost: pickedPost, pickedHour: pickedHour,
+          onDay: function (point) { setPickedDay(point.id); },
+          onPost: function (point) { setPickedPost(point.id); },
+          onHour: function (point) { setPickedHour(point.id); },
+          onRecorded: function (body) { return act("POST", "/stats", Object.assign({ brand_id: brand.id }, body), "Result saved."); },
+          onHistory: function (csv) { return act("POST", on("/history"), { csv: csv }, "History imported."); },
+          onGoal: function (body) { return act("POST", on("/goals"), body, "Goal saved."); },
+        });
+        case "ingest": return h(IngestDesk, {
+          studio: studio, busy: busy,
+          onPreview: function (body) { return ask("POST", on("/ingest/preview"), body); },
+          onCommit: function (body) { return act("POST", on("/ingest"), body, function (saved) { return saved.accepted + " rows imported."; }); },
+        });
+        case "memory": return h(MemoryDesk, {
+          studio: studio, busy: busy, focus: memoryFocus,
+          onSync: function () { return act("POST", on("/memory"), { action: "sync" }); },
+          onCorrect: function (action, patternId) { return act("POST", on("/memory"), { action: action, pattern_id: patternId || "" }, action === "reset" ? "Corrections cleared." : "Pattern updated."); },
+          onFeedback: sendFeedback,
+          onExport: function (kind) { return ask("GET", on("/memory/export?kind=" + encodeURIComponent(kind))); },
+        });
+        case "hashtags": return h(HashtagDesk, {
+          studio: studio,
+          piece: active && active.brand_id === brand.id ? active : null,
+          busy: busy,
+          onFeedback: sendFeedback,
+          onSaveSet: function (body) { return act("POST", on("/hashtag-sets"), body, "Set saved."); },
+          onApply: function (setId) {
+            if (!active || active.brand_id !== brand.id) return null;
+            return act("POST", "/hashtag-sets/" + setId + "/apply", { piece_id: active.id }, "Tags added to the draft.");
+          },
+          onUse: function (pieceId, pillarId) { return act("POST", on("/hashtags/use"), { piece_id: pieceId, pillar: pillarId || "" }, "Tags added to the draft."); },
+          onTrend: function (body) { return act("POST", on("/trends"), body, "Note saved."); },
+        });
+        case "inbox": return h(InboxDesk, {
+          studio: studio, busy: busy,
+          onRefresh: function () { return act("POST", on("/inbox"), undefined, "Inbox refreshed."); },
+          onReply: function (id, body) { return act("POST", "/inbox/" + encodeURIComponent(id) + "/reply", body, body && body.dismissed ? "Dismissed." : "Reply draft saved. Nothing is sent."); },
+          onSuggest: function (id) { return act("POST", "/inbox/" + encodeURIComponent(id) + "/suggest"); },
+          onIdea: function (id) { return act("POST", "/inbox/" + encodeURIComponent(id) + "/idea", undefined, "Kept as an idea."); },
+          onVoice: function (id, reply) { return act("POST", "/inbox/" + encodeURIComponent(id) + "/voice", { reply: reply || "" }, "Reply kept in the voice."); },
+        });
+        case "reports": return h(ReportsDesk, {
+          studio: studio, busy: busy,
+          onGenerate: function (period, note) { return act("POST", on("/reports"), { period: period, note: note }, "Report ready."); },
+          onInsight: function (id) { return act("POST", "/reports/" + encodeURIComponent(id) + "/insight", undefined, "Insight written."); },
+        });
+        case "across": return h(AcrossDesk, {
+          studio: studio, busy: busy,
+          onAccept: function (key) { return act("POST", on("/cross"), { accept: true, key: key }, "Accepted."); },
+        });
+        case "learning": return h(Learning, { studio: studio });
+        default: return null;
+      }
+    }
+
     return h("div", { className: "hs-page" },
-      h("div", null,
-        h("h1", { className: "text-xl font-semibold" }, "House Social"),
-        h("p", { className: "hs-lede" },
-          "One desk for each brand. Brief, create, calendar, the numbers, and what the numbers are allowed to teach. Nothing is sent."),
-        studio && studio.modes ? h("p", { className: "hs-note" }, "Mode · " + (studio.modes.label || "Manual")) : null,
-      ),
-      error ? h("p", { className: "hs-error" }, error) : null,
-      h("div", { className: "hs-layout" },
-        h("div", { className: "hs-brands" },
-          brands.map(function (item) {
-            const known = (item.channels || []).filter(function (channel) { return channel.known; }).length;
-            return h("div", { key: item.id, className: "hs-brand-line" },
-              h("button", {
-                type: "button",
-                className: "hs-brand" + (brand && item.id === brand.id ? " is-on" : ""),
-                onClick: function () { setBrandId(item.id); setConfirmRemove(""); setPickedDay(""); setPickedPost(""); setPickedHour(""); },
-              },
-                h("div", { className: "hs-name" }, item.name),
-                h("div", { className: "hs-meta" }, known + " of 3 channels known")),
-              item.removable ? h("button", {
-                type: "button",
-                className: "hs-tab",
-                disabled: busy,
-                onClick: function () {
-                  if (confirmRemove === item.id) removeBrand(item.id);
-                  else setConfirmRemove(item.id);
-                },
-              }, confirmRemove === item.id ? "Yes, remove" : "Remove") : null);
+      h("header", { className: "hs-header" },
+        h("div", null,
+          h("h1", { className: "hs-title" }, "House Social"),
+          h("p", { className: "hs-lede" }, "One desk for each brand: the brief, the drafts, the calendar, and what the numbers are allowed to teach.")),
+        h("div", { className: "hs-header-tags" },
+          mode ? h("button", {
+            type: "button", className: "hs-badge is-mode",
+            title: "Change the mode on the Brief",
+            onClick: function () { pickSection("brief"); },
+          }, h("span", { className: "hs-dot-live", "aria-hidden": "true" }), (mode.label || "Manual") + " mode") : null,
+          h("span", { className: "hs-badge", title: "No post leaves this desk until a publisher is attached." }, "Local only · nothing is sent"))),
+      h("div", { className: "hs-shell" },
+        h("aside", { className: "hs-rail" },
+          h("div", { className: "hs-switch" },
+            h("label", { className: "hs-rail-label", htmlFor: "hs-brand" }, "Brand"),
+            h("select", {
+              id: "hs-brand", className: "hs-field hs-brand-pick",
+              value: brand ? brand.id : "",
+              onChange: function (event) { pickBrand(event.target.value); },
+            }, brands.map(function (item) { return h("option", { key: item.id, value: item.id }, item.name); })),
+            brand ? h("div", { className: "hs-channels" },
+              PLATFORMS.map(function (pair) {
+                const channel = (brand.channels || []).find(function (item) { return item.platform === pair[0]; }) || {};
+                return h("span", {
+                  key: pair[0], className: "hs-channel" + (channel.known ? " is-known" : ""),
+                  title: pair[1] + (channel.known ? " · " + (channel.handle || "known") : " · not set"),
+                }, pair[1]);
+              })) : null,
+            h("button", { type: "button", className: "hs-link-button", onClick: function () { setAdding(!adding); } }, adding ? "Close" : "+ Add a brand")),
+          h(DeskNav, {
+            groups: groups, section: desk, badges: badges, closed: closedGroups,
+            onPick: pickSection,
+            onToggle: function (name) {
+              setClosedGroups(function (value) { return Object.assign({}, value, { [name]: !value[name] }); });
+            },
           }),
-          h("button", { type: "button", className: "hs-button", onClick: function () { setAdding(!adding); } }, adding ? "Close" : "Add a brand"),
-        ),
-        brand ? h("div", { className: "hs-main" },
-          h("div", { className: "hs-tabs" },
-            groups.map(function (group) {
-              return h("div", { key: group.name, className: "hs-tab-group" },
-                h("button", { type: "button", className: "hs-group-label", onClick: function () {
-                  setClosedGroups(function (current) { return Object.assign({}, current, { [group.name]: !current[group.name] }); });
-                } }, group.name),
-                closedGroups[group.name] ? null : h("div", { className: "hs-row" },
-                  group.items.map(function (item) {
-                    return h("button", {
-                      key: item.id,
-                      type: "button",
-                      className: "hs-tab" + (section === item.id ? " is-on" : ""),
-                      onClick: function () { setSection(item.id); },
-                    }, item.label);
-                  })));
-            })),
-          section === "brief" ? h(Brief, {
-            key: brand.id,
-            brand: brand, handles: handles, setHandles: setHandles, busy: busy, onSave: saveChannels,
-            onSaveSite: async function (site) {
-              const saved = await run(function () {
-                return SDK.fetchJSON("/api/plugins/house-social/brands/" + brand.id + "/site", {
-                  method: "POST",
-                  headers: { "Content-Type": "application/json" },
-                  body: JSON.stringify({ site: site }),
-                });
-              });
-              if (saved) await refresh(brand.id);
-            },
-            onCross: async function (enabled) {
-              const saved = await run(function () {
-                return SDK.fetchJSON("/api/plugins/house-social/brands/" + brand.id + "/cross", {
-                  method: "POST",
-                  headers: { "Content-Type": "application/json" },
-                  body: JSON.stringify({ enabled: enabled }),
-                });
-              });
-              if (saved) await refresh(brand.id);
-            },
-            onTodoNotes: async function (enabled) {
-              const saved = await run(function () {
-                return SDK.fetchJSON("/api/plugins/house-social/brands/" + brand.id + "/todo-notes", {
-                  method: "POST",
-                  headers: { "Content-Type": "application/json" },
-                  body: JSON.stringify({ enabled: enabled, scope: "global" }),
-                });
-              });
-              if (saved) await refresh(brand.id);
-            },
-            onSupport: async function (body) {
-              const saved = await run(function () {
-                return SDK.fetchJSON("/api/plugins/house-social/brands/" + brand.id + "/support", {
-                  method: "POST",
-                  headers: { "Content-Type": "application/json" },
-                  body: JSON.stringify(body || {}),
-                });
-              });
-              if (saved) await refresh(brand.id);
-              return saved;
-            },
-            onMode: async function (body) {
-              const saved = await run(function () {
-                return SDK.fetchJSON("/api/plugins/house-social/brands/" + brand.id + "/mode", {
-                  method: "POST",
-                  headers: { "Content-Type": "application/json" },
-                  body: JSON.stringify(body || {}),
-                });
-              });
-              if (saved) await refresh(brand.id);
-            },
-            studio: studio,
-            onPull: async function () {
-              const saved = await run(function () {
-                return SDK.fetchJSON("/api/plugins/house-social/brands/" + brand.id + "/studio-read", { method: "POST" });
-              });
-              if (saved) await refresh(brand.id);
-            },
-          }) : null,
-          section === "voice" ? h(VoiceGuide, {
-            brand: brand, studio: studio, busy: busy,
-            onSave: async function (body) {
-              const saved = await run(function () {
-                return SDK.fetchJSON("/api/plugins/house-social/brands/" + brand.id + "/voice", {
-                  method: "POST",
-                  headers: { "Content-Type": "application/json" },
-                  body: JSON.stringify(body),
-                });
-              });
-              if (saved) await refresh(brand.id);
-            },
-            onImport: async function (body) {
-              const saved = await run(function () {
-                return SDK.fetchJSON("/api/plugins/house-social/brands/" + brand.id + "/voice/import", {
-                  method: "POST",
-                  headers: { "Content-Type": "application/json" },
-                  body: JSON.stringify(body),
-                });
-              });
-              if (saved) await refresh(brand.id);
-            },
-            onAccept: async function (id) {
-              const saved = await run(function () {
-                return SDK.fetchJSON("/api/plugins/house-social/brands/" + brand.id + "/voice/accept", {
-                  method: "POST",
-                  headers: { "Content-Type": "application/json" },
-                  body: JSON.stringify({ id: id }),
-                });
-              });
-              if (saved) await refresh(brand.id);
-            },
-            onRestore: async function (id) {
-              const saved = await run(function () {
-                return SDK.fetchJSON("/api/plugins/house-social/brands/" + brand.id + "/voice/restore", {
-                  method: "POST",
-                  headers: { "Content-Type": "application/json" },
-                  body: JSON.stringify({ id: id }),
-                });
-              });
-              if (saved) await refresh(brand.id);
-            },
-          }) : null,
-          section === "pages" ? h(Pages, {
-            brand: brand,
-            studio: studio,
-            busy: busy,
-            onSave: async function (body) {
-              const saved = await run(function () {
-                return SDK.fetchJSON("/api/plugins/house-social/connections", {
-                  method: "POST",
-                  headers: { "Content-Type": "application/json" },
-                  body: JSON.stringify(Object.assign({ brand_id: brand.id }, body)),
-                });
-              });
-              if (saved) await refresh(brand.id);
-              return saved;
-            },
-            onPull: async function () {
-              const pulled = await run(function () {
-                return SDK.fetchJSON("/api/plugins/house-social/brands/" + brand.id + "/pull", { method: "POST" });
-              });
-              if (pulled) await refresh(brand.id);
-              return pulled;
-            },
-          }) : null,
-          section === "ideas" ? h(IdeasBoard, {
-            studio: studio,
-            busy: busy,
-            onSave: saveIdea,
-            onDraft: draftIdea,
-            onSuggest: async function () {
-              return run(function () {
-                return SDK.fetchJSON("/api/plugins/house-social/brands/" + brand.id + "/ideas/suggest", { method: "POST" });
-              });
-            },
-            onKeep: async function (postId) {
-              const saved = await run(function () {
-                return SDK.fetchJSON("/api/plugins/house-social/brands/" + brand.id + "/ideas/shapes/" + encodeURIComponent(postId), { method: "POST" });
-              });
-              if (saved) await refresh(brand.id);
-            },
-            onFeedback: sendFeedback,
-            onApplySeries: async function (seriesId, topic) {
-              const saved = await run(function () {
-                return SDK.fetchJSON("/api/plugins/house-social/brands/" + brand.id + "/series/" + encodeURIComponent(seriesId) + "/apply", {
-                  method: "POST",
-                  headers: { "Content-Type": "application/json" },
-                  body: JSON.stringify({ topic: topic }),
-                });
-              });
-              if (!saved) return;
-              setIdea(saved.idea || topic);
-              setActiveId(saved.piece_id || "");
-              setSection("create");
-              await refresh(brand.id);
-            },
-          }) : null,
-          section === "create" ? h(CreatePanel, {
-            cross: studio && studio.cross,
-            onAcceptCross: async function (key) {
-              const saved = await run(function () {
-                return SDK.fetchJSON("/api/plugins/house-social/brands/" + brand.id + "/cross", {
-                  method: "POST",
-                  headers: { "Content-Type": "application/json" },
-                  body: JSON.stringify({ accept: true, key: key }),
-                });
-              });
-              if (saved) await refresh(brand.id);
-            },
-            brand: brand, idea: idea, setIdea: setIdea, pillar: pillar, setPillar: setPillar,
-            format: format, setFormat: setFormat, hypothesis: hypothesis, setHypothesis: setHypothesis,
-            busy: busy, onShape: shapeIdea, onCheck: checkVoice, voiceCheck: voiceCheck, active: active, pieces: pieces, onEdit: editVariant,
-            onSave: savePiece, onDelete: removePiece, onOpen: function (piece) { setActiveId(piece.id); },
-            library: library,
-            onInsert: function (asset) {
-              if (!asset || typeof asset === "string") {
-                const text = String(asset || "");
-                setIdea(function (current) { return current ? current + "\n\n" + text : text; });
-                return;
-              }
-              if (asset.role === "hashtags") {
-                const tags = String(asset.body || "").split(/[#,\s]+/).filter(Boolean).slice(0, 5);
-                if (active) editVariant("instagram", "hashtags", tags);
-                return;
-              }
-              const text = String(asset.body || "");
-              if (!text) return;
-              if (assistTarget === "idea" || !active) {
-                setIdea(function (current) { return current ? current + "\n\n" + text : text; });
-                return;
-              }
-              const variant = (active.variants && active.variants[assistTarget]) || {};
-              editVariant(assistTarget, "body", variant.body ? variant.body + "\n\n" + text : text);
-            },
-            onAttach: function (assetId) {
-              if (active && active.brand_id === brand.id) useAsset(assetId, { piece_id: active.id });
-            },
-            limits: limits,
-            cardLimit: cardLimit,
-            assist: assist,
-            assistTarget: assistTarget,
-            setAssistTarget: setAssistTarget,
-            onAssist: askAssist,
-            onApply: applyAssist,
-            onHashtag: applyHashtag,
-            onRead: function () { readDraft(assistText()); },
-            onImprove: improveDraft,
-            onWhy: function (patternId) { setMemoryFocus(patternId || ""); setSection("memory"); },
-            onFeedback: sendFeedback,
-            onUseChange: function (line) {
-              const text = String(line || "").trim();
-              if (!text) return;
-              setIdea(function (current) { return current ? current + "\n\n" + text : text; });
-            },
-            onHideRange: async function (hidden, scope) {
-              const saved = await run(function () {
-                return SDK.fetchJSON("/api/plugins/house-social/brands/" + brand.id + "/prediction-hide", {
-                  method: "POST",
-                  headers: { "Content-Type": "application/json" },
-                  body: JSON.stringify({ hidden: hidden, scope: scope }),
-                });
-              });
-              if (saved) await readDraft(assistText());
-            },
-            draftRead: draftRead,
-            onHold: function (date) {
-              if (active && active.brand_id === brand.id) placePiece(active.id, date);
-              else if (idea.trim()) planPiece({ idea: idea, scheduled_for: date, pillar: pillar, format: format });
-            },
-            onSaveCopy: function () {
-              const text = assistText().trim();
-              if (!text) return;
-              saveAsset({ kind: "copy", role: "copy", name: text.slice(0, 48), body: text, tags: [] });
-            },
-            onQueue: function (id) { runQueue("pending", [id]); },
-          }) : null,
-          section === "library" ? h(Library, {
-            library: library,
-            series: studio && studio.series,
-            busy: busy,
-            onApplySeries: async function (seriesId, topic) {
-              const saved = await run(function () {
-                return SDK.fetchJSON("/api/plugins/house-social/brands/" + brand.id + "/series/" + encodeURIComponent(seriesId) + "/apply", {
-                  method: "POST",
-                  headers: { "Content-Type": "application/json" },
-                  body: JSON.stringify({ topic: topic }),
-                });
-              });
-              if (!saved) return;
-              setIdea(saved.idea || topic);
-              setActiveId(saved.piece_id || "");
-              setSection("create");
-              await refresh(brand.id);
-            },
-            piece: active && active.brand_id === brand.id ? active : null,
-            posts: (studio && studio.feed) || [],
-            onSave: saveAsset,
-            onRevise: reviseAsset,
-            onUse: useAsset,
-            onTags: async function (id) {
-              const saved = await run(function () {
-                return SDK.fetchJSON("/api/plugins/house-social/assets/" + encodeURIComponent(id) + "/tags", { method: "POST" });
-              });
-              if (saved) await refresh(brand.id);
-            },
-            onFail: function (text) { setError(text); },
-          }) : null,
-          section === "series" ? h(SeriesDesk, {
-            studio: studio,
-            busy: busy,
-            onFeedback: sendFeedback,
-            onSave: async function (body) {
-              const saved = await run(function () {
-                return SDK.fetchJSON("/api/plugins/house-social/brands/" + brand.id + "/series", {
-                  method: "POST",
-                  headers: { "Content-Type": "application/json" },
-                  body: JSON.stringify(body),
-                });
-              });
-              if (saved) await refresh(brand.id);
-            },
-            onKeep: async function (shape) {
-              const saved = await run(function () {
-                return SDK.fetchJSON("/api/plugins/house-social/brands/" + brand.id + "/series/keep", {
-                  method: "POST",
-                  headers: { "Content-Type": "application/json" },
-                  body: JSON.stringify({ shape: shape }),
-                });
-              });
-              if (saved) await refresh(brand.id);
-            },
-            onApply: async function (seriesId, topic) {
-              const saved = await run(function () {
-                return SDK.fetchJSON("/api/plugins/house-social/brands/" + brand.id + "/series/" + encodeURIComponent(seriesId) + "/apply", {
-                  method: "POST",
-                  headers: { "Content-Type": "application/json" },
-                  body: JSON.stringify({ topic: topic }),
-                });
-              });
-              if (!saved) return;
-              setIdea(saved.idea || topic);
-              setActiveId(saved.piece_id || "");
-              setSection("create");
-              await refresh(brand.id);
-            },
-            onPause: async function (id, paused) {
-              const saved = await run(function () {
-                return SDK.fetchJSON("/api/plugins/house-social/brands/" + brand.id + "/support", {
-                  method: "POST",
-                  headers: { "Content-Type": "application/json" },
-                  body: JSON.stringify({ action: "series", id: id, paused: paused }),
-                });
-              });
-              if (saved) await refresh(brand.id);
-            },
-            onFill: function (id) {
-              return run(function () {
-                return SDK.fetchJSON("/api/plugins/house-social/brands/" + brand.id + "/support", {
-                  method: "POST",
-                  headers: { "Content-Type": "application/json" },
-                  body: JSON.stringify({ action: "fill", id: id }),
-                });
-              });
-            },
-          }) : null,
-          section === "calendar" ? h(Calendar, {
-            onWhy: function (patternId) { setMemoryFocus(patternId || ""); setSection("memory"); },
-            brand: brand,
-            calendar: studio && studio.calendar,
-            ideas: studio && studio.ideas,
-            library: library,
-            busy: busy,
-            onOpen: function (item) { setActiveId(item.id); setSection("create"); },
-            onMove: placePiece,
-            onPlan: planPiece,
-            onRecur: async function (body) {
-              const saved = await run(function () {
-                return SDK.fetchJSON("/api/plugins/house-social/brands/" + brand.id + "/recurrences", {
-                  method: "POST",
-                  headers: { "Content-Type": "application/json" },
-                  body: JSON.stringify(body),
-                });
-              });
-              if (saved) await refresh(brand.id);
-            },
-            onApply: async function (id) {
-              const saved = await run(function () {
-                return SDK.fetchJSON("/api/plugins/house-social/recurrences/" + encodeURIComponent(id) + "/apply", { method: "POST" });
-              });
-              if (saved) await refresh(brand.id);
-            },
-          }) : null,
-          section === "queue" ? h(QueueDesk, {
-            studio: studio,
-            busy: busy,
-            onOpen: function (id) { setActiveId(id); setSection("create"); },
-            onBulk: runQueue,
-            onPull: async function () {
-              const saved = await run(function () {
-                return SDK.fetchJSON("/api/plugins/house-social/brands/" + brand.id + "/studio-read", { method: "POST" });
-              });
-              if (saved) await refresh(brand.id);
-            },
-          }) : null,
-          section === "approval" ? h(ApprovalDesk, {
-            studio: studio,
-            busy: busy,
-            onOpen: function (id) { setActiveId(id); setSection("create"); },
-            onSteps: saveApprovalSteps,
-            onReview: sendReview,
-            onDecide: decidePiece,
-            onComment: commentPiece,
-            onRead: readNotice,
-          }) : null,
-          section === "campaigns" ? h(CampaignsDesk, {
-            studio: studio,
-            pieces: pieces.filter(function (piece) { return brand && piece.brand_id === brand.id; }),
-            library: library,
-            busy: busy,
-            onOpen: function (id) { setActiveId(id); setSection("create"); },
-            onSave: saveCampaign,
-            onAttach: attachCampaign,
-            onClone: async function (id) {
-              const saved = await run(function () {
-                return SDK.fetchJSON("/api/plugins/house-social/campaigns/" + encodeURIComponent(id) + "/clone", { method: "POST" });
-              });
-              if (saved) await refresh(brand.id);
-            },
-            onKeep: async function (id) {
-              const saved = await run(function () {
-                return SDK.fetchJSON("/api/plugins/house-social/campaigns/" + encodeURIComponent(id) + "/retrospective", { method: "POST" });
-              });
-              if (saved) await refresh(brand.id);
-            },
-          }) : null,
-          section === "map" ? h(MapDesk, { studio: studio }) : null,
-          section === "performance" ? h(Performance, {
-            brand: brand, studio: studio, busy: busy, pickedDay: pickedDay, pickedPost: pickedPost, pickedHour: pickedHour,
-            onDay: function (point) { setPickedDay(point.id); },
-            onPost: function (point) { setPickedPost(point.id); },
-            onHour: function (point) { setPickedHour(point.id); },
-            onRecorded: async function (body) {
-              const saved = await run(function () {
-                return SDK.fetchJSON("/api/plugins/house-social/stats", {
-                  method: "POST",
-                  headers: { "Content-Type": "application/json" },
-                  body: JSON.stringify(Object.assign({ brand_id: brand.id }, body)),
-                });
-              });
-              if (saved) await refresh(brand.id);
-            },
-            onHistory: async function (csv) {
-              const saved = await run(function () {
-                return SDK.fetchJSON("/api/plugins/house-social/brands/" + brand.id + "/history", {
-                  method: "POST",
-                  headers: { "Content-Type": "application/json" },
-                  body: JSON.stringify({ csv: csv }),
-                });
-              });
-              if (saved) await refresh(brand.id);
-            },
-            onGoal: async function (body) {
-              const saved = await run(function () {
-                return SDK.fetchJSON("/api/plugins/house-social/brands/" + brand.id + "/goals", {
-                  method: "POST",
-                  headers: { "Content-Type": "application/json" },
-                  body: JSON.stringify(body),
-                });
-              });
-              if (saved) await refresh(brand.id);
-            },
-          }) : null,
-          section === "ingest" ? h(IngestDesk, {
-            studio: studio,
-            busy: busy,
-            onPreview: async function (body) {
-              return run(function () {
-                return SDK.fetchJSON("/api/plugins/house-social/brands/" + brand.id + "/ingest/preview", {
-                  method: "POST",
-                  headers: { "Content-Type": "application/json" },
-                  body: JSON.stringify(body),
-                });
-              });
-            },
-            onCommit: async function (body) {
-              const saved = await run(function () {
-                return SDK.fetchJSON("/api/plugins/house-social/brands/" + brand.id + "/ingest", {
-                  method: "POST",
-                  headers: { "Content-Type": "application/json" },
-                  body: JSON.stringify(body),
-                });
-              });
-              if (saved) await refresh(brand.id);
-              return saved;
-            },
-          }) : null,
-          section === "memory" ? h(MemoryDesk, {
-            studio: studio,
-            busy: busy,
-            focus: memoryFocus,
-            onSync: async function () {
-              const saved = await run(function () {
-                return SDK.fetchJSON("/api/plugins/house-social/brands/" + brand.id + "/memory", {
-                  method: "POST",
-                  headers: { "Content-Type": "application/json" },
-                  body: JSON.stringify({ action: "sync" }),
-                });
-              });
-              if (saved) await refresh(brand.id);
-            },
-            onCorrect: async function (action, patternId) {
-              const saved = await run(function () {
-                return SDK.fetchJSON("/api/plugins/house-social/brands/" + brand.id + "/memory", {
-                  method: "POST",
-                  headers: { "Content-Type": "application/json" },
-                  body: JSON.stringify({ action: action, pattern_id: patternId || "" }),
-                });
-              });
-              if (saved) await refresh(brand.id);
-            },
-            onFeedback: sendFeedback,
-            onExport: async function (kind) {
-              return run(function () {
-                return SDK.fetchJSON("/api/plugins/house-social/brands/" + brand.id + "/memory/export?kind=" + encodeURIComponent(kind));
-              });
-            },
-          }) : null,
-          section === "hashtags" ? h(HashtagDesk, {
-            studio: studio,
-            piece: active && active.brand_id === brand.id ? active : null,
-            busy: busy,
-            onFeedback: sendFeedback,
-            onSaveSet: saveHashtagSet,
-            onApply: applyHashtagSet,
-            onUse: async function (pieceId, pillar) {
-              const saved = await run(function () {
-                return SDK.fetchJSON("/api/plugins/house-social/brands/" + brand.id + "/hashtags/use", {
-                  method: "POST",
-                  headers: { "Content-Type": "application/json" },
-                  body: JSON.stringify({ piece_id: pieceId, pillar: pillar || "" }),
-                });
-              });
-              if (saved) await refresh(brand.id);
-            },
-            onTrend: saveTrendNote,
-          }) : null,
-          section === "inbox" ? h(InboxDesk, {
-            studio: studio,
-            busy: busy,
-            onRefresh: refreshInbox,
-            onReply: saveInboxDraft,
-            onSuggest: suggestInbox,
-            onIdea: async function (id) {
-              const saved = await run(function () {
-                return SDK.fetchJSON("/api/plugins/house-social/inbox/" + encodeURIComponent(id) + "/idea", { method: "POST" });
-              });
-              if (saved) await refresh(brand.id);
-            },
-            onVoice: async function (id, reply) {
-              const saved = await run(function () {
-                return SDK.fetchJSON("/api/plugins/house-social/inbox/" + encodeURIComponent(id) + "/voice", {
-                  method: "POST",
-                  headers: { "Content-Type": "application/json" },
-                  body: JSON.stringify({ reply: reply || "" }),
-                });
-              });
-              if (saved) await refresh(brand.id);
-            },
-          }) : null,
-          section === "reports" ? h(ReportsDesk, {
-            studio: studio,
-            busy: busy,
-            onGenerate: generateReport,
-            onInsight: async function (id) {
-              const saved = await run(function () {
-                return SDK.fetchJSON("/api/plugins/house-social/reports/" + encodeURIComponent(id) + "/insight", { method: "POST" });
-              });
-              if (saved) await refresh(brand.id);
-            },
-          }) : null,
-          section === "across" ? h(AcrossDesk, {
-            studio: studio,
-            busy: busy,
-            onAccept: async function (key) {
-              const saved = await run(function () {
-                return SDK.fetchJSON("/api/plugins/house-social/brands/" + brand.id + "/cross", {
-                  method: "POST",
-                  headers: { "Content-Type": "application/json" },
-                  body: JSON.stringify({ accept: true, key: key }),
-                });
-              });
-              if (saved) await refresh(brand.id);
-            },
-          }) : null,
-          section === "learning" ? h(Learning, { studio: studio }) : null,
-        ) : null,
-      ),
-      adding ? h("form", { className: "hs-cols", onSubmit: addBrand },
-        ["id", "name", "site", "voice"].map(function (field) {
-          return h("input", {
-            key: field, className: "hs-field", placeholder: field, value: fresh[field],
-            onChange: function (event) {
-              const value = event.target.value;
-              setFresh(function (current) { return Object.assign({}, current, { [field]: value }); });
-            },
-          });
-        }),
-        h("button", { type: "submit", className: "hs-button", disabled: busy }, "Add brand"),
-      ) : null,
+          h("label", { className: "hs-rail-label hs-desk-pick-label", htmlFor: "hs-desk" }, "Desk"),
+          h("select", {
+            id: "hs-desk", className: "hs-field hs-desk-pick", value: desk,
+            onChange: function (event) { pickSection(event.target.value); },
+          }, groups.map(function (group) {
+            return h("optgroup", { key: group.name, label: group.name },
+              group.items.map(function (item) {
+                const badge = badges[item.id];
+                return h("option", { key: item.id, value: item.id }, item.label + (badge ? " (" + badge.n + ")" : ""));
+              }));
+          }))),
+        h("main", { className: "hs-desk", "aria-busy": busy ? "true" : "false" },
+          busy ? h("div", { className: "hs-progress", "aria-hidden": "true" }) : null,
+          adding ? h(AddBrand, { busy: busy, onAdd: addBrand, onCancel: function () { setAdding(false); } })
+            : !loaded ? h("p", { className: "hs-note hs-loading" }, "Loading the desk…")
+              : !brand ? h("div", { className: "hs-empty" }, "No brand on the roster yet. Add one to start.")
+                : h("div", { className: "hs-desk-body", key: brand.id + ":" + desk },
+                  h("div", { className: "hs-desk-head" },
+                    h("h2", { className: "hs-desk-title" }, current ? current.label : ""),
+                    DESK_NOTES[desk] ? h("p", { className: "hs-desk-note" }, DESK_NOTES[desk]) : null),
+                  ready ? renderDesk() : h("p", { className: "hs-note hs-loading" }, "Loading the desk…")))),
+      h(Toasts, { items: toasts, onDismiss: dismiss }),
     );
   }
 
@@ -1288,7 +937,6 @@
     }
     return h("div", { className: "hs-main" },
       h("form", { onSubmit: save },
-        h("p", { className: "hs-note" }, "The memory of this brand. Composer checks a draft against it. A suggestion below is saved only when you accept it, and only when the posts actually show the gap."),
         h("label", { className: "hs-note" }, "Tone", h("textarea", { className: "hs-area", value: form.tone, onChange: function (event) { setField("tone", event.target.value); } })),
         h("label", { className: "hs-note" }, "Personality", h("textarea", { className: "hs-area hs-short", value: form.personality, onChange: function (event) { setField("personality", event.target.value); } })),
         h("label", { className: "hs-note" }, "Formality",
@@ -1403,7 +1051,7 @@
       if (saved) setField("token", "");
     }
     return h("div", { className: "hs-main" },
-      h("p", { className: "hs-note" },
+      h("p", { className: "hs-callout" },
         "Studio still writes the week. Facebook and Instagram are one Meta app. Save the Page, then Pull. The Page names its Instagram account, and that account uses the same token. Threads is a separate login. The username often matches Instagram. The id does not, and the Facebook token cannot read it."),
       connections.length ? connections.map(function (item) {
         return h("div", { key: item.id, className: "hs-pillar" },
@@ -1593,7 +1241,35 @@
       })),
       h("div", { className: "hs-row" },
         h("button", { type: "button", className: "hs-button", disabled: props.busy, onClick: props.onSave }, "Save handles")),
+      brand.removable ? h(RemoveBrand, { brand: brand, busy: props.busy, onRemove: props.onRemove }) : null,
     );
+  }
+
+  function RemoveBrand(props) {
+    const [open, setOpen] = useState(false);
+    const [typed, setTyped] = useState("");
+    const name = props.brand.name;
+    if (!open) {
+      return h("div", { className: "hs-danger-zone" },
+        h("div", null,
+          h("div", { className: "hs-name" }, "Remove this brand"),
+          h("p", { className: "hs-note" }, "Takes " + name + " off the roster and deletes everything stored for it.")),
+        h("button", { type: "button", className: "hs-tab is-danger", onClick: function () { setOpen(true); } }, "Remove brand…"));
+    }
+    return h("form", {
+      className: "hs-danger-zone is-open",
+      onSubmit: function (event) {
+        event.preventDefault();
+        if (typed.trim() === name) props.onRemove();
+      },
+    },
+      h("div", { className: "hs-name" }, "Remove " + name + "?"),
+      h("p", { className: "hs-note" }, "This deletes its drafts, recorded numbers, page connections, library, campaigns, ideas, series, inbox, reports, imported history, voice guide, and mode settings. It cannot be undone. Tokens in the vault are not touched."),
+      h("label", { className: "hs-note" }, "Type " + name + " to confirm",
+        h("input", { className: "hs-field", value: typed, autoFocus: true, autoComplete: "off", onChange: function (event) { setTyped(event.target.value); } })),
+      h("div", { className: "hs-row" },
+        h("button", { type: "submit", className: "hs-button is-danger", disabled: props.busy || typed.trim() !== name }, "Remove " + name),
+        h("button", { type: "button", className: "hs-tab", onClick: function () { setOpen(false); setTyped(""); } }, "Cancel")));
   }
 
   function CreatePanel(props) {
@@ -1954,7 +1630,6 @@
     }
 
     return h("div", { className: "hs-main" },
-      h("p", { className: "hs-note" }, "Images, video, carousels, templates, logos, and copy for this brand. A new save of the words or the file keeps the older version. Files stay beside the desk, not in git."),
       h("div", { className: "hs-cols" },
         h("input", { className: "hs-field", value: q, placeholder: "Search name, tag, folder, or copy", onChange: function (event) { setQ(event.target.value); } }),
         h("select", { className: "hs-field", value: kind, onChange: function (event) { setKind(event.target.value); } },
@@ -2042,7 +1717,6 @@
     const open = (desk.pieces || []).find(function (item) { return item.id === openId; }) || null;
     const waiting = open && open.waiting ? open.waiting : (desk.steps || ["Approver"])[0];
     return h("div", { className: "hs-main" },
-      h("p", { className: "hs-note" }, "Draft, then needs review, then approved, then scheduled. One name is a single step. Extra names are optional and go in order. The trail stays after a notice is marked read. Nothing is mailed and nothing is sent."),
       (desk.notices || []).length ? h("div", null,
         h("div", { className: "hs-name" }, "Notices"),
         desk.notices.map(function (notice) {
@@ -2141,7 +1815,6 @@
       return true;
     });
     return h("div", { className: "hs-main" },
-      h("p", { className: "hs-note" }, "A series is a structure you can reuse with a new topic. Pause holds it. Fill uses a pillar this brand already has and shows the lines here. It does not save a draft. A suggestion appears only when that shape is already ahead. Stats wait for three uses with numbers. A refresh note does not delete anything. A series stays on this brand. Nothing is sent."),
       h(SeriesApply, { series: desk, busy: props.busy, onApply: props.onApply }),
       (desk.suggestions || []).map(function (item) {
         return h("div", { key: item.id, className: "hs-pillar" },
@@ -2243,7 +1916,6 @@
       return { id: name, items: ideas.filter(function (item) { return item.source === name; }) };
     });
     return h("div", { className: "hs-main" },
-      h("p", { className: "hs-note" }, "Sparks, competitor notes, trends, questions, and comments. Make this a draft opens it in the composer. A pattern line appears only when the posts already show one. Nothing here is a predicted score."),
       h(SeriesApply, { series: props.studio && props.studio.series, busy: props.busy, onApply: props.onApplySeries }),
       h("form", { className: "hs-cols", onSubmit: save },
         h("textarea", { className: "hs-area", value: draft.text, placeholder: "The idea, still rough", onChange: function (event) { setField("text", event.target.value); } }),
@@ -2321,7 +1993,6 @@
       setDraft({ name: "", kind: draft.kind, goal: "", goal_posts: "", start: "", end: "", note: "", template: false });
     }
     return h("div", { className: "hs-main" },
-      h("p", { className: "hs-note" }, "A campaign holds the posts, the assets, the goal, and the dates. Clone keeps the shape and leaves the pieces. A kind is ahead only when both sides have three posts and the gap is real. Nothing is sent."),
       (board.lessons || []).map(function (item) {
         return h("p", { key: item.kind || item.detail, className: item.ahead ? "hs-ok" : "hs-note" }, item.detail + (item.approach ? " " + item.approach : ""));
       }),
@@ -2431,7 +2102,6 @@
       ? (queue.formats || []).map(function (entry) { return entry.format + " is ahead at " + entry.label + "."; }).join(" ")
       : "No format has a clear hour yet.";
     return h("div", { className: "hs-main" },
-      h("p", { className: "hs-note" }, "Draft, needs approval, approved, scheduled, on the record, or failed. Published means a post is already tied to this draft. This desk does not send."),
       h(StudioRead, { read: props.studio && props.studio.studio_read, busy: props.busy, onPull: props.onPull }),
       suggestion.clear ? h("p", { className: "hs-note" }, suggestion.label + " is ahead across the posts. " + suggestion.detail + " A format hour wins when that format is clearly ahead.") : h("p", { className: "hs-note" }, suggestion.detail || "Not enough hours to suggest a time."),
       h("p", { className: "hs-note" }, formatLine),
@@ -2552,7 +2222,6 @@
     }
 
     return h("div", { className: "hs-main" },
-      h("p", { className: "hs-note" }, "Month, week, or day. Drag a piece onto a day to hold it. Drag it back down to take it off. Published posts are already on the page. A pillar or campaign filter hides them, because a live post is not tagged with either."),
       h(SeriesApply, { series: props.series, busy: props.busy, onApply: props.onApplySeries }),
       h("div", { className: "hs-row" },
         h("button", { type: "button", className: "hs-tab", onClick: function () { moveCursor(-1); } }, "Back"),
@@ -2675,7 +2344,6 @@
       if (node && node.scrollIntoView) node.scrollIntoView({ block: "center" });
     }, [props.focus, desk.sections]);
     return h("div", { className: "hs-main" },
-      h("p", { className: "hs-note" }, "These are the patterns the posts already showed. A thin count stays thin. A deleted pattern stays here, and it stays off the recommendations, until you restore it. Reset clears the corrections. The posts stay."),
       h("div", { className: "hs-row" },
         h("button", { type: "button", className: "hs-tab", disabled: props.busy, onClick: function () { props.onCorrect("reset", ""); } }, "Reset learned patterns"),
         h("button", { type: "button", className: "hs-tab", disabled: props.busy, onClick: async function () { const found = await props.onExport("markdown"); if (found) setExported(found.body || ""); } }, "Export markdown"),
@@ -2737,7 +2405,6 @@
       if (saved) setResult(saved);
     }
     return h("div", { className: "hs-main" },
-      h("p", { className: "hs-note" }, "Paste rows or choose a CSV, JSON, or Excel file. Map the columns, then import. A missing number stays missing. A row already here is skipped. Nothing is sent."),
       h("textarea", { className: "hs-area", value: text, placeholder: "Paste CSV, tab-separated rows, or JSON", onChange: function (event) { setText(event.target.value); setXlsx(""); } }),
       h("input", {
         className: "hs-field", type: "file", accept: ".csv,.json,.xlsx,text/csv,application/json",
@@ -2815,7 +2482,6 @@
     const post = (map.posts || []).find(function (item) { return item.id === postId; }) || (map.posts || [])[0];
     const cards = window.cards || {};
     return h("div", { className: "hs-main" },
-      h("p", { className: "hs-note" }, "Display only. A missing number stays blank. A format with fewer than three posts says it is thin. Nothing is sent."),
       h("div", { className: "hs-row" },
         ["7", "28", "90"].map(function (item) { return h("button", { key: item, type: "button", className: "hs-tab" + (size === item ? " is-on" : ""), onClick: function () { setSize(item); } }, item + " days"); }),
         ["overview", "post", "formats", "audience"].map(function (item) { return h("button", { key: item, type: "button", className: "hs-tab" + (view === item ? " is-on" : ""), onClick: function () { setView(item); } }, item); })),
@@ -2883,7 +2549,6 @@
         note ? h("div", { className: "hs-note" }, note) : null);
     }
     return h("div", { className: "hs-main" },
-      h("p", { className: "hs-note" }, "Numbers for this brand only. A missing pull stays missing. Nothing here is a rate unless the count exists."),
       h("div", { className: "hs-row" },
         [["7", "7 days"], ["28", "28 days"], ["90", "90 days"], ["all", "All"]].map(function (pair) {
           return h("button", {
@@ -3033,7 +2698,6 @@
     const formats = desk.formats || { rows: [], detail: "" };
     const suggestion = desk.suggestion || { tags: [], detail: "" };
     return h("div", { className: "hs-main" },
-      h("p", { className: "hs-note" }, "Five tags in a set, for a pillar or a campaign when you want one. A tag is suggested only when this brand's posts already show it ahead. Notes are filtered by this brand's own words. They are not a popularity chart."),
       h("p", { className: "hs-note" }, suggestion.detail || "No hashtag is clearly ahead for this brand."),
       suggestion.tags && suggestion.tags.length ? h("div", null,
         h("p", { className: "hs-ok" }, suggestion.tags.map(function (tag) { return "#" + tag; }).join(" ")),
@@ -3112,7 +2776,6 @@
       return item.kind === kind;
     });
     return h("div", { className: "hs-main" },
-      h("p", { className: "hs-note" }, "Recent comments, mentions, and messages. A comment is flagged when its post is at least 3× the others. Keep as an idea stores the comment. Keep this reply in the voice stores the reply, not their words. Nothing is sent."),
       h("div", { className: "hs-row" },
         h("button", { type: "button", className: "hs-button", disabled: props.busy, onClick: props.onRefresh }, "Refresh"),
         [["attention", "Needs attention"], ["ahead", "On a post that is ahead"], ["all", "All"], ["comment", "Comments"], ["mention", "Mentions"], ["dm", "Messages"]].map(function (pair) {
@@ -3179,7 +2842,6 @@
       }
     }
     return h("div", { className: "hs-main" },
-      h("p", { className: "hs-note" }, "A week or a month, set against the period before it. A next-period line appears only when a pattern is already clear. Write the insight uses that brief. The report id is for this desk. It is not a public link. Nothing is mailed."),
       h("div", { className: "hs-row" },
         [["week", "Week"], ["month", "Month"]].map(function (pair) {
           return h("button", {
@@ -3246,7 +2908,6 @@
   function AcrossDesk(props) {
     const desk = (props.studio && props.studio.cross) || { enabled: false, brands: [], lines: [], accepted: [] };
     return h("div", { className: "hs-main" },
-      h("p", { className: "hs-note" }, "Cross-brand is off until you include at least two brands from Brief. It compares counts only. No caption, hook, voice line, or asset crosses."),
       h("p", { className: "hs-note" }, (desk.brands || []).length ? "Included: " + desk.brands.join(", ") : "No brand is included."),
       (desk.lines || []).map(function (item, index) { return h("p", { key: item.key || index, className: item.clear ? "hs-ok" : "hs-note" }, item.detail); }),
       (desk.accepted || []).length ? h("div", { className: "hs-name" }, "Accepted") : null,
@@ -3256,7 +2917,6 @@
   function Learning(props) {
     const lessons = (props.studio && props.studio.lessons) || [];
     return h("div", { className: "hs-main" },
-      h("p", { className: "hs-note" }, "Standing rules stay on the Brief. A lesson here is only what the numbers support, and a comparison waits for three observations."),
       lessons.length ? lessons.map(function (lesson) {
         return h("div", { key: lesson.id, className: "hs-lesson" },
           h("div", { className: "hs-name" }, lesson.title),
