@@ -507,3 +507,50 @@ Implementation notes:
 - Export of the current view (markdown or CSV of the visible numbers) is allowed; the export stays redacted.
 
 These four views are display-only. They consume the same stored metrics the rest of Analytics already uses. They do not create posts, send email, or change mode. A missing metric stays missing. Build them after the historical ingest and the basic Analytics desk are solid, so the charts have real posts to draw from.
+
+## 10. Hermes can add to this TODO
+
+Hermes may append items to this file when it encounters a problem that needs fixing or when it has a concrete suggestion for a new feature or an improvement to an existing one. This is a controlled, logged action. It does not replace human review. Nothing is sent. Tokens stay in the vault.
+
+### When Hermes may add an item
+
+- A pull, ingest, generation, or approval step fails in a way that is not already covered by an existing TODO item and cannot be resolved by retrying or by the current code.
+- A hard guard is triggered repeatedly in a way that suggests the guard text or the detection logic needs clarification.
+- A learned pattern or voice note is producing consistent off-brand output that the existing feedback buttons and Memory panel have not already captured.
+- Hermes identifies a small, specific improvement to an existing desk or mode (for example, a missing empty-state hint, a filter that would make the activity log more useful, or a metric the Engagement Map does not yet surface even though the platform returns it).
+- Hermes does not add speculative features, redesigns, or items that would require new external services.
+
+### How an item is written
+
+- Hermes appends a new subsection under a clear heading (for example, “## Issues found while running” or “## Suggested improvements”).
+- Each item names:
+  - What happened or what is missing (factual, with the piece id, brand, or error text if relevant; the error text is redacted of any token).
+  - Why it matters (one or two sentences).
+  - A suggested next step that stays inside the existing rules (three-post comparisons, missing data stays missing, nothing is sent until the mode allows it).
+- The item is marked with the date and the mode or desk that produced it.
+- Hermes does not rewrite or delete existing items. It only appends.
+- The commit message states that Hermes added the item and includes the short reason.
+
+### How it is used
+
+- The user reviews the new items on the next visit to the repository.
+- Items that are accepted stay in the TODO and are worked in the same order-locked way as the rest of the file.
+- Items that are rejected are left in place but marked “declined” with a one-line note; they are not deleted, so the history remains.
+- Hermes can be told (via a simple flag or a line in the brand settings) to stop adding items for a period if the volume becomes noisy.
+
+### Why
+
+- Problems discovered during autonomous or semi-autonomous runs are easy to lose if they only appear in logs.
+- Concrete, small improvement ideas that come from actual use are more useful than generic suggestions.
+- Keeping the suggestions inside this file preserves the single source of truth and the careful style already established.
+
+### Implementation notes
+
+- The write is performed through the same GitHub path already used for this repository (or a dedicated fine-grained token stored in the vault). The token never appears in the TODO or in logs.
+- Before appending, Hermes checks that an equivalent item does not already exist (simple text match on the heading or the first sentence).
+- The append is a single commit. If the push fails, Hermes records the failure in the mode-specific activity log and does not retry indefinitely.
+- Rate limit: no more than a small number of new items per brand per day (the exact number can be set; default is low). Excess suggestions are held and summarized instead of each becoming its own subsection.
+- All text Hermes writes follows the same constraints as the rest of this file: no invented percents, no confidence scores the data did not earn, no machine paths, no tokens.
+- This capability is off by default. It is enabled per brand or globally only after the user turns it on.
+
+Hermes adding to the TODO is a convenience for capturing real issues and small, evidence-based improvements. It does not give Hermes the ability to change behavior, schedule posts, or bypass any existing rule. The user remains the one who decides what is built.
