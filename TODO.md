@@ -2,7 +2,7 @@
 
 Chris, Oct 22 2026. These are extras. The order is locked. One at a time, when he asks. Do not pull the next one forward. Do not delete an item. Mark it complete when it is done.
 
-Item 1 through item 6 are complete. The rest are not started.
+Item 1 through item 7 are complete. The rest are not started.
 
 Ingest history, then make the knowledge visible and correctable, then apply it while writing, then capture reusable formats and explicit feedback, then, only if he still wants it, look across brands.
 
@@ -111,7 +111,7 @@ Do not build this while a single brand's history, memory, and corrections are st
 
 ## 7. Operating Modes
 
-**Status: not started.**
+**Status: complete.** Brief chooses Manual, Autonomous with approval, or Fully autonomous. Manual starts nothing. Approval can prepare one draft from a clear hour and leaves it unscheduled. The mail path is not configured, so no email goes out. Approve schedules it here. Reject drops it and stores off-brand feedback. Fully autonomous asks for a confirm that names the thin history or the approval count, then can schedule one piece. Nothing is sent. Posted stays false.
 
 Three modes for how Hermes acts on a brand. The user chooses the mode per brand. The mode is stored with the brand and can be changed at any time. Nothing is sent until the mode and the approval rules allow it. Tokens stay in the vault.
 

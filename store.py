@@ -77,6 +77,10 @@ def empty_state() -> dict:
         "sites": {},
         "cross_enabled": {},
         "cross_accepted": [],
+        "modes": {},
+        "mode_batches": [],
+        "mode_log": [],
+        "mode_limits": {},
     }
 
 
@@ -122,6 +126,10 @@ def load(path: Path | None = None) -> dict:
     sites = raw.get("sites")
     cross_enabled = raw.get("cross_enabled")
     cross_accepted = raw.get("cross_accepted")
+    modes = raw.get("modes")
+    mode_batches = raw.get("mode_batches")
+    mode_log = raw.get("mode_log")
+    mode_limits = raw.get("mode_limits")
     return {
         "version": 1,
         "channels": channels if isinstance(channels, dict) else {},
@@ -159,6 +167,10 @@ def load(path: Path | None = None) -> dict:
         "sites": sites if isinstance(sites, dict) else {},
         "cross_enabled": cross_enabled if isinstance(cross_enabled, dict) else {},
         "cross_accepted": cross_accepted if isinstance(cross_accepted, list) else [],
+        "modes": modes if isinstance(modes, dict) else {},
+        "mode_batches": mode_batches if isinstance(mode_batches, list) else [],
+        "mode_log": mode_log if isinstance(mode_log, list) else [],
+        "mode_limits": mode_limits if isinstance(mode_limits, dict) else {},
     }
 
 
@@ -417,9 +429,11 @@ def remove_brand(state: dict, brand_id: str, path: Path | None = None, root: Pat
         "series",
         "feedback",
         "cross_accepted",
+        "mode_batches",
+        "mode_log",
     ):
         updated[key] = [item for item in updated.get(key) or [] if item.get("brand_id") != name]
-    for key in ("channels", "pulls", "voices", "approval_steps", "inbox_errors", "voice_versions", "ingest_maps", "memory_marks", "studio_reads", "prediction_hidden", "sites", "cross_enabled"):
+    for key in ("channels", "pulls", "voices", "approval_steps", "inbox_errors", "voice_versions", "ingest_maps", "memory_marks", "studio_reads", "prediction_hidden", "sites", "cross_enabled", "modes", "mode_limits"):
         current = dict(updated.get(key) or {})
         current.pop(name, None)
         updated[key] = current
@@ -702,6 +716,7 @@ def studio(state: dict, brand_id: str, ledger: dict | None = None, today=None) -
         "memory": _memory_view(state, brand_id, posts, pieces),
         "series": _series_view(state, brand_id, posts),
         "cross": _cross_view(state, brand_id),
+        "modes": _modes_view(state, brand_id, posts),
     }
 
 
@@ -1192,6 +1207,12 @@ def _calendar(pieces: list[dict], posts: list[dict], today) -> dict:
         days.append({"date": key, "label": f"{day.strftime('%a')} {day.day}", "pieces": items})
     unscheduled = [item for item in entries if item.get("kind") == "piece" and not item.get("date")]
     return {"days": days, "unscheduled": unscheduled, "entries": entries}
+
+
+def _modes_view(state: dict, brand_id: str, posts: list[dict]) -> dict:
+    from modes import mode_view
+
+    return mode_view(state, brand_id, posts)
 
 
 def _cross_view(state: dict, brand_id: str) -> dict:

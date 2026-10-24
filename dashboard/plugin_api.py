@@ -115,6 +115,27 @@ def post_cross(brand_id: str, body: dict) -> dict:
         _fail(exc)
 
 
+@router.post("/brands/{brand_id}/mode")
+def post_mode(brand_id: str, body: dict) -> dict:
+    from modes import decide_batch, prepare_batch, run_auto, set_limits, set_mode
+
+    spec = body if isinstance(body, dict) else {}
+    action = str(spec.get("action") or "set").strip().lower()
+    try:
+        state = load()
+        if action == "prepare":
+            return prepare_batch(state, brand_id)
+        if action == "run":
+            return run_auto(state, brand_id)
+        if action in {"approve", "reject"}:
+            return decide_batch(state, brand_id, str(spec.get("piece_id") or ""), action)
+        if action == "limits":
+            return set_limits(state, brand_id, spec)
+        return set_mode(state, brand_id, str(spec.get("mode") or "manual"), confirm=bool(spec.get("confirm")))
+    except DraftError as exc:
+        _fail(exc)
+
+
 @router.get("/pieces")
 def get_pieces() -> dict:
     return {"posting": False, "pieces": load()["pieces"]}

@@ -638,6 +638,16 @@
               });
               if (saved) await refresh(brand.id);
             },
+            onMode: async function (body) {
+              const saved = await run(function () {
+                return SDK.fetchJSON("/api/plugins/house-social/brands/" + brand.id + "/mode", {
+                  method: "POST",
+                  headers: { "Content-Type": "application/json" },
+                  body: JSON.stringify(body || {}),
+                });
+              });
+              if (saved) await refresh(brand.id);
+            },
             studio: studio,
             onPull: async function () {
               const saved = await run(function () {
@@ -1412,6 +1422,35 @@
       }).join(" · ")) : null);
   }
 
+
+  function ModePanel(props) {
+    const mode = props.mode || { mode: "manual", label: "Manual", rate: "", notice: "", batch: null, log: [], can_prepare: false, can_run: false };
+    const [pick, setPick] = useState(mode.mode || "manual");
+    const batch = mode.batch;
+    return h("div", { className: "hs-pillar" },
+      h("div", { className: "hs-name" }, "Mode · " + (mode.label || "Manual")),
+      h("p", { className: "hs-note" }, "Manual does every step. Approval can draft a piece and will not schedule it. Fully autonomous can schedule one piece after you confirm, and nothing is sent."),
+      mode.rate ? h("p", { className: "hs-note" }, mode.rate) : null,
+      mode.notice ? h("p", { className: "hs-bad" }, mode.notice) : null,
+      h("div", { className: "hs-row" },
+        h("select", { className: "hs-field", value: pick, onChange: function (event) { setPick(event.target.value); } },
+          h("option", { value: "manual" }, "Manual"),
+          h("option", { value: "approval" }, "Autonomous with approval"),
+          h("option", { value: "auto" }, "Fully autonomous")),
+        h("button", { type: "button", className: "hs-button", disabled: props.busy, onClick: function () { props.onMode({ action: "set", mode: pick, confirm: pick === "auto" }); } }, pick === "auto" ? "Confirm switch" : "Save mode"),
+        mode.can_prepare ? h("button", { type: "button", className: "hs-tab", disabled: props.busy, onClick: function () { props.onMode({ action: "prepare" }); } }, "Prepare a batch") : null,
+        mode.can_run ? h("button", { type: "button", className: "hs-tab", disabled: props.busy, onClick: function () { props.onMode({ action: "run" }); } }, "Run once") : null),
+      batch && (batch.pieces || []).length ? (batch.pieces || []).map(function (item) {
+        return h("div", { key: item.piece_id, className: "hs-note" },
+          item.status + (item.decision ? " · " + item.decision : "") + " · " + item.idea,
+          item.posted ? " · sent" : "",
+          !item.decision && item.status ? h("span", null,
+            h("button", { type: "button", className: "hs-tab", disabled: props.busy, onClick: function () { props.onMode({ action: "approve", piece_id: item.piece_id }); } }, "Approve"),
+            h("button", { type: "button", className: "hs-tab", disabled: props.busy, onClick: function () { props.onMode({ action: "reject", piece_id: item.piece_id }); } }, "Reject")) : null);
+      }) : null,
+      (mode.log || []).slice(0, 4).map(function (item, index) { return h("p", { key: index, className: "hs-note" }, item.action + " · " + item.outcome); }));
+  }
+
   function Brief(props) {
     const brand = props.brand;
     const [site, setSite] = useState(brand.site || "");
@@ -1445,6 +1484,7 @@
           onChange: function (event) { if (props.onCross) props.onCross(event.target.checked); },
         }),
         " Include this brand in cross-brand. It stays off until you check it. Only the counts are compared."),
+      h(ModePanel, { mode: props.studio && props.studio.modes, busy: props.busy, onMode: props.onMode }),
       h("div", { className: "hs-cols" }, PLATFORMS.map(function (pair) {
         return h("label", { key: pair[0], className: "hs-meta" }, pair[1],
           h("input", {
