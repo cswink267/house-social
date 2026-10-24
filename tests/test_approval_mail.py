@@ -36,6 +36,8 @@ class FakeMail:
         if method == "POST":
             self.sent.append((url, payload))
             return {"message_id": f"m{len(self.sent)}", "thread_id": "t1", "id": f"r{len(self.sent)}"}
+        if url.endswith("/inboxes"):
+            return {"inboxes": [{"inboxId": INBOX}]}
         if url.endswith("/messages"):
             return {"count": len(self.inbox), "messages": self.inbox}
         message_id = url.rsplit("/", 1)[1]
@@ -105,6 +107,16 @@ def test_settings_keep_keys_in_the_vault(tmp_path: Path):
     with pytest.raises(DraftError, match="email"):
         save_steps(load(path), "okay", [{"name": "Chris", "email": "not an address"}], path)
     assert mail_view(empty_state())["ready"] is False
+
+
+def test_a_wrong_inbox_names_the_one_the_key_can_see(tmp_path: Path, fake: FakeMail):
+    path = _house(tmp_path)
+    save_mail_settings(load(path), {"agentmail": {"inbox": "josieblackthorn@agentmail.com"}}, path, lambda _name, _value: True)
+    with pytest.raises(approval_mail.MailError, match="approvals@agentmail.to"):
+        send_test_mail(load(path), "chris@example.com")
+    said = approval_mail._said('{"name":"NotFoundError","message":"Inbox not found","fix":"Check the id', "am-fixture-key")
+    assert said == "Inbox not found"
+    assert "am-fixture-key" not in said
 
 
 def test_review_emails_the_approver_and_an_approve_reply_schedules_it(tmp_path: Path, fake: FakeMail):

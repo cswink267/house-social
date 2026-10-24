@@ -209,6 +209,7 @@ def poll_replies(state: dict, path: Path | None = None, *, reader=None, http=Non
         return result
     call = http or _call
     inbox = agentmail["inbox"]
+    _require_inbox(call, key, inbox)
     since = book.get("last_poll") or (moment - timedelta(days=2)).isoformat(timespec="seconds")
     seen = set(book.get("seen") or [])
     try:
@@ -403,6 +404,7 @@ def _send(book: dict, to: str, subject: str, text: str, body_html: str, *, reade
     call = http or _call
     if provider == "agentmail":
         inbox = (book.get("agentmail") or {}).get("inbox")
+        _require_inbox(call, key, inbox)
         body = call("POST", f"{AGENTMAIL}/inboxes/{quote(inbox)}/messages/send", key, {
             "to": [to], "subject": subject, "text": text, "html": body_html, "labels": ["house-social"],
         })
@@ -429,7 +431,7 @@ def _call(method: str, url: str, key: str, payload: dict | None) -> dict:
         with urlopen(request, timeout=20) as response:
             raw = response.read().decode("utf-8")
     except HTTPError as exc:
-        detail = exc.read().decode("utf-8", errors="replace")[:400]
+        detail = exc.read().decode("utf-8", errors="replace")
         raise MailError(f"The mail service said ({exc.code}): {_said(detail, key)}") from None
     except (URLError, TimeoutError) as exc:
         raise MailError(f"The mail service could not be reached. {str(exc)[:160]}") from None
@@ -440,12 +442,36 @@ def _call(method: str, url: str, key: str, payload: dict | None) -> dict:
     return body if isinstance(body, dict) else {}
 
 
+def _require_inbox(call, key: str, inbox: str) -> None:
+    names = _known_inboxes(call, key)
+    if names and inbox not in names:
+        raise MailError(f"No inbox named {inbox}. This key can see {', '.join(names)}.")
+
+
+def _known_inboxes(call, key: str) -> list[str]:
+    try:
+        body = call("GET", f"{AGENTMAIL}/inboxes", key, {"limit": "20"})
+    except MailError:
+        return []
+    names = []
+    for row in body.get("inboxes") or []:
+        if not isinstance(row, dict):
+            continue
+        name = str(row.get("inboxId") or row.get("inbox_id") or row.get("email") or "").strip()
+        if name and name not in names:
+            names.append(name)
+    return names
+
+
 def _said(detail: str, key: str) -> str:
+    text = detail
     try:
         body = json.loads(detail)
         text = body.get("message") or body.get("error") or body.get("name") or detail
     except (json.JSONDecodeError, AttributeError):
-        text = detail
+        found = re.search(r'"message"\s*:\s*"([^"]*)"', detail)
+        if found:
+            text = found.group(1)
     return str(text).replace(key, "REDACTED")[:240]
 
 
