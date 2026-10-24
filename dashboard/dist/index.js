@@ -260,6 +260,27 @@
         h("button", { type: "button", className: "hs-tab", onClick: props.onCancel }, "Cancel")));
   }
 
+  class DeskBoundary extends React.Component {
+    constructor(props) {
+      super(props);
+      this.state = { error: null };
+    }
+    static getDerivedStateFromError(error) {
+      return { error: error };
+    }
+    componentDidCatch(error) {
+      if (window.console) window.console.error("[house-social]", error);
+    }
+    render() {
+      if (!this.state.error) return this.props.children;
+      const self = this;
+      return h("div", { className: "hs-error", role: "alert" },
+        h("p", null, h("strong", null, "This desk hit an error. "), messageOf(this.state.error)),
+        h("p", null, "The other desks still work. Nothing was sent."),
+        h("button", { type: "button", className: "hs-tab", onClick: function () { self.setState({ error: null }); } }, "Try again"));
+    }
+  }
+
   function HouseSocial() {
     const [brands, setBrands] = useState([]);
     const [pieces, setPieces] = useState([]);
@@ -927,7 +948,7 @@
                   h("div", { className: "hs-desk-head" },
                     h("h2", { className: "hs-desk-title" }, current ? current.label : ""),
                     DESK_NOTES[desk] ? h("p", { className: "hs-desk-note" }, DESK_NOTES[desk]) : null),
-                  ready ? renderDesk() : h("p", { className: "hs-note hs-loading" }, "Loading the desk…")))),
+                  ready ? h(DeskBoundary, null, renderDesk()) : h("p", { className: "hs-note hs-loading" }, "Loading the desk…")))),
       h(Toasts, { items: toasts, onDismiss: dismiss }),
     );
   }
@@ -936,143 +957,164 @@
     return String(value || "").split("\n").map(function (line) { return line.trim(); }).filter(Boolean);
   }
 
+  function voiceForm(guide) {
+    const angles = {};
+    (guide.pillars || []).forEach(function (pillar) { angles[pillar.id] = (pillar.angles || []).join("\n"); });
+    return {
+      tone: guide.tone || "",
+      personality: guide.personality || "",
+      formality: guide.formality || "",
+      humor: guide.humor || "",
+      point_of_view: guide.point_of_view || "",
+      visual: guide.visual || "",
+      differentiation: guide.differentiation || "",
+      dos: (guide.dos || []).join("\n"),
+      donts: (guide.donts || []).join("\n"),
+      banned: (guide.banned || []).join("\n"),
+      preferred: (guide.preferred || []).join("\n"),
+      required: (guide.required || []).join("\n"),
+      second_person: !!guide.second_person,
+      angles: angles,
+      examples: guide.examples || [],
+    };
+  }
+
+  function voicePayload(form, guide) {
+    return {
+      tone: form.tone,
+      personality: form.personality,
+      formality: form.formality,
+      humor: form.humor,
+      point_of_view: form.point_of_view,
+      visual: form.visual,
+      differentiation: form.differentiation,
+      dos: linesOf(form.dos),
+      donts: linesOf(form.donts),
+      banned: linesOf(form.banned),
+      preferred: linesOf(form.preferred),
+      required: linesOf(form.required),
+      second_person: form.second_person,
+      pillars: (guide.pillars || []).map(function (pillar) {
+        return { id: pillar.id, name: pillar.name, angles: linesOf(form.angles[pillar.id] || "") };
+      }),
+      examples: form.examples || [],
+    };
+  }
+
   function VoiceGuide(props) {
     const guide = (props.studio && props.studio.voice) || {};
     const desk = (props.studio && props.studio.voice_desk) || { versions: [], lessons: { suggestions: [], detail: "" }, imports: 0 };
     const lessons = desk.lessons || { suggestions: [], detail: "", ready: false };
-    const stamp = [
-      guide.tone, guide.personality, guide.formality, guide.humor, guide.point_of_view, guide.visual, guide.differentiation,
-      (guide.dos || []).join("|"), (guide.donts || []).join("|"),
-      (guide.banned || []).join("|"), (guide.preferred || []).join("|"), (guide.required || []).join("|"),
-      guide.second_person ? "1" : "0",
-      JSON.stringify(guide.pillars || []),
-      JSON.stringify(guide.examples || []),
-    ].join("\n");
-    const [form, setForm] = useState(null);
+    const stamp = JSON.stringify(voicePayload(voiceForm(guide), guide));
+    const [form, setForm] = useState(function () { return voiceForm(guide); });
+    const [example, setExample] = useState({ title: "", text: "" });
     const [manual, setManual] = useState({ text: "", engagements: "", kind: "on", title: "" });
-    useEffect(function () {
-      const angles = {};
-      (guide.pillars || []).forEach(function (pillar) { angles[pillar.id] = (pillar.angles || []).join("\n"); });
-      setForm({
-        tone: guide.tone || "",
-        personality: guide.personality || "",
-        formality: guide.formality || "",
-        humor: guide.humor || "",
-        point_of_view: guide.point_of_view || "",
-        visual: guide.visual || "",
-        differentiation: guide.differentiation || "",
-        dos: (guide.dos || []).join("\n"),
-        donts: (guide.donts || []).join("\n"),
-        banned: (guide.banned || []).join("\n"),
-        preferred: (guide.preferred || []).join("\n"),
-        required: (guide.required || []).join("\n"),
-        second_person: !!guide.second_person,
-        angles: angles,
-        examples: guide.examples || [],
-        exampleTitle: "",
-        exampleText: "",
-      });
-    }, [props.brand && props.brand.id, stamp]);
-    if (!form) return null;
-    function setField(field, value) {
-      setForm(function (current) { return Object.assign({}, current, { [field]: value }); });
+    useEffect(function () { setForm(voiceForm(guide)); }, [stamp]);
+    const dirty = JSON.stringify(voicePayload(form, guide)) !== stamp;
+    function setField(name, value) {
+      setForm(function (current) { return Object.assign({}, current, { [name]: value }); });
     }
-    function save(event) {
-      event.preventDefault();
-      props.onSave({
-        tone: form.tone,
-        personality: form.personality,
-        formality: form.formality,
-        humor: form.humor,
-        point_of_view: form.point_of_view,
-        visual: form.visual,
-        differentiation: form.differentiation,
-        dos: linesOf(form.dos),
-        donts: linesOf(form.donts),
-        banned: linesOf(form.banned),
-        preferred: linesOf(form.preferred),
-        required: linesOf(form.required),
-        second_person: form.second_person,
-        pillars: (guide.pillars || []).map(function (pillar) {
-          return { id: pillar.id, name: pillar.name, angles: linesOf(form.angles[pillar.id] || "") };
-        }),
-        examples: form.examples || [],
-      });
+    function area(name, label, placeholder, hint, tall) {
+      return field(label, h("textarea", {
+        className: "hs-area" + (tall ? "" : " hs-short"), value: form[name], placeholder: placeholder || "",
+        onChange: function (event) { setField(name, event.target.value); },
+      }), hint);
     }
     function addExample(kind) {
-      const text = form.exampleText.trim();
+      const text = example.text.trim();
       if (!text) return;
-      setField("examples", (form.examples || []).concat([{ title: form.exampleTitle, text: text, kind: kind, source: "written" }]));
-      setField("exampleTitle", "");
-      setField("exampleText", "");
+      setField("examples", (form.examples || []).concat([{ title: example.title.trim(), text: text, kind: kind, source: "written" }]));
+      setExample({ title: "", text: "" });
+    }
+    function save(event) {
+      if (event) event.preventDefault();
+      props.onSave(voicePayload(form, guide));
     }
     return h("div", { className: "hs-main" },
-      h("form", { onSubmit: save },
-        h("label", { className: "hs-note" }, "Tone", h("textarea", { className: "hs-area", value: form.tone, onChange: function (event) { setField("tone", event.target.value); } })),
-        h("label", { className: "hs-note" }, "Personality", h("textarea", { className: "hs-area hs-short", value: form.personality, onChange: function (event) { setField("personality", event.target.value); } })),
-        h("label", { className: "hs-note" }, "Formality",
-          h("select", { className: "hs-field", value: form.formality, onChange: function (event) { setField("formality", event.target.value); } },
+      h("form", { className: "hs-main", onSubmit: save },
+      h(Section, { title: "How it sounds" },
+        area("tone", "Tone", "Short paragraphs. Name the hard thing first.", null, true),
+        area("personality", "Personality", "In it with them, not above them."),
+        h("div", { className: "hs-grid-3" },
+          field("Formality", h("select", { className: "hs-field", value: form.formality, onChange: function (event) { setField("formality", event.target.value); } },
             h("option", { value: "" }, "Not set"),
             h("option", { value: "casual" }, "Casual"),
             h("option", { value: "plain" }, "Plain"),
             h("option", { value: "formal" }, "Formal"))),
-        h("label", { className: "hs-note" }, "Humor", h("input", { className: "hs-field", value: form.humor, placeholder: "Dry, none, warm", onChange: function (event) { setField("humor", event.target.value); } })),
-        h("label", { className: "hs-note" }, "Point of view", h("input", { className: "hs-field", value: form.point_of_view, placeholder: "Second person, her scene, the product", onChange: function (event) { setField("point_of_view", event.target.value); } })),
-        h("label", { className: "hs-note" }, "Do", h("textarea", { className: "hs-area hs-short", placeholder: "One rule a line", value: form.dos, onChange: function (event) { setField("dos", event.target.value); } })),
-        h("label", { className: "hs-note" }, "Don't", h("textarea", { className: "hs-area hs-short", placeholder: "One rule a line", value: form.donts, onChange: function (event) { setField("donts", event.target.value); } })),
-        h("label", { className: "hs-note" }, "Visual", h("textarea", { className: "hs-area hs-short", value: form.visual, onChange: function (event) { setField("visual", event.target.value); } })),
-        h("label", { className: "hs-note" }, "Banned words and phrases", h("textarea", { className: "hs-area hs-short", placeholder: "One phrase a line", value: form.banned, onChange: function (event) { setField("banned", event.target.value); } })),
-        h("label", { className: "hs-note" }, "Preferred language", h("textarea", { className: "hs-area hs-short", placeholder: "One phrase a line. A long draft should use one of them.", value: form.preferred, onChange: function (event) { setField("preferred", event.target.value); } })),
-        h("label", { className: "hs-note" }, "Required in the draft", h("textarea", { className: "hs-area hs-short", placeholder: "One phrase a line. Use ? for a question mark.", value: form.required, onChange: function (event) { setField("required", event.target.value); } })),
-        h("label", { className: "hs-note" }, "Competitor differentiation", h("textarea", { className: "hs-area hs-short", placeholder: "What this brand refuses to sound like", value: form.differentiation, onChange: function (event) { setField("differentiation", event.target.value); } })),
-        h("label", { className: "hs-note" }, h("input", { type: "checkbox", checked: form.second_person, onChange: function (event) { setField("second_person", event.target.checked); } }), " Require you"),
-        h("div", { className: "hs-name" }, "Pillars and angles"),
-        (guide.pillars || []).length ? (guide.pillars || []).map(function (pillar) {
+          field("Humor", h("input", { className: "hs-field", value: form.humor, placeholder: "Dry, none, warm", onChange: function (event) { setField("humor", event.target.value); } })),
+          field("Point of view", h("input", { className: "hs-field", value: form.point_of_view, placeholder: "Second person, her scene, the product", onChange: function (event) { setField("point_of_view", event.target.value); } }))),
+        h("label", { className: "hs-note" },
+          h("input", { type: "checkbox", checked: form.second_person, onChange: function (event) { setField("second_person", event.target.checked); } }),
+          h("span", null, h("span", { className: "hs-check-title" }, "Require “you”"), " A draft fails the voice check when it never speaks to the reader."))),
+      h(Section, { title: "Rules", note: "One rule or phrase a line. The composer checks each draft against these." },
+        h("div", { className: "hs-grid-2" },
+          area("dos", "Do", "Validate the feeling before any reframe."),
+          area("donts", "Don't", "Cheerful for the sake of cheerful.")),
+        h("div", { className: "hs-grid-3" },
+          area("banned", "Banned words and phrases", "good vibes only"),
+          area("preferred", "Preferred language", "One phrase a line", "A long draft should use one of them."),
+          area("required", "Required in the draft", "One phrase a line", "Use ? for a question mark.")),
+        h("div", { className: "hs-grid-2" },
+          area("differentiation", "Competitor differentiation", "What this brand refuses to sound like"),
+          area("visual", "Visual", "Obsidian and ember. Built for a phone scroll."))),
+      h(Section, { title: "Pillars and angles", note: "Up to three angles a pillar, one a line. Pillars themselves are set on the brand." },
+        (guide.pillars || []).length ? h("div", { className: "hs-grid-2" }, (guide.pillars || []).map(function (pillar) {
           const known = ((props.brand && props.brand.pillars) || []).find(function (item) { return item.id === pillar.id; });
-          return h("label", { key: pillar.id, className: "hs-note" },
-            pillar.name + (known && known.note ? " — " + known.note : ""),
-            h("textarea", {
-              className: "hs-area hs-short",
-              placeholder: "One angle a line, up to three",
-              value: (form.angles && form.angles[pillar.id]) || "",
-              onChange: function (event) {
-                const value = event.target.value;
-                setForm(function (current) {
-                  return Object.assign({}, current, { angles: Object.assign({}, current.angles, { [pillar.id]: value }) });
-                });
-              },
-            }));
-        }) : h("p", { className: "hs-note" }, "No themes on this brand yet."),
-        h("div", { className: "hs-name" }, "On-brand and off-brand"),
-        (form.examples || []).map(function (example, index) {
-          return h("div", { key: example.kind + example.text + index, className: "hs-pillar" },
-            h("div", { className: "hs-name" }, (example.kind === "off" ? "Off-brand" : "On-brand") + " · " + (example.source || "written") + (example.title ? " · " + example.title : "")),
-            h("p", { className: "hs-note" }, example.text),
+          return h("div", { key: pillar.id }, field(pillar.name, h("textarea", {
+            className: "hs-area hs-short",
+            placeholder: "One angle a line, up to three",
+            value: (form.angles && form.angles[pillar.id]) || "",
+            onChange: function (event) {
+              const value = event.target.value;
+              setForm(function (current) {
+                return Object.assign({}, current, { angles: Object.assign({}, current.angles, { [pillar.id]: value }) });
+              });
+            },
+          }), known && known.note ? known.note : null));
+        })) : h("p", { className: "hs-note" }, "No pillars on this brand yet.")),
+      h(Section, { title: "On-brand and off-brand", note: "Examples the assistant holds itself to. They are saved with the voice." },
+        (form.examples || []).length ? h("ul", { className: "hs-rows" }, (form.examples || []).map(function (item, index) {
+          return h("li", { key: item.kind + item.text + index, className: "hs-list-row" },
+            h("div", { className: "hs-list-main" },
+              h("div", { className: "hs-row hs-gap-sm" },
+                h("span", { className: "hs-status " + (item.kind === "off" ? "is-failed" : "is-scheduled") }, item.kind === "off" ? "Off-brand" : "On-brand"),
+                h("span", { className: "hs-meta" }, [item.source || "written", item.title].filter(Boolean).join(" · "))),
+              h("div", null, item.text)),
             h("button", {
-              type: "button", className: "hs-tab",
+              type: "button", className: "hs-tab hs-tab-sm",
               onClick: function () {
                 setField("examples", (form.examples || []).filter(function (_item, itemIndex) { return itemIndex !== index; }));
               },
             }, "Remove"));
-        }),
-        h("label", { className: "hs-note" }, "Example title", h("input", { className: "hs-field", value: form.exampleTitle, onChange: function (event) { setField("exampleTitle", event.target.value); } })),
-        h("label", { className: "hs-note" }, "Example text", h("textarea", { className: "hs-area hs-short", value: form.exampleText, onChange: function (event) { setField("exampleText", event.target.value); } })),
+        })) : h("p", { className: "hs-note" }, "No examples yet."),
+        h("div", { className: "hs-grid-2" },
+          field("Example title", h("input", { className: "hs-field", value: example.title, placeholder: "Optional", onKeyDown: function (event) { if (event.key === "Enter") event.preventDefault(); }, onChange: function (event) { setExample(Object.assign({}, example, { title: event.target.value })); } })),
+          field("Example text", h("textarea", { className: "hs-area hs-short", value: example.text, onChange: function (event) { setExample(Object.assign({}, example, { text: event.target.value })); } }))),
         h("div", { className: "hs-row" },
-          h("button", { type: "button", className: "hs-tab", onClick: function () { addExample("on"); } }, "Add on-brand"),
-          h("button", { type: "button", className: "hs-tab", onClick: function () { addExample("off"); } }, "Add off-brand"),
-          h("button", { type: "submit", className: "hs-button", disabled: props.busy }, "Save voice"))),
-      h("div", { className: "hs-name" }, "What the posts suggest"),
-      h("p", { className: "hs-note" }, "Save the profile before you accept a suggestion. " + (lessons.detail || "Pull the page, or paste posts below.")),
-      (lessons.suggestions || []).map(function (item) {
-        return h("div", { key: item.id, className: "hs-pillar" },
-          h("p", { className: "hs-voice" }, item.detail),
-          item.example ? h("p", { className: "hs-note" }, item.example.text) : null,
-          h("button", { type: "button", className: "hs-button", disabled: props.busy, onClick: function () { props.onAccept(item.id); } }, "Accept"));
-      }),
-      h("div", { className: "hs-name" }, "Teach it from old posts"),
-      h("p", { className: "hs-note" }, (desk.imports || 0) + " pasted posts sit on this desk. A row with a date and an engagement count is also in Analytics. A row without a date stays out of the windows."),
-      h("label", { className: "hs-note" }, "CSV",
-        h("input", {
+          h("button", { type: "button", className: "hs-tab", disabled: !example.text.trim(), onClick: function () { addExample("on"); } }, "Add as on-brand"),
+          h("button", { type: "button", className: "hs-tab", disabled: !example.text.trim(), onClick: function () { addExample("off"); } }, "Add as off-brand"))),
+      h("div", { className: "hs-savebar" + (dirty ? " is-dirty" : "") },
+        h("span", { className: dirty ? "hs-warn" : "hs-note" }, dirty ? "Unsaved changes to the voice." : "The voice on screen is the one in use."),
+        h("div", { className: "hs-row hs-gap-sm" },
+          dirty ? h("button", { type: "button", className: "hs-link-button", onClick: function () { setForm(voiceForm(guide)); } }, "Discard") : null,
+          h("button", { type: "submit", className: "hs-button", disabled: props.busy || !dirty }, "Save voice")))),
+      h(Section, {
+        title: "What the posts suggest",
+        note: (dirty ? "Save your edits before you accept a suggestion. " : "") + (lessons.detail || "Pull the page, or paste posts below."),
+      },
+        (lessons.suggestions || []).length ? h("ul", { className: "hs-rows" }, (lessons.suggestions || []).map(function (item) {
+          return h("li", { key: item.id, className: "hs-list-row" },
+            h("div", { className: "hs-list-main" },
+              h("div", null, item.detail),
+              item.example ? h("div", { className: "hs-meta" }, item.example.text) : null),
+            h("button", { type: "button", className: "hs-tab hs-tab-sm", disabled: props.busy || dirty, onClick: function () { props.onAccept(item.id); } }, "Accept"));
+        })) : h("p", { className: "hs-note" }, "Nothing to suggest yet.")),
+      h(Section, {
+        title: "Teach it from old posts",
+        note: (desk.imports || 0) + " pasted posts sit on this desk. A row with a date and an engagement count is also in Analytics; a row without a date stays out of the windows.",
+        collapsible: true,
+      },
+        field("A CSV of posts", h("input", {
           className: "hs-field", type: "file", accept: ".csv,text/csv",
           onChange: function (event) {
             const file = event.target.files && event.target.files[0];
@@ -1080,27 +1122,71 @@
             const reader = new FileReader();
             reader.onload = function () { props.onImport({ csv: String(reader.result || "") }); };
             reader.readAsText(file);
+            event.target.value = "";
           },
         })),
-      h("label", { className: "hs-note" }, "One post", h("textarea", { className: "hs-area hs-short", placeholder: "Paste one post", value: manual.text, onChange: function (event) { setManual(Object.assign({}, manual, { text: event.target.value })); } })),
-      h("div", { className: "hs-row" },
-        h("input", { className: "hs-field", placeholder: "Engagements, if you know them", value: manual.engagements, onChange: function (event) { setManual(Object.assign({}, manual, { engagements: event.target.value })); } }),
-        h("select", { className: "hs-field", value: manual.kind, onChange: function (event) { setManual(Object.assign({}, manual, { kind: event.target.value })); } },
-          h("option", { value: "on" }, "On-brand example"),
-          h("option", { value: "off" }, "Off-brand example"),
-          h("option", { value: "" }, "Numbers only")),
-        h("button", {
-          type: "button", className: "hs-button", disabled: props.busy || !manual.text.trim(),
-          onClick: function () { props.onImport({ text: manual.text, engagements: manual.engagements, kind: manual.kind, title: manual.title }); },
-        }, "Add post")),
-      h("div", { className: "hs-name" }, "Versions"),
-      (desk.versions || []).length ? (desk.versions || []).map(function (version) {
-        return h("div", { key: version.id, className: "hs-pillar" },
-          h("div", { className: "hs-name" }, version.note || "saved"),
-          h("p", { className: "hs-note" }, (version.at || "") + (version.tone ? " — " + version.tone : "")),
-          h("button", { type: "button", className: "hs-tab", disabled: props.busy, onClick: function () { props.onRestore(version.id); } }, "Restore"));
-      }) : h("p", { className: "hs-note" }, "No saved version yet. The guide on screen is the one in use."),
+        field("Or one post", h("textarea", { className: "hs-area hs-short", placeholder: "Paste one post", value: manual.text, onChange: function (event) { setManual(Object.assign({}, manual, { text: event.target.value })); } })),
+        h("div", { className: "hs-grid-3" },
+          field("Engagements", h("input", { className: "hs-field", inputMode: "numeric", placeholder: "If you know them", value: manual.engagements, onChange: function (event) { setManual(Object.assign({}, manual, { engagements: event.target.value })); } })),
+          field("Keep it as", h("select", { className: "hs-field", value: manual.kind, onChange: function (event) { setManual(Object.assign({}, manual, { kind: event.target.value })); } },
+            h("option", { value: "on" }, "An on-brand example"),
+            h("option", { value: "off" }, "An off-brand example"),
+            h("option", { value: "" }, "Numbers only")))),
+        h("div", { className: "hs-row" },
+          h("button", {
+            type: "button", className: "hs-tab", disabled: props.busy || !manual.text.trim(),
+            onClick: async function () {
+              const saved = await props.onImport({ text: manual.text, engagements: manual.engagements, kind: manual.kind, title: manual.title });
+              if (saved) setManual({ text: "", engagements: "", kind: manual.kind, title: "" });
+            },
+          }, "Add post"))),
+      h(Section, { title: "Versions", note: "Each save keeps the guide it replaced.", collapsible: true },
+        (desk.versions || []).length ? h("ul", { className: "hs-rows" }, (desk.versions || []).map(function (version) {
+          return h("li", { key: version.id, className: "hs-list-row" },
+            h("div", { className: "hs-list-main" },
+              h("div", null, version.note || "Saved"),
+              h("div", { className: "hs-meta" }, [String(version.at || "").replace("T", " ").slice(0, 16), version.tone].filter(Boolean).join(" · "))),
+            h("button", { type: "button", className: "hs-tab hs-tab-sm", disabled: props.busy, onClick: function () { props.onRestore(version.id); } }, "Restore"));
+        })) : h("p", { className: "hs-note" }, "No saved version yet. The guide on screen is the one in use.")),
     );
+  }
+
+  const STATUS_LABELS = {
+    draft: "Draft", planned: "Planned", ready: "Ready", pending: "Needs review", approved: "Approved",
+    scheduled: "Scheduled", failed: "Failed", published: "Published",
+  };
+
+  function statusLabel(status) {
+    return STATUS_LABELS[status || "draft"] || String(status || "draft");
+  }
+
+  function platformName(id) {
+    const pair = PLATFORMS.find(function (item) { return item[0] === id; });
+    return pair ? pair[1] : (id || "");
+  }
+
+  function count(value) {
+    return value == null ? "—" : String(value);
+  }
+
+  // Posts as rows: the words, the numbers that exist, and a link out.
+  function PostRows(props) {
+    const [all, setAll] = useState(false);
+    const rows = props.posts || [];
+    const limit = props.limit || 10;
+    const shown = all ? rows : rows.slice(0, limit);
+    if (!rows.length) return h("p", { className: "hs-note" }, props.empty || "No posts yet.");
+    return h("div", { className: "hs-stack" },
+      h("ul", { className: "hs-rows" }, shown.map(function (item) {
+        return h("li", { key: (item.platform || "") + item.id, className: "hs-list-row" },
+          h("div", { className: "hs-list-main" },
+            h("div", { className: "hs-clamp" }, item.preview || "Untitled"),
+            h("div", { className: "hs-meta" }, [platformName(item.platform), item.format, props.detail ? props.detail(item) : null].filter(Boolean).join(" · "))),
+          h("div", { className: "hs-row hs-gap-sm" },
+            h("span", { className: "hs-num", title: "Engagements" }, count(item.engagements)),
+            item.permalink ? h("a", { href: item.permalink, target: "_blank", rel: "noopener noreferrer", "aria-label": "Open the post" }, "Open") : null));
+      })),
+      rows.length > limit ? h("button", { type: "button", className: "hs-link-button", onClick: function () { setAll(!all); } }, all ? "Show fewer" : "Show all " + rows.length) : null);
   }
 
   function Pages(props) {
@@ -1108,8 +1194,8 @@
     const pull = (props.studio && props.studio.pull) || {};
     const feed = (props.studio && props.studio.feed) || [];
     const [form, setForm] = useState({ platform: "facebook", external_id: "", app_id: "", token: "" });
-    function setField(field, value) {
-      setForm(function (current) { return Object.assign({}, current, { [field]: value }); });
+    function setField(name, value) {
+      setForm(function (current) { return Object.assign({}, current, { [name]: value }); });
     }
     async function submit(event) {
       event.preventDefault();
@@ -1119,38 +1205,38 @@
         app_id: form.app_id,
         token: form.token,
       });
-      if (saved) setField("token", "");
+      if (saved) setForm({ platform: form.platform, external_id: "", app_id: "", token: "" });
     }
     return h("div", { className: "hs-main" },
-      h("p", { className: "hs-callout" },
-        "Studio still writes the week. Facebook and Instagram are one Meta app. Save the Page, then Pull. The Page names its Instagram account, and that account uses the same token. Threads is a separate login. The username often matches Instagram. The id does not, and the Facebook token cannot read it."),
-      connections.length ? connections.map(function (item) {
-        return h("div", { key: item.id, className: "hs-pillar" },
-          h("div", { className: "hs-name" }, item.platform + (item.username ? " · @" + item.username : "") + " · " + item.external_id),
-          h("p", { className: "hs-note" }, "App " + item.app_id + (item.via === "facebook" ? " · found on the Facebook Page" : "") + " · " + item.token_vault));
-      }) : h("p", { className: "hs-note" }, "No Meta app on this brand yet."),
-      h("form", { onSubmit: submit },
-        h("div", { className: "hs-cols" },
-          h("select", { className: "hs-field", value: form.platform, onChange: function (event) { setField("platform", event.target.value); } },
-            PLATFORMS.map(function (pair) { return h("option", { key: pair[0], value: pair[0] }, pair[1]); })),
-          h("input", { className: "hs-field", placeholder: "page or account id", value: form.external_id, onChange: function (event) { setField("external_id", event.target.value); } }),
-          h("input", { className: "hs-field", placeholder: "Meta app id", value: form.app_id, onChange: function (event) { setField("app_id", event.target.value); } }),
-          h("input", { className: "hs-field", type: "password", placeholder: "page or user token", value: form.token, autoComplete: "off", onChange: function (event) { setField("token", event.target.value); } })),
-        h("div", { className: "hs-row" },
-          h("button", { type: "submit", className: "hs-button", disabled: props.busy }, "Save app"),
-          h("button", { type: "button", className: "hs-button", disabled: props.busy || !connections.length, onClick: props.onPull }, "Pull posts"))),
-      pull.pulled_at ? h("p", { className: "hs-note" }, pull.count + " posts · " + pull.pulled_at) : null,
-      (pull.errors || []).map(function (item) { return h("p", { key: item, className: "hs-error" }, item); }),
-      h("div", { className: "hs-name" }, "On the page"),
-      feed.length ? feed.map(function (item) {
-        return h("div", { key: (item.platform || "") + item.id, className: "hs-pillar" },
-          h("div", { className: "hs-name" }, (item.platform || "") + " · " + (item.engagements || 0) + " engagements"),
-          h("p", { className: "hs-note" }, item.preview || "Untitled"),
-          item.permalink ? h("a", { href: item.permalink, target: "_blank", rel: "noopener noreferrer" }, "Open") : null);
-      }) : h("p", { className: "hs-note" }, "Pull the page to see what already went out."),
+      h(Section, {
+        title: "Connections",
+        actions: connections.length ? [h("button", { key: "pull", type: "button", className: "hs-button", disabled: props.busy, onClick: props.onPull }, "Pull posts")] : null,
+      },
+        connections.length ? h("ul", { className: "hs-rows" }, connections.map(function (item) {
+          return h("li", { key: item.id, className: "hs-list-row" },
+            h("div", { className: "hs-list-main" },
+              h("div", null, h("strong", null, platformName(item.platform)), item.username ? " · @" + item.username : "", " · " + item.external_id),
+              h("div", { className: "hs-meta" }, "App " + item.app_id + (item.via === "facebook" ? " · found on the Facebook Page" : "") + " · ", h("code", { className: "hs-code" }, item.token_vault))));
+        })) : h("p", { className: "hs-note" }, "No Meta app on this brand yet. Connect one below, then pull."),
+        pull.pulled_at ? h("p", { className: "hs-note" }, "Last pull " + String(pull.pulled_at).replace("T", " ").slice(0, 16) + " · " + pull.count + " posts.") : null,
+        (pull.errors || []).map(function (item) { return h("p", { key: item, className: "hs-error" }, item); })),
+      h(Section, { title: "Connect a platform" },
+        h("p", { className: "hs-callout" },
+          "Facebook and Instagram are one Meta app. Save the Page, then Pull: the Page names its Instagram account, and that account uses the same token. Threads is a separate login. Its username often matches Instagram; its id does not, and the Facebook token cannot read it. Studio still writes the week."),
+        h("form", { className: "hs-stack", onSubmit: submit },
+          h("div", { className: "hs-grid-2" },
+            field("Platform", h("select", { className: "hs-field", value: form.platform, onChange: function (event) { setField("platform", event.target.value); } },
+              PLATFORMS.map(function (pair) { return h("option", { key: pair[0], value: pair[0] }, pair[1]); }))),
+            field(form.platform === "facebook" ? "Page id" : "Account id", h("input", { className: "hs-field", value: form.external_id, autoComplete: "off", onChange: function (event) { setField("external_id", event.target.value); } })),
+            field("Meta app id", h("input", { className: "hs-field", value: form.app_id, autoComplete: "off", onChange: function (event) { setField("app_id", event.target.value); } })),
+            field(form.platform === "facebook" ? "Page token" : "User token", h("input", { className: "hs-field", type: "password", value: form.token, autoComplete: "off", onChange: function (event) { setField("token", event.target.value); } }),
+              "Written to the vault. Leave it empty to keep the saved one.")),
+          h("div", { className: "hs-row" },
+            h("button", { type: "submit", className: connections.length ? "hs-tab" : "hs-button", disabled: props.busy || !form.external_id.trim() || !form.app_id.trim() }, "Save connection")))),
+      h(Section, { title: "On the page", note: "What already went out, newest first." },
+        h(PostRows, { posts: feed, empty: "Pull the page to see what already went out." })),
     );
   }
-
 
   function StudioRead(props) {
     const read = props.read || {};
@@ -1796,7 +1882,7 @@
               type: "button", className: "hs-row-button" + (on ? " is-on" : ""), "aria-current": on ? "true" : null,
               onClick: function () { props.onOpen(piece); },
             },
-              h("span", { className: "hs-status is-" + (piece.status || "draft") }, piece.status || "draft"),
+              h("span", { className: "hs-status is-" + (piece.status || "draft") }, statusLabel(piece.status)),
               h("span", { className: "hs-row-text" }, piece.idea),
               piece.format ? h("span", { className: "hs-meta" }, piece.format) : null));
         })) : null),
@@ -1827,7 +1913,7 @@
       h("div", { className: "hs-section-head" },
         h("div", { className: "hs-section-titles" },
           h("div", { className: "hs-row hs-gap-sm" },
-            h("span", { className: "hs-status is-" + (piece.status || "draft") }, piece.status || "draft"),
+            h("span", { className: "hs-status is-" + (piece.status || "draft") }, statusLabel(piece.status)),
             piece.format ? h("span", { className: "hs-meta" }, piece.format) : null,
             piece.scheduled_for ? h("span", { className: "hs-meta" }, "· " + String(piece.scheduled_for).replace("T", " ").slice(0, 16)) : null,
             props.dirty ? h("span", { className: "hs-tag is-warn" }, "Unsaved changes") : null),
@@ -2380,6 +2466,62 @@
     return line;
   }
 
+  const COPY_ROLES = [["copy", "Copy"], ["hook", "Hook"], ["cta", "Call to action"], ["hashtags", "Hashtags"], ["bio", "Bio"]];
+
+  function AddAsset(props) {
+    const [draft, setDraft] = useState({ kind: "copy", role: "copy", name: "", folder: "", tags: "", body: "" });
+    const [files, setFiles] = useState(null);
+    const [picker, setPicker] = useState(0);
+    const textual = draft.kind === "copy" || draft.kind === "template";
+    function setField(name, value) {
+      setDraft(function (current) { return Object.assign({}, current, { [name]: value }); });
+    }
+    function save(event) {
+      event.preventDefault();
+      readAssetFiles(files || []).then(async function (packed) {
+        const body = {
+          kind: draft.kind,
+          name: draft.name,
+          folder: draft.folder,
+          tags: draft.tags.split(",").map(function (item) { return item.trim(); }).filter(Boolean),
+          note: textual ? "" : draft.body,
+          body: textual ? draft.body : "",
+          role: textual ? draft.role : "",
+        };
+        if (draft.kind === "carousel") body.files = packed;
+        else if (packed[0]) {
+          body.data = packed[0].data;
+          body.file_name = packed[0].name;
+        }
+        const saved = await props.onSave(body);
+        if (saved) {
+          setDraft({ kind: draft.kind, role: draft.role, name: "", folder: draft.folder, tags: "", body: "" });
+          setFiles(null);
+          setPicker(picker + 1);
+        }
+      }).catch(function (err) { if (props.onFail) props.onFail(messageOf(err)); });
+    }
+    return h("form", { className: "hs-stack", onSubmit: save },
+      h("div", { className: "hs-grid-3" },
+        field("Kind", h("select", { className: "hs-field", value: draft.kind, onChange: function (event) { setField("kind", event.target.value); } },
+          ASSET_KINDS.map(function (item) { return h("option", { key: item, value: item }, item); }))),
+        field("Name", h("input", { className: "hs-field", value: draft.name, onChange: function (event) { setField("name", event.target.value); } })),
+        textual ? field("Role", h("select", { className: "hs-field", value: draft.role, onChange: function (event) { setField("role", event.target.value); } },
+          COPY_ROLES.map(function (pair) { return h("option", { key: pair[0], value: pair[0] }, pair[1]); })), "Hooks, calls to action, hashtags, and bios insert into the composer.")
+          : field(draft.kind === "carousel" ? "Files" : "File", h("input", {
+            key: picker,
+            className: "hs-field", type: "file", multiple: draft.kind === "carousel",
+            accept: "image/png,image/jpeg,image/webp,image/gif,video/mp4,video/webm",
+            onChange: function (event) { setFiles(event.target.files); },
+          }), draft.kind === "carousel" ? "Choose the frames in order." : null)),
+      field(textual ? "The words" : "Note on the file", h("textarea", { className: "hs-area hs-short", value: draft.body, onChange: function (event) { setField("body", event.target.value); } })),
+      h("div", { className: "hs-grid-2" },
+        field("Folder", h("input", { className: "hs-field", value: draft.folder, placeholder: "cards/ember", onChange: function (event) { setField("folder", event.target.value); } })),
+        field("Tags", h("input", { className: "hs-field", value: draft.tags, placeholder: "Comma separated", onChange: function (event) { setField("tags", event.target.value); } }))),
+      h("div", { className: "hs-row" },
+        h("button", { type: "submit", className: "hs-button", disabled: props.busy || !draft.name.trim() }, "Save to the library")));
+  }
+
   function Library(props) {
     const shelf = props.library || { assets: [], folders: [], tags: [] };
     const assets = shelf.assets || [];
@@ -2388,11 +2530,10 @@
     const [folder, setFolder] = useState("all");
     const [tag, setTag] = useState("all");
     const [openId, setOpenId] = useState("");
-    const [draft, setDraft] = useState({ kind: "copy", role: "copy", name: "", folder: "", tags: "", body: "", note: "" });
     const [sort, setSort] = useState("updated");
     const visible = assets.filter(function (asset) {
       if (kind !== "all" && asset.kind !== kind) return false;
-      if (folder !== "all" && asset.folder !== folder && asset.folder.indexOf(folder + "/") !== 0) return false;
+      if (folder !== "all" && asset.folder !== folder && String(asset.folder || "").indexOf(folder + "/") !== 0) return false;
       if (tag !== "all" && (asset.tags || []).indexOf(tag) < 0) return false;
       const hay = [asset.name, asset.folder, asset.note, asset.body, (asset.tags || []).join(" ")].join(" ").toLowerCase();
       return !q.trim() || hay.indexOf(q.trim().toLowerCase()) >= 0;
@@ -2407,175 +2548,192 @@
       return (right.updated_at || "") < (left.updated_at || "") ? -1 : 1;
     });
     const open = assets.find(function (asset) { return asset.id === openId; }) || null;
-
-    function setField(field, value) {
-      setDraft(function (current) { return Object.assign({}, current, { [field]: value }); });
-    }
-
-    function save(event) {
-      event.preventDefault();
-      const input = event.target.querySelector("input[type=file]");
-      const files = input && input.files ? input.files : [];
-      readAssetFiles(files).then(function (packed) {
-        const body = {
-          kind: draft.kind,
-          name: draft.name,
-          folder: draft.folder,
-          tags: draft.tags.split(",").map(function (item) { return item.trim(); }).filter(Boolean),
-          note: draft.note,
-          body: draft.body,
-          role: draft.kind === "copy" || draft.kind === "template" ? draft.role : "",
-        };
-        if (draft.kind === "carousel") body.files = packed;
-        else if (packed[0]) {
-          body.data = packed[0].data;
-          body.file_name = packed[0].name;
-        }
-        props.onSave(body);
-        setDraft({ kind: draft.kind, role: draft.role, name: "", folder: draft.folder, tags: "", body: "", note: "" });
-        if (input) input.value = "";
-      }).catch(function (err) { if (props.onFail) props.onFail(messageOf(err)); });
-    }
-
+    const filtered = q.trim() || kind !== "all" || folder !== "all" || tag !== "all";
     return h("div", { className: "hs-main" },
-      h("div", { className: "hs-cols" },
-        h("input", { className: "hs-field", value: q, placeholder: "Search name, tag, folder, or copy", onChange: function (event) { setQ(event.target.value); } }),
-        h("select", { className: "hs-field", value: kind, onChange: function (event) { setKind(event.target.value); } },
+      h(Section, { title: "Add to the library", collapsible: true, open: !assets.length },
+        h(AddAsset, { busy: props.busy, onSave: props.onSave, onFail: props.onFail })),
+      h("div", { className: "hs-cal-filters" },
+        h("input", { className: "hs-field hs-grow", type: "search", "aria-label": "Search the library", value: q, placeholder: "Search name, tag, folder, or words", onChange: function (event) { setQ(event.target.value); } }),
+        h("select", { className: "hs-field", "aria-label": "Kind", value: kind, onChange: function (event) { setKind(event.target.value); } },
           h("option", { value: "all" }, "All kinds"),
           ASSET_KINDS.map(function (item) { return h("option", { key: item, value: item }, item); })),
-        h("select", { className: "hs-field", value: folder, onChange: function (event) { setFolder(event.target.value); } },
+        (shelf.folders || []).length ? h("select", { className: "hs-field", "aria-label": "Folder", value: folder, onChange: function (event) { setFolder(event.target.value); } },
           h("option", { value: "all" }, "All folders"),
-          (shelf.folders || []).map(function (item) { return h("option", { key: item, value: item }, item); })),
-        h("select", { className: "hs-field", value: tag, onChange: function (event) { setTag(event.target.value); } },
+          (shelf.folders || []).map(function (item) { return h("option", { key: item, value: item }, item); })) : null,
+        (shelf.tags || []).length ? h("select", { className: "hs-field", "aria-label": "Tag", value: tag, onChange: function (event) { setTag(event.target.value); } },
           h("option", { value: "all" }, "All tags"),
-          (shelf.tags || []).map(function (item) { return h("option", { key: item, value: item }, item); })),
-        h("select", { className: "hs-field", value: sort, onChange: function (event) { setSort(event.target.value); } },
+          (shelf.tags || []).map(function (item) { return h("option", { key: item, value: item }, item); })) : null,
+        h("select", { className: "hs-field", "aria-label": "Sort", value: sort, onChange: function (event) { setSort(event.target.value); } },
           h("option", { value: "updated" }, "Newest"),
           h("option", { value: "mean" }, "Highest mean"),
-          h("option", { value: "quiet" }, "Least recently used"))),
-      h("form", { className: "hs-cols", onSubmit: save },
-        h("select", { className: "hs-field", value: draft.kind, onChange: function (event) { setField("kind", event.target.value); } },
-          ASSET_KINDS.map(function (item) { return h("option", { key: item, value: item }, item); })),
-        h("input", { className: "hs-field", value: draft.name, placeholder: "Name", onChange: function (event) { setField("name", event.target.value); } }),
-        draft.kind === "copy" || draft.kind === "template" ? h("select", { className: "hs-field", value: draft.role, onChange: function (event) { setField("role", event.target.value); } },
-          ["copy", "hook", "cta", "hashtags", "bio"].map(function (item) { return h("option", { key: item, value: item }, item); })) : null,
-        h("input", { className: "hs-field", value: draft.folder, placeholder: "Folder, such as cards/ember", onChange: function (event) { setField("folder", event.target.value); } }),
-        h("input", { className: "hs-field", value: draft.tags, placeholder: "Tags, comma separated", onChange: function (event) { setField("tags", event.target.value); } }),
-        h("textarea", { className: "hs-area", value: draft.body, placeholder: "Copy, template, or a note on the file", onChange: function (event) { setField("body", event.target.value); } }),
-        h("input", { className: "hs-field", type: "file", accept: "image/png,image/jpeg,image/webp,image/gif,video/mp4,video/webm", multiple: draft.kind === "carousel" }),
-        h("button", { type: "submit", className: "hs-button", disabled: props.busy || !draft.name.trim() }, "Save to the library")),
-      h("div", { className: "hs-lib" },
-        h("div", null,
-          visible.length ? shown.map(function (asset) {
-            return h("button", {
-              key: asset.id, type: "button",
-              className: "hs-piece" + (open && open.id === asset.id ? " is-on" : ""),
-              onClick: function () { setOpenId(asset.id); },
-            }, h("div", { className: "hs-name" }, asset.kind + " · " + asset.name),
-              h("div", { className: "hs-meta" }, [asset.folder, (asset.tags || []).join(", "), performanceLine(asset)].filter(Boolean).join(" · ")));
-          }) : h("p", { className: "hs-note" }, "Nothing in this library yet.")),
-        open ? h("div", { className: "hs-pillar" },
-          h("div", { className: "hs-name" }, open.name),
-          open.body ? h("p", { className: "hs-voice" }, open.body) : null,
-          open.note ? h("p", { className: "hs-note" }, open.note) : null,
-          h("p", { className: "hs-note" }, performanceLine(open)),
-          open.performance && open.performance.pairing_detail ? h("p", { className: open.performance.best_version ? "hs-ok" : "hs-note" }, open.performance.pairing_detail) : null,
-          open.performance && open.performance.best_detail ? h("p", { className: "hs-note" }, open.performance.best_detail) : null,
-          open.mime && open.mime.indexOf("video/") === 0
-            ? h("video", { className: "hs-thumb", controls: true, src: assetUrl(open.id) })
-            : (open.has_file || (open.frames || []).length)
-              ? h("img", { className: "hs-thumb", alt: open.name, src: assetUrl(open.id, "", (open.frames || []).length && !open.mime ? 0 : null) })
-              : null,
-          (open.uses || []).length ? h("div", null, open.uses.map(function (use) {
-            return h("div", { key: use.id, className: "hs-note" }, use.idea || use.post_id || "Used");
-          })) : null,
-          h("div", { className: "hs-row" },
-            props.piece ? h("button", {
-              type: "button", className: "hs-button", disabled: props.busy,
-              onClick: function () { props.onUse(open.id, { piece_id: props.piece.id }); },
-            }, "Attach to the open draft") : null,
-            open.kind === "image" || open.kind === "logo" || open.kind === "carousel" ? h("button", {
-              type: "button", className: "hs-tab", disabled: props.busy,
-              onClick: function () { props.onTags(open.id); },
-            }, "Read tags") : null,
-            (props.posts || []).slice(0, 6).map(function (post) {
-              return h("button", {
-                key: post.id, type: "button", className: "hs-tab", disabled: props.busy,
-                onClick: function () { props.onUse(open.id, { post_id: post.id }); },
-              }, "Used on " + (post.preview || post.id).slice(0, 42));
-            })),
-          h("div", { className: "hs-name" }, "Versions"),
-          (open.versions || []).map(function (version) {
-            return h("div", { key: version.id, className: "hs-note" },
-              (open.performance && open.performance.best_version === version.id ? "Ahead · " : "") + (version.note || "Saved") + (version.body ? " · " + version.body.slice(0, 80) : ""),
+          h("option", { value: "quiet" }, "Least recently used")),
+        filtered ? h("button", { type: "button", className: "hs-link-button", onClick: function () { setQ(""); setKind("all"); setFolder("all"); setTag("all"); } }, "Clear") : null),
+      !assets.length ? h(Empty, null, "Nothing in this library yet. Add copy, a template, or a file above.")
+        : h("div", { className: "hs-lib" },
+          visible.length ? h("ul", { className: "hs-rows" }, shown.map(function (asset) {
+            const on = open && open.id === asset.id;
+            return h("li", { key: asset.id },
               h("button", {
+                type: "button", className: "hs-row-button hs-row-tall" + (on ? " is-on" : ""), "aria-current": on ? "true" : null,
+                onClick: function () { setOpenId(asset.id); },
+              },
+                h("span", { className: "hs-list-main" },
+                  h("span", null, h("strong", null, asset.name)),
+                  h("span", { className: "hs-meta" }, [asset.role || asset.kind, asset.folder, (asset.tags || []).join(", ")].filter(Boolean).join(" · ")),
+                  h("span", { className: "hs-meta" }, performanceLine(asset)))));
+          })) : h("p", { className: "hs-note" }, "Nothing matches. Clear the search or the filters."),
+          open ? h("div", { className: "hs-pillar hs-asset" },
+            h("div", { className: "hs-row hs-spread" },
+              h("div", { className: "hs-name" }, open.name),
+              h("span", { className: "hs-tag" }, open.role || open.kind)),
+            open.body ? h("p", { className: "hs-voice hs-pre" }, open.body) : null,
+            open.note ? h("p", { className: "hs-note" }, open.note) : null,
+            open.mime && open.mime.indexOf("video/") === 0
+              ? h("video", { className: "hs-thumb", controls: true, src: assetUrl(open.id) })
+              : (open.has_file || (open.frames || []).length)
+                ? h("img", { className: "hs-thumb", alt: open.name, src: assetUrl(open.id, "", (open.frames || []).length && !open.mime ? 0 : null) })
+                : null,
+            h("p", { className: "hs-note" }, performanceLine(open)),
+            open.performance && open.performance.pairing_detail ? h("p", { className: open.performance.best_version ? "hs-ok" : "hs-note" }, open.performance.pairing_detail) : null,
+            open.performance && open.performance.best_detail ? h("p", { className: "hs-note" }, open.performance.best_detail) : null,
+            h("div", { className: "hs-row" },
+              props.piece ? h("button", {
+                type: "button", className: "hs-button", disabled: props.busy,
+                onClick: function () { props.onUse(open.id, { piece_id: props.piece.id }); },
+              }, "Attach to the open draft") : null,
+              open.kind === "image" || open.kind === "logo" || open.kind === "carousel" ? h("button", {
                 type: "button", className: "hs-tab", disabled: props.busy,
-                onClick: function () { props.onRevise(open.id, { restore: version.id }); },
-              }, "Bring this version back"));
-          })) : h("p", { className: "hs-note" }, "Choose an asset to see its versions and where it has been used.")),
+                onClick: function () { props.onTags(open.id); },
+              }, "Read tags") : null),
+            (props.posts || []).length ? field("Record a use on a post", h("select", {
+              className: "hs-field", value: "", disabled: props.busy,
+              onChange: function (event) {
+                if (event.target.value) props.onUse(open.id, { post_id: event.target.value });
+                event.target.value = "";
+              },
+            }, h("option", { value: "" }, "Choose a post…"),
+              (props.posts || []).slice(0, 20).map(function (post) {
+                return h("option", { key: post.id, value: post.id }, (post.preview || post.id).slice(0, 70));
+              }))) : null,
+            (open.uses || []).length ? h("div", { className: "hs-stack hs-gap-xs" },
+              h("div", { className: "hs-overline" }, "Used on"),
+              h("ul", { className: "hs-list" }, open.uses.map(function (use) {
+                return h("li", { key: use.id, className: "hs-note" }, use.idea || use.post_id || "Used");
+              }))) : null,
+            (open.versions || []).length ? h("div", { className: "hs-stack hs-gap-xs" },
+              h("div", { className: "hs-overline" }, "Versions"),
+              h("ul", { className: "hs-rows" }, open.versions.map(function (version) {
+                const best = open.performance && open.performance.best_version === version.id;
+                return h("li", { key: version.id, className: "hs-list-row" },
+                  h("div", { className: "hs-list-main" },
+                    h("div", null, (best ? "Ahead · " : "") + (version.note || "Saved")),
+                    version.body ? h("div", { className: "hs-meta" }, version.body.slice(0, 100)) : null),
+                  h("button", { type: "button", className: "hs-tab hs-tab-sm", disabled: props.busy, onClick: function () { props.onRevise(open.id, { restore: version.id }); } }, "Bring back"));
+              }))) : null)
+            : h("div", { className: "hs-empty" }, "Choose an asset to see it, where it was used, and its versions.")),
     );
+  }
+
+  const REVIEW_GROUPS = [
+    ["pending", "Waiting for review", function (status) { return status === "pending"; }],
+    ["approved", "Approved", function (status) { return status === "approved"; }],
+    ["open", "Not sent for review", function (status) { return ["draft", "planned", "ready", "failed"].indexOf(status || "draft") >= 0; }],
+    ["scheduled", "Scheduled", function (status) { return status === "scheduled"; }],
+  ];
+
+  function ReviewPanel(props) {
+    const item = props.item;
+    const [author, setAuthor] = useState(item.waiting || "");
+    const [comment, setComment] = useState("");
+    const compare = item.compare || {};
+    async function decide(decision) {
+      const saved = await props.onDecide(item.id, { author: author.trim() || item.waiting, decision: decision, comment: comment });
+      if (saved) setComment("");
+    }
+    return h("div", { className: "hs-review" },
+      h("div", { className: "hs-row" },
+        h("button", { type: "button", className: "hs-tab hs-tab-sm", onClick: function () { props.onOpen(item.id); } }, "Open in the composer"),
+        item.status !== "pending" && item.status !== "approved" ? h("button", { type: "button", className: "hs-button", disabled: props.busy, onClick: function () { props.onReview(item.id); } }, "Send for review") : null),
+      (item.signed || []).length ? h("p", { className: "hs-ok" }, "Signed by " + item.signed.join(", ") + ".") : null,
+      compare.ready ? h("div", { className: "hs-stack" },
+        h("div", { className: "hs-overline" }, "What changed since the last version"),
+        compare.detail ? h("p", { className: "hs-note" }, compare.detail) : null,
+        h("div", { className: "hs-previews" }, (compare.platforms || []).map(function (platform) {
+          return h("div", { key: platform.platform, className: "hs-preview" },
+            h("div", { className: "hs-row hs-spread" },
+              h("div", { className: "hs-name" }, platformName(platform.platform)),
+              platform.same ? h("span", { className: "hs-meta" }, "Unchanged") : null),
+            (platform.removed || []).map(function (line, index) { return h("p", { key: "r" + index, className: "hs-diff is-removed" }, line); }),
+            (platform.added || []).map(function (line, index) { return h("p", { key: "a" + index, className: "hs-diff is-added" }, line); }));
+        }))) : h("p", { className: "hs-note" }, compare.detail || "Nothing earlier to compare."),
+      (item.comments || []).length || (item.trail || []).length ? h("div", { className: "hs-stack" },
+        h("div", { className: "hs-overline" }, "Conversation"),
+        h("ul", { className: "hs-thread" },
+          (item.comments || []).map(function (note) {
+            return h("li", { key: "c" + note.id }, h("strong", null, note.author), " ", note.text);
+          }),
+          (item.trail || []).map(function (event) {
+            return h("li", { key: "t" + event.id, className: "hs-meta" }, event.author + " · " + event.action + (event.text ? " · " + event.text : ""));
+          }))) : null,
+      h("div", { className: "hs-grid-2" },
+        field("Your name", h("input", { className: "hs-field", value: author, placeholder: item.waiting || "Your name", onChange: function (event) { setAuthor(event.target.value); } }),
+          item.waiting ? "This step waits on " + item.waiting + "." : null),
+        field("Comment", h("input", { className: "hs-field", value: comment, placeholder: "Optional with a decision", onChange: function (event) { setComment(event.target.value); } }))),
+      h("div", { className: "hs-row" },
+        item.status === "pending" ? h("button", { type: "button", className: "hs-button", disabled: props.busy || !author.trim(), onClick: function () { decide("approved"); } }, "Approve") : null,
+        item.status === "pending" ? h("button", { type: "button", className: "hs-tab", disabled: props.busy || !author.trim(), onClick: function () { decide("changes"); } }, "Ask for changes") : null,
+        h("button", {
+          type: "button", className: "hs-tab", disabled: props.busy || !author.trim() || !comment.trim(),
+          onClick: async function () {
+            const saved = await props.onComment(item.id, { author: author, text: comment });
+            if (saved) setComment("");
+          },
+        }, "Comment only")));
   }
 
   function ApprovalDesk(props) {
     const desk = (props.studio && props.studio.approval) || { steps: ["Approver"], pieces: [], notices: [] };
     const [openId, setOpenId] = useState("");
     const [steps, setSteps] = useState((desk.steps || ["Approver"]).join(", "));
-    const [author, setAuthor] = useState("");
-    const [comment, setComment] = useState("");
-    const open = (desk.pieces || []).find(function (item) { return item.id === openId; }) || null;
-    const waiting = open && open.waiting ? open.waiting : (desk.steps || ["Approver"])[0];
+    const pieces = desk.pieces || [];
     return h("div", { className: "hs-main" },
-      (desk.notices || []).length ? h("div", null,
-        h("div", { className: "hs-name" }, "Notices"),
-        desk.notices.map(function (notice) {
-          return h("div", { key: notice.id, className: "hs-row" },
-            h("span", { className: "hs-note" }, notice.text),
-            h("button", { type: "button", className: "hs-tab", disabled: props.busy, onClick: function () { props.onRead(notice.id); } }, "Mark read"));
-        })) : null,
-      h("form", { className: "hs-row", onSubmit: function (event) { event.preventDefault(); props.onSteps(steps.split(",").map(function (item) { return item.trim(); }).filter(Boolean)); } },
-        h("input", { className: "hs-field", value: steps, placeholder: "Approver names, in order", onChange: function (event) { setSteps(event.target.value); } }),
-        h("button", { type: "submit", className: "hs-button", disabled: props.busy }, "Save steps")),
-      (desk.pieces || []).length ? desk.pieces.map(function (item) {
-        return h("div", { key: item.id, className: "hs-pillar" },
-          h("button", { type: "button", className: "hs-post", onClick: function () { setOpenId(item.id === openId ? "" : item.id); setAuthor(item.waiting || ""); } },
-            h("div", { className: "hs-name" }, item.status + (item.waiting ? " · waiting on " + item.waiting : "")),
-            h("div", { className: "hs-meta" }, item.idea)),
-          open && open.id === item.id ? h("div", null,
-            h("div", { className: "hs-row" },
-              h("button", { type: "button", className: "hs-tab", onClick: function () { props.onOpen(item.id); } }, "Open in the composer"),
-              item.status !== "pending" && item.status !== "approved" ? h("button", { type: "button", className: "hs-button", disabled: props.busy, onClick: function () { props.onReview(item.id); } }, "Send for review") : null),
-            (item.comments || []).map(function (note) {
-              return h("p", { key: note.id, className: "hs-note" }, note.author + ": " + note.text);
-            }),
-            (item.signed || []).length ? h("p", { className: "hs-note" }, "Signed: " + item.signed.join(", ")) : null,
-            (item.trail || []).length ? h("div", null,
-              h("div", { className: "hs-name" }, "Trail"),
-              item.trail.map(function (event) {
-                return h("p", { key: event.id, className: "hs-note" }, event.author + " · " + event.action + (event.text ? " · " + event.text : ""));
-              })) : null,
-            item.compare && item.compare.ready ? h("div", null,
-              h("div", { className: "hs-name" }, "Last two versions"),
-              h("p", { className: "hs-note" }, item.compare.detail || ""),
-              item.compare.platforms.map(function (platform) {
-                return h("div", { key: platform.platform, className: "hs-preview" },
-                  h("div", { className: "hs-name" }, platform.platform + (platform.same ? " · unchanged" : "")),
-                  (platform.removed || []).map(function (line, index) { return h("p", { key: "r" + index, className: "hs-bad" }, "Removed: " + line); }),
-                  (platform.added || []).map(function (line, index) { return h("p", { key: "a" + index, className: "hs-ok" }, "Added: " + line); }),
-                  platform.same ? null : h("p", { className: "hs-note" }, platform.before || "Empty"),
-                  platform.same ? null : h("p", { className: "hs-voice" }, platform.after || "Empty"));
-              })) : h("p", { className: "hs-note" }, (item.compare && item.compare.detail) || "Nothing earlier to compare."),
-            h("div", { className: "hs-cols" },
-              h("input", { className: "hs-field", value: author, placeholder: waiting || "Your name", onChange: function (event) { setAuthor(event.target.value); } }),
-              h("input", { className: "hs-field", value: comment, placeholder: "Comment", onChange: function (event) { setComment(event.target.value); } })),
-            h("div", { className: "hs-row" },
-              h("button", { type: "button", className: "hs-tab", disabled: props.busy || !author.trim() || !comment.trim(), onClick: function () { props.onComment(item.id, { author: author, text: comment }); setComment(""); } }, "Comment"),
-              item.status === "pending" ? h("button", { type: "button", className: "hs-button", disabled: props.busy || !author.trim(), onClick: function () { props.onDecide(item.id, { author: author || waiting, decision: "approved", comment: comment }); setComment(""); } }, "Approve") : null,
-              item.status === "pending" ? h("button", { type: "button", className: "hs-tab", disabled: props.busy || !author.trim(), onClick: function () { props.onDecide(item.id, { author: author || waiting, decision: "changes", comment: comment }); setComment(""); } }, "Ask for changes") : null)) : null);
-      }) : h("p", { className: "hs-note" }, "No pieces waiting on this desk."),
+      (desk.notices || []).length ? h(Section, { title: "Notices" },
+        h("ul", { className: "hs-rows" }, desk.notices.map(function (notice) {
+          return h("li", { key: notice.id, className: "hs-list-row" },
+            h("div", { className: "hs-list-main" }, notice.text),
+            h("button", { type: "button", className: "hs-tab hs-tab-sm", disabled: props.busy, onClick: function () { props.onRead(notice.id); } }, "Mark read"));
+        }))) : null,
+      REVIEW_GROUPS.map(function (group) {
+        const rows = pieces.filter(function (item) { return group[2](item.status); });
+        if (!rows.length && group[0] !== "pending") return null;
+        return h(Section, { key: group[0], title: group[1] + " · " + rows.length },
+          rows.length ? h("ul", { className: "hs-rows" }, rows.map(function (item) {
+            const on = openId === item.id;
+            return h("li", { key: item.id },
+              h("button", {
+                type: "button", className: "hs-row-button" + (on ? " is-on" : ""), "aria-expanded": on,
+                onClick: function () { setOpenId(on ? "" : item.id); },
+              },
+                h("span", { className: "hs-status is-" + (item.status || "draft") }, statusLabel(item.status)),
+                h("span", { className: "hs-row-text" }, item.idea),
+                item.waiting ? h("span", { className: "hs-meta" }, "waiting on " + item.waiting) : null,
+                h("span", { className: "hs-chevron", "aria-hidden": "true" }, on ? "▾" : "▸")),
+              on ? h(ReviewPanel, { key: item.id, item: item, busy: props.busy, onOpen: props.onOpen, onReview: props.onReview, onDecide: props.onDecide, onComment: props.onComment }) : null);
+          })) : h("p", { className: "hs-note" }, "Nothing is waiting for review."));
+      }),
+      !pieces.length ? h(Empty, null, "No pieces on this desk yet. Send one for review from the Composer or the Queue.") : null,
+      h(Section, { title: "Review steps", note: "One name is a single step. Extra names are optional and go in order. Nothing is mailed.", collapsible: true },
+        h("form", {
+          className: "hs-row",
+          onSubmit: function (event) {
+            event.preventDefault();
+            props.onSteps(steps.split(",").map(function (item) { return item.trim(); }).filter(Boolean));
+          },
+        },
+          h("input", { className: "hs-field hs-grow", "aria-label": "Approvers, in order", value: steps, placeholder: "Approver names, comma separated", onChange: function (event) { setSteps(event.target.value); } }),
+          h("button", { type: "submit", className: "hs-tab", disabled: props.busy || !steps.trim() }, "Save steps"))),
     );
   }
-
-
 
   function SeriesApply(props) {
     const saved = (props.series && props.series.items) || [];
@@ -2584,17 +2742,21 @@
     const [topic, setTopic] = useState("");
     const current = rows.some(function (item) { return item.id === picked; }) ? picked : (rows[0] ? rows[0].id : "");
     if (!saved.length) return null;
-    if (!rows.length) return h("p", { className: "hs-note" }, "Every saved series is paused.");
-    return h("form", { className: "hs-row", onSubmit: function (event) {
-      event.preventDefault();
-      if (current && topic.trim() && props.onApply) props.onApply(current, topic.trim());
-    } },
-      h("select", { className: "hs-field", value: current, onChange: function (event) { setPicked(event.target.value); } },
-        rows.map(function (item) { return h("option", { key: item.id, value: item.id }, item.name); })),
-      h("input", { className: "hs-field", value: topic, placeholder: "New topic for this series", onChange: function (event) { setTopic(event.target.value); } }),
-      h("button", { type: "submit", className: "hs-button", disabled: props.busy || !topic.trim() }, "Open in the composer"));
+    return h("div", { className: "hs-advice" },
+      h("div", { className: "hs-overline" }, "Start from a series"),
+      rows.length ? h("form", {
+        className: "hs-row hs-gap-sm",
+        onSubmit: function (event) {
+          event.preventDefault();
+          if (current && topic.trim() && props.onApply) props.onApply(current, topic.trim());
+        },
+      },
+        h("select", { className: "hs-field hs-w-md", "aria-label": "Series", value: current, onChange: function (event) { setPicked(event.target.value); } },
+          rows.map(function (item) { return h("option", { key: item.id, value: item.id }, item.name); })),
+        h("input", { className: "hs-field hs-grow", "aria-label": "New topic", value: topic, placeholder: "A new topic for this series", onChange: function (event) { setTopic(event.target.value); } }),
+        h("button", { type: "submit", className: "hs-tab", disabled: props.busy || !topic.trim() }, "Open in the composer"))
+        : h("p", { className: "hs-note" }, "Every saved series is paused."));
   }
-
   function SeriesDesk(props) {
     const desk = (props.studio && props.studio.series) || { items: [], suggestions: [] };
     const [draft, setDraft] = useState({ name: "", structure: "", hook: "", media: "", examples: "", tags: "" });
@@ -2671,17 +2833,20 @@
     const board = (props.studio && props.studio.ideas) || { ideas: [], sources: ["spark", "competitor", "trend", "question"], priorities: ["low", "normal", "high"] };
     const [mode, setMode] = useState("board");
     const [source, setSource] = useState("all");
+    const [more, setMore] = useState(false);
     const [draft, setDraft] = useState({ text: "", source: "spark", priority: "normal", tags: "", note: "", link: "" });
     const [suggested, setSuggested] = useState([]);
+    const [kept, setKept] = useState({});
     const ideas = (board.ideas || []).filter(function (item) {
       return source === "all" || item.source === source;
     });
-    function setField(field, value) {
-      setDraft(function (current) { return Object.assign({}, current, { [field]: value }); });
+    const sources = board.sources || [];
+    function setField(name, value) {
+      setDraft(function (current) { return Object.assign({}, current, { [name]: value }); });
     }
-    function save(event) {
+    async function save(event) {
       event.preventDefault();
-      props.onSave({
+      const saved = await props.onSave({
         text: draft.text,
         source: draft.source,
         priority: draft.priority,
@@ -2689,77 +2854,100 @@
         note: draft.note,
         link: draft.link,
       });
-      setDraft({ text: "", source: draft.source, priority: draft.priority, tags: "", note: "", link: "" });
+      if (saved) setDraft({ text: "", source: draft.source, priority: draft.priority, tags: "", note: "", link: "" });
     }
-    function card(item) {
-      return h("div", { key: item.id, className: "hs-pillar" },
-        h("div", { className: "hs-name" }, item.source_label + " · " + item.priority),
+    function card(item, inColumn) {
+      return h("li", { key: item.id, className: "hs-idea" },
+        h("div", { className: "hs-row hs-gap-xs" },
+          inColumn === true ? null : h("span", { className: "hs-meta" }, item.source_label),
+          item.priority === "high" ? h("span", { className: "hs-tag is-warn" }, "High") : item.priority === "low" ? h("span", { className: "hs-tag" }, "Low") : null,
+          item.status === "drafted" ? h("span", { className: "hs-tag" }, "Drafted") : null),
         h("p", { className: "hs-voice" }, item.text),
         item.note ? h("p", { className: "hs-note" }, item.note) : null,
         item.pattern ? h("p", { className: "hs-note" }, item.pattern) : null,
-        item.performed ? h("p", { className: "hs-ok" }, "This draft has a post that is at least 3× the others.") : null,
-        (item.tags || []).length ? h("p", { className: "hs-note" }, item.tags.join(", ")) : null,
-        item.link ? h("a", { href: item.link, target: "_blank", rel: "noopener noreferrer" }, "Open the link") : null,
-        h("button", {
-          type: "button", className: "hs-button", disabled: props.busy,
-          onClick: function () { props.onDraft(item.id); },
-        }, item.status === "drafted" ? "Open the draft" : "Make this a draft"));
+        item.performed ? h("p", { className: "hs-ok" }, "Its draft has a post at least 3× the others.") : null,
+        (item.tags || []).length ? h("div", { className: "hs-row hs-gap-xs" }, item.tags.map(function (tag) { return h("span", { key: tag, className: "hs-tag hs-tag-flat" }, tag); })) : null,
+        h("div", { className: "hs-row hs-spread" },
+          h("button", { type: "button", className: "hs-tab hs-tab-sm", disabled: props.busy, onClick: function () { props.onDraft(item.id); } },
+            item.status === "drafted" ? "Open the draft" : "Make this a draft"),
+          item.link ? h("a", { href: item.link, target: "_blank", rel: "noopener noreferrer", className: "hs-meta" }, "Link") : null));
     }
-    const columns = (board.sources || []).map(function (name) {
+    const columns = sources.map(function (name) {
       return { id: name, items: ideas.filter(function (item) { return item.source === name; }) };
     });
+    const shapes = board.shapes || [];
+    const comments = board.comments || [];
+    const archive = board.archive || [];
     return h("div", { className: "hs-main" },
+      h(Section, { title: "Capture an idea" },
+        h("form", { className: "hs-stack", onSubmit: save },
+          field("The idea, still rough", h("textarea", { className: "hs-area hs-short", value: draft.text, onChange: function (event) { setField("text", event.target.value); } })),
+          h("div", { className: "hs-row" },
+            h("select", { className: "hs-field hs-w-md", "aria-label": "Source", value: draft.source, onChange: function (event) { setField("source", event.target.value); } },
+              sources.map(function (item) { return h("option", { key: item, value: item }, item); })),
+            h("select", { className: "hs-field hs-w-md", "aria-label": "Priority", value: draft.priority, onChange: function (event) { setField("priority", event.target.value); } },
+              (board.priorities || []).map(function (item) { return h("option", { key: item, value: item }, item + " priority"); })),
+            h("button", { type: "submit", className: "hs-button", disabled: props.busy || !draft.text.trim() }, "Save idea"),
+            h("button", { type: "button", className: "hs-link-button", "aria-expanded": more, onClick: function () { setMore(!more); } }, more ? "Fewer fields" : "Tags, link, note…")),
+          more ? h("div", { className: "hs-grid-3" },
+            field("Tags", h("input", { className: "hs-field", value: draft.tags, placeholder: "Comma separated", onChange: function (event) { setField("tags", event.target.value); } })),
+            field("Link", h("input", { className: "hs-field", value: draft.link, placeholder: "https://", onChange: function (event) { setField("link", event.target.value); } })),
+            field("Note", h("input", { className: "hs-field", value: draft.note, onChange: function (event) { setField("note", event.target.value); } }))) : null),
+        h("div", { className: "hs-row" },
+          h("button", {
+            type: "button", className: "hs-tab", disabled: props.busy,
+            onClick: async function () {
+              const found = props.onSuggest ? await props.onSuggest() : null;
+              if (found && found.ideas) { setSuggested(found.ideas); setKept({}); }
+            },
+          }, "Suggest from the voice"),
+          suggested.length ? h("button", { type: "button", className: "hs-link-button", onClick: function () { setSuggested([]); } }, "Clear suggestions") : null),
+        suggested.length ? h("ul", { className: "hs-options" }, suggested.map(function (text, index) {
+          return h("li", { key: "s" + index, className: "hs-option" },
+            h("div", { className: "hs-option-text" }, text),
+            h("div", { className: "hs-row hs-spread" },
+              h("button", {
+                type: "button", className: "hs-tab hs-tab-sm", disabled: props.busy || kept[index],
+                onClick: async function () {
+                  const saved = await props.onSave({ text: text, source: "spark", priority: "normal" });
+                  if (saved) setKept(function (current) { return Object.assign({}, current, { [index]: true }); });
+                },
+              }, kept[index] ? "Kept" : "Keep as an idea"),
+              h(FeedbackButtons, { kind: "ideas", target: text, busy: props.busy, onFeedback: props.onFeedback })));
+        })) : null,
+        board.lesson && board.lesson.detail ? h("p", { className: "hs-note" }, board.lesson.detail) : null),
       h(SeriesApply, { series: props.studio && props.studio.series, busy: props.busy, onApply: props.onApplySeries }),
-      h("form", { className: "hs-cols", onSubmit: save },
-        h("textarea", { className: "hs-area", value: draft.text, placeholder: "The idea, still rough", onChange: function (event) { setField("text", event.target.value); } }),
-        h("select", { className: "hs-field", value: draft.source, onChange: function (event) { setField("source", event.target.value); } },
-          (board.sources || []).map(function (item) { return h("option", { key: item, value: item }, item); })),
-        h("select", { className: "hs-field", value: draft.priority, onChange: function (event) { setField("priority", event.target.value); } },
-          (board.priorities || []).map(function (item) { return h("option", { key: item, value: item }, item); })),
-        h("input", { className: "hs-field", value: draft.tags, placeholder: "Tags, comma separated", onChange: function (event) { setField("tags", event.target.value); } }),
-        h("input", { className: "hs-field", value: draft.link, placeholder: "Link, if you have one", onChange: function (event) { setField("link", event.target.value); } }),
-        h("input", { className: "hs-field", value: draft.note, placeholder: "Note", onChange: function (event) { setField("note", event.target.value); } }),
-        h("button", { type: "submit", className: "hs-button", disabled: props.busy || !draft.text.trim() }, "Save idea")),
-      h("div", { className: "hs-row" },
-        h("button", { type: "button", className: "hs-button", disabled: props.busy, onClick: async function () {
-          const found = props.onSuggest ? await props.onSuggest() : null;
-          if (found && found.ideas) setSuggested(found.ideas);
-        } }, "Suggest from the voice"),
-        (suggested || []).map(function (text, index) {
-          return h("button", { key: index, type: "button", className: "hs-tab", disabled: props.busy, onClick: function () { props.onSave({ text: text, source: "spark", priority: "normal" }); } }, "Keep");
-        })),
-      (suggested || []).map(function (text, index) {
-        return h("div", { key: "s" + index },
-          h("p", { className: "hs-voice" }, text),
-          h(FeedbackButtons, { kind: "ideas", target: text, busy: props.busy, onFeedback: props.onFeedback }));
-      }),
-      h("p", { className: "hs-note" }, (board.lesson && board.lesson.detail) || ""),
-      h("div", { className: "hs-name" }, "Ahead after a draft"),
-      (board.archive || []).length ? (board.archive || []).map(card) : h("p", { className: "hs-note" }, "No drafted idea has a post that is at least 3× the others yet."),
-      h("div", { className: "hs-name" }, "Shapes from posts that are ahead"),
-      (board.shapes || []).length ? (board.shapes || []).map(function (item) {
-        return h("div", { key: item.id, className: "hs-row" },
-          h("span", { className: "hs-note" }, item.engagements + " · " + item.preview),
-          h("button", { type: "button", className: "hs-tab", disabled: props.busy, onClick: function () { props.onKeep(item.id); } }, "Keep this shape"));
-      }) : h("p", { className: "hs-note" }, "No post is at least 3× the others."),
-      h("div", { className: "hs-name" }, "Comments to keep"),
-      (board.comments || []).map(function (item) {
-        return h("div", { key: item.id, className: "hs-row" },
-          h("span", { className: "hs-note" }, item.text),
-          h("button", { type: "button", className: "hs-tab", disabled: props.busy, onClick: function () { props.onSave({ text: item.text, source: "comment", inbox_id: item.id, note: item.author || "" }); } }, "Keep"));
-      }),
-      h("div", { className: "hs-row" },
-        h("button", { type: "button", className: "hs-tab" + (mode === "board" ? " is-on" : ""), onClick: function () { setMode("board"); } }, "Board"),
-        h("button", { type: "button", className: "hs-tab" + (mode === "list" ? " is-on" : ""), onClick: function () { setMode("list"); } }, "List"),
-        h("button", { type: "button", className: "hs-tab" + (source === "all" ? " is-on" : ""), onClick: function () { setSource("all"); } }, "All"),
-        (board.sources || []).map(function (item) {
-          return h("button", { key: item, type: "button", className: "hs-tab" + (source === item ? " is-on" : ""), onClick: function () { setSource(item); } }, item);
-        })),
-      mode === "board" ? h("div", { className: "hs-board" }, columns.map(function (column) {
-        return h("div", { key: column.id },
-          h("div", { className: "hs-name" }, column.id),
-          column.items.length ? column.items.map(card) : h("p", { className: "hs-note" }, "Empty"));
-      })) : h("div", null, ideas.length ? ideas.map(card) : h("p", { className: "hs-note" }, "No ideas yet.")),
+      h("div", { className: "hs-cal-toolbar" },
+        h("div", { className: "hs-row hs-gap-sm" },
+          h(Segmented, { label: "Layout", value: mode, options: [["board", "Board"], ["list", "List"]], onChange: setMode }),
+          h("select", { className: "hs-field hs-w-lg", "aria-label": "Source", value: source, onChange: function (event) { setSource(event.target.value); } },
+            h("option", { value: "all" }, "Every source · " + (board.ideas || []).length),
+            sources.map(function (item) {
+              const n = (board.ideas || []).filter(function (idea) { return idea.source === item; }).length;
+              return h("option", { key: item, value: item }, item + " · " + n);
+            })))),
+      !(board.ideas || []).length ? h(Empty, null, "No ideas yet. Capture one above, or ask the voice for a few.")
+        : mode === "board" ? h("div", { className: "hs-board" }, columns.filter(function (column) { return source === "all" || column.id === source; }).map(function (column) {
+          return h("div", { key: column.id, className: "hs-column" },
+            h("div", { className: "hs-column-head" }, h("span", null, column.id), h("span", { className: "hs-meta" }, column.items.length)),
+            column.items.length ? h("ul", { className: "hs-ideas" }, column.items.map(function (item) { return card(item, true); })) : h("p", { className: "hs-note hs-column-empty" }, "Nothing here."));
+        }))
+          : ideas.length ? h("ul", { className: "hs-ideas" }, ideas.map(function (item) { return card(item); })) : h("p", { className: "hs-note" }, "No ideas from this source."),
+      h(Section, { title: "From the posts", note: "Only what the posts already show. Nothing here is a predicted score.", collapsible: true, open: !!(shapes.length || comments.length) },
+        h("div", { className: "hs-name" }, "Ahead after a draft"),
+        archive.length ? h("ul", { className: "hs-ideas" }, archive.map(function (item) { return card(item); })) : h("p", { className: "hs-note" }, "No drafted idea has a post that is at least 3× the others yet."),
+        h("div", { className: "hs-name" }, "Shapes from posts that are ahead"),
+        shapes.length ? h("ul", { className: "hs-rows" }, shapes.map(function (item) {
+          return h("li", { key: item.id, className: "hs-list-row" },
+            h("div", { className: "hs-list-main" }, h("div", null, item.preview), h("div", { className: "hs-meta" }, item.engagements + " engagements")),
+            h("button", { type: "button", className: "hs-tab hs-tab-sm", disabled: props.busy, onClick: function () { props.onKeep(item.id); } }, "Keep this shape"));
+        })) : h("p", { className: "hs-note" }, "No post is at least 3× the others."),
+        h("div", { className: "hs-name" }, "Comments to keep"),
+        comments.length ? h("ul", { className: "hs-rows" }, comments.map(function (item) {
+          return h("li", { key: item.id, className: "hs-list-row" },
+            h("div", { className: "hs-list-main" }, h("div", null, item.text), item.author ? h("div", { className: "hs-meta" }, item.author) : null),
+            h("button", { type: "button", className: "hs-tab hs-tab-sm", disabled: props.busy, onClick: function () { props.onSave({ text: item.text, source: "comment", inbox_id: item.id, note: item.author || "" }); } }, "Keep as an idea"));
+        })) : h("p", { className: "hs-note" }, "No comment is asking for a post yet.")),
     );
   }
 
