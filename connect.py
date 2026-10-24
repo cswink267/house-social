@@ -4,7 +4,8 @@ The house Meta app and the house Threads app sign a person in. The sign-in
 comes back to the dashboard with a code. Here the code becomes tokens, the
 person picks which Page and which accounts belong to the brand, and only the
 chosen tokens are written to the vault. Tokens wait in memory while the person
-picks; they never touch state.json. Nothing in this module sends a post.
+picks; they never touch state.json. The sign-in asks to read and to post;
+posting itself happens in publish.py, only when it is switched on.
 """
 
 from __future__ import annotations
@@ -29,20 +30,28 @@ THREADS_DIALOG = "https://threads.com/oauth/authorize"
 THREADS_TOKEN = "https://graph.threads.net/oauth/access_token"
 THREADS_LONG_TOKEN = "https://graph.threads.net/access_token"
 
-# Read only. Nothing here asks to publish.
+# Reading, plus posting. Posting stays off until House settings and the brand turn it on.
 META_SCOPES = (
     "pages_show_list",
     "pages_read_engagement",
     "pages_read_user_content",
+    "pages_manage_posts",
     "read_insights",
     "pages_messaging",
     "business_management",
     "instagram_basic",
+    "instagram_content_publish",
     "instagram_manage_insights",
     "instagram_manage_comments",
     "instagram_manage_messages",
 )
-THREADS_SCOPES = ("threads_basic", "threads_read_replies", "threads_manage_insights")
+THREADS_SCOPES = (
+    "threads_basic",
+    "threads_content_publish",
+    "threads_delete",
+    "threads_read_replies",
+    "threads_manage_insights",
+)
 
 PROVIDERS = {"meta": "Meta", "threads": "Threads"}
 PENDING_SECONDS = 30 * 60
@@ -228,6 +237,7 @@ def choose_accounts(
             "token_vault": f"vault:{_vault_name(brand.id, row['platform'])}",
             "via": "login",
             "connected_at": stamp,
+            **({"scopes": list(choice["scopes"])} if isinstance(choice.get("scopes"), list) else {}),
             **{key: value for key, value in row.items() if value},
         })
     updated["connections"] = [*kept, *fresh]
@@ -306,6 +316,7 @@ def _meta_accounts(call, app_id: str, secret: str, redirect_uri: str, code: str)
     user_token = str(long.get("access_token") or "")
     if not user_token:
         raise DraftError("Facebook did not return a long-lived token. Press Connect again.")
+    granted = _granted(call, user_token)
     payload = call("GET", f"{GRAPH}/me/accounts", {
         "fields": "id,name,username,category,access_token,instagram_business_account{id,username,name}",
         "limit": "100",
@@ -341,7 +352,19 @@ def _meta_accounts(call, app_id: str, secret: str, redirect_uri: str, code: str)
             "Facebook returned no Pages. In the sign-in window, choose this brand's Page when Facebook asks which Pages to share, "
             "and sign in as someone who manages it."
         )
-    return {"pages": pages}
+    return {"pages": pages, "scopes": granted}
+
+
+def _granted(call, user_token: str) -> list[str] | None:
+    """The permissions the person actually allowed. They can untick some."""
+    try:
+        body = call("GET", f"{GRAPH}/me/permissions", {"access_token": user_token})
+    except DraftError:
+        return None
+    rows = body.get("data") if isinstance(body, dict) else None
+    if not isinstance(rows, list):
+        return None
+    return sorted(str(row.get("permission")) for row in rows if isinstance(row, dict) and row.get("status") == "granted")
 
 
 def _threads_account(call, app_id: str, secret: str, redirect_uri: str, code: str, now: int) -> dict:
@@ -373,6 +396,7 @@ def _threads_account(call, app_id: str, secret: str, redirect_uri: str, code: st
     return {
         "token": token,
         "expires_at": expires_at,
+        "scopes": list(THREADS_SCOPES),
         "threads": {
             "id": str(me["id"]),
             "username": str(me.get("username") or "")[:80],

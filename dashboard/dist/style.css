@@ -1046,7 +1046,8 @@ button.hs-bar-col { cursor: pointer; }
 .hs-more[open] > summary { margin-bottom: 6px; }
 .hs-align-start { align-items: start; }
 .hs-list-row.is-focus { box-shadow: inset 3px 0 0 var(--hs-accent); background: var(--hs-accent-soft); }
-.hs-list-row.is-muted .hs-list-main { opacity: 0.6; }
+.hs-list-row.is-muted .hs-list-main, .hs-list-row.is-muted .hs-list-main strong, .hs-list-row.is-muted .hs-list-main .hs-meta { color: var(--hs-muted); }
+.hs-list-row.is-muted .hs-list-main strong { text-decoration: line-through; }
 
 /* ---- Calendar -------------------------------------------------------- */
 
@@ -1278,6 +1279,7 @@ button.hs-bar-col { cursor: pointer; }
 .hs-q-pending { border-left-color: var(--hs-warn); }
 .hs-q-scheduled { border-left-color: var(--hs-ok); }
 .hs-q-failed { border-left-color: var(--hs-danger); }
+.hs-q-published { border-left-color: var(--hs-ok); background: color-mix(in srgb, var(--hs-ok) 5%, transparent); }
 .hs-bulk {
   position: sticky;
   top: 8px;

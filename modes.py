@@ -2,8 +2,8 @@
 
 Callers: studio, the mode routes, and the Brief desk. Manual is the
 default. Approval can draft and must not schedule. Auto can schedule
-only after an explicit confirm, and nothing is sent. The user said
-continue, and this is the operating-modes item.
+only after an explicit confirm. A piece the desk drafts here is a
+placeholder until someone writes it, and a placeholder never posts.
 """
 
 from __future__ import annotations
@@ -96,7 +96,7 @@ def prepare_batch(state: dict, brand_id: str, path: Path | None = None) -> dict:
         raise DraftError("Nothing learned is clear enough to draft.")
     idea = ("Proposed from the hour that is ahead. " + str(hour.get("detail") or ""))[:500]
     piece = create_piece(state, brand.id, idea, path, status="planned")
-    current = _load(path, state)
+    current = _placeholder(_load(path, state), piece["id"], path)
     from support import mail_notice
 
     notice = mail_notice(state, brand.id)
@@ -168,7 +168,7 @@ def run_auto(state: dict, brand_id: str, path: Path | None = None) -> dict:
     _within_limit(state, brand.id, limits)
     idea = ("Scheduled from the hour that is ahead. " + str(hour.get("detail") or ""))[:500]
     piece = create_piece(state, brand.id, idea, path, status="planned")
-    current = _load(path, state)
+    current = _placeholder(_load(path, state), piece["id"], path)
     held = mix_hold(current, brand.id, str(piece.get("format") or "feed"), str(piece.get("pillar") or ""))
     if held:
         current = _log(current, brand.id, "auto", "hold", piece["id"], "mix", held)
@@ -177,11 +177,11 @@ def run_auto(state: dict, brand_id: str, path: Path | None = None) -> dict:
     hold = int(limits.get("hold_hours") or 0)
     if hold:
         _hold(current, piece["id"], hold, path)
-        outcome = f"Held for {hold} hours. No publisher is attached. The piece was not sent."
+        outcome = f"Held for {hold} hours. It was not sent; write the post before it can go out."
     else:
         try:
             _approve(current, piece, {"hour": hour.get("hour"), "idea": piece["idea"]}, path)
-            outcome = "Scheduled. No publisher is attached. The piece was not sent."
+            outcome = "Scheduled the slot. It was not sent; write the post before it can go out."
         except DraftError as exc:
             current = _log(_load(path, current), brand.id, "auto", "run", piece["id"], "guards", str(exc))
             save(current, path)
@@ -193,6 +193,51 @@ def run_auto(state: dict, brand_id: str, path: Path | None = None) -> dict:
     if made.get("posted"):
         raise DraftError("A batch must not send a post.")
     return mode_view(fresh, brand.id)
+
+
+def agent_schedule(state: dict, piece_id: str, when: str, path: Path | None = None) -> dict:
+    """The agent picks a time for a piece it wrote.
+
+    Fully autonomous approves it and schedules it within the brand's limits.
+    The other modes send it for review; approval then schedules it.
+    """
+    from approval import submit_review
+    from store import _find, save, update_piece
+    from support import assert_running
+
+    _index, piece = _find(state, piece_id)
+    brand_id = str(piece.get("brand_id") or "")
+    if piece.get("placeholder"):
+        raise DraftError("Write the post first. A placeholder is never scheduled to post.")
+    if not str(when or "").strip():
+        raise DraftError("Pick a time.")
+    update_piece(state, piece_id, scheduled_for=when, path=path)
+    current = _load(path, state)
+    mode = _mode(current, brand_id)
+    if mode != "auto":
+        submit_review(current, piece_id, path)
+        logged = _log(_load(path, current), brand_id, mode, "submit", piece_id, "agent", "Sent for review. It is scheduled once approved.")
+        save(logged, path)
+        return {"piece_id": piece_id, "status": "pending", "detail": "Sent for review. It is scheduled once it is approved."}
+    assert_running(current, brand_id)
+    _within_limit(current, brand_id, _limits(current, brand_id))
+    updated = copy.deepcopy(current)
+    target = next(row for row in updated["pieces"] if row.get("id") == piece_id)
+    target["approval"] = {
+        **(target.get("approval") or {}),
+        "complete": True,
+        "step": 0,
+        "by": "auto",
+        "trail": [
+            *((target.get("approval") or {}).get("trail") or []),
+            {"id": str(uuid.uuid4()), "at": _now(), "author": "Fully autonomous", "action": "approved", "text": "Approved by the brand's mode."},
+        ][-40:],
+    }
+    save(updated, path)
+    scheduled = update_piece(_load(path, updated), piece_id, status="scheduled", path=path)
+    logged = _log(_load(path, updated), brand_id, "auto", "schedule", piece_id, "agent", f"Scheduled for {scheduled['scheduled_for']}.")
+    save(logged, path)
+    return {"piece_id": piece_id, "status": "scheduled", "detail": f"Scheduled for {scheduled['scheduled_for']}."}
 
 
 def _approve(state: dict, piece: dict, item: dict, path: Path | None) -> None:
@@ -216,6 +261,16 @@ def _approve(state: dict, piece: dict, item: dict, path: Path | None) -> None:
     scheduled = update_piece(_load(path, updated), piece["id"], status="scheduled", path=path)
     if scheduled.get("posted"):
         raise DraftError("A batch must not send a post.")
+
+
+def _placeholder(state: dict, piece_id: str, path: Path | None) -> dict:
+    from store import save
+
+    updated = copy.deepcopy(state)
+    target = next(row for row in updated["pieces"] if row.get("id") == piece_id)
+    target["placeholder"] = True
+    save(updated, path)
+    return updated
 
 
 def _hold(state: dict, piece_id: str, hours: int, path: Path | None) -> None:
@@ -378,9 +433,8 @@ def _log(state: dict, brand_id: str, mode: str, action: str, piece_id: str, reas
 def _load(path: Path | None, state: dict) -> dict:
     from store import load
 
-    if path:
-        return load(path)
-    return state
+    # Saves without a path land in the default file, so read that back too.
+    return load(path) if path else load()
 
 
 def _now() -> str:

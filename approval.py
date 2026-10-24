@@ -2,7 +2,8 @@
 
 Draft, then needs review, then approved, then scheduled.
 One step is the default. More names make it a sequence.
-The desk does not send mail or a post.
+An approved piece that already has a future time is scheduled at once,
+so it posts then if posting is on for the brand.
 """
 
 from __future__ import annotations
@@ -118,11 +119,18 @@ def decide(state: dict, piece_id: str, spec: dict, path: Path | None = None) -> 
     updated = _with_piece(state, piece_id, lambda item: {**item, "approval": approval})
     save(updated, path)
     current = load(path) if path else load()
-    update_piece(current, piece_id, status="approved", path=path)
+    saved = update_piece(current, piece_id, status="approved", path=path)
     current = load(path) if path else load()
-    current = _notify(current, piece, f"{_title(piece)} is approved.")
+    status = "approved"
+    when = _future(saved.get("scheduled_for"))
+    if when:
+        update_piece(current, piece_id, status="scheduled", path=path)
+        current = load(path) if path else load()
+        status = "scheduled"
+    text = f"{_title(piece)} is approved." + (f" It is scheduled for {when}." if when else "")
+    current = _notify(current, piece, text)
     save(current, path)
-    return {"status": "approved", "piece_id": piece_id}
+    return {"status": status, "piece_id": piece_id}
 
 
 def mark_notice(state: dict, notice_id: str, path: Path | None = None) -> dict:
@@ -325,6 +333,19 @@ def _notice(notice: dict) -> dict:
 def _title(piece: dict) -> str:
     text = str(piece.get("idea") or "A piece").strip()
     return text[:80]
+
+
+def _future(value) -> str:
+    """The scheduled time when it is still ahead, as the desk shows it."""
+    try:
+        moment = datetime.fromisoformat(str(value or ""))
+    except ValueError:
+        return ""
+    if moment.tzinfo is None:
+        moment = moment.replace(tzinfo=timezone.utc)
+    if moment <= datetime.now(timezone.utc):
+        return ""
+    return str(value)[:16].replace("T", " ")
 
 
 def _now() -> str:

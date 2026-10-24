@@ -74,3 +74,18 @@ def test_reject_keeps_feedback_and_auto_still_does_not_send(tmp_path: Path):
     made = next(item for item in load(path)["pieces"] if item.get("status") == "scheduled")
     assert made["posted"] is False
     assert any("not sent" in item["outcome"] for item in ran["log"])
+
+
+def test_a_batch_keeps_its_piece_when_saved_to_the_default_file(tmp_path: Path, monkeypatch):
+    # The dashboard calls these without a path, so each step must read the file back.
+    monkeypatch.setenv("HOUSE_SOCIAL_STATE", str(tmp_path / "state.json"))
+    from store import save
+
+    state = empty_state()
+    state["history"] = _posts()
+    save(state)
+    set_mode(load(), "okay", "approval")
+    prepared = prepare_batch(load(), "okay")
+    piece_id = prepared["batch"]["pieces"][0]["piece_id"]
+    saved = next(item for item in load()["pieces"] if item["id"] == piece_id)
+    assert saved["placeholder"] is True

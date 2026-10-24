@@ -439,6 +439,5 @@ def _preview(state: dict, brand_id: str, preview_id: str) -> dict:
 def _load(path: Path | None, state: dict) -> dict:
     from store import load
 
-    if path:
-        return load(path)
-    return state
+    # Saves without a path land in the default file, so read that back too.
+    return load(path) if path else load()
