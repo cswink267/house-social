@@ -2802,7 +2802,7 @@
           const y = height - 16 - ((point.value || 0) / max) * (height - 28);
           return (index ? "L" : "M") + x + " " + y;
         }).join(" ");
-        return h("path", { key: row.platform, d: d, fill: "none", stroke: colors[row.platform] || "#8aa4b5", "stroke-width": 2 });
+        return h("path", { key: row.platform, d: d, fill: "none", stroke: colors[row.platform] || "#8aa4b5", strokeWidth: 2 });
       }));
   }
 
