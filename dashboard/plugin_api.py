@@ -128,10 +128,64 @@ def post_mode(brand_id: str, body: dict) -> dict:
         if action == "run":
             return run_auto(state, brand_id)
         if action in {"approve", "reject"}:
-            return decide_batch(state, brand_id, str(spec.get("piece_id") or ""), action)
+            return decide_batch(
+                state,
+                brand_id,
+                str(spec.get("piece_id") or ""),
+                action,
+                teach=str(spec.get("teach") or ""),
+                phrase=str(spec.get("phrase") or ""),
+            )
         if action == "limits":
             return set_limits(state, brand_id, spec)
         return set_mode(state, brand_id, str(spec.get("mode") or "manual"), confirm=bool(spec.get("confirm")))
+    except DraftError as exc:
+        _fail(exc)
+
+
+@router.post("/brands/{brand_id}/support")
+def post_support(brand_id: str, body: dict) -> dict:
+    from support import (
+        clear_log,
+        discard_previews,
+        export_decisions,
+        fill_series,
+        preview_week,
+        promote_preview,
+        save_adapt,
+        save_mail,
+        save_mix,
+        save_pause,
+        set_series_pause,
+    )
+
+    spec = body if isinstance(body, dict) else {}
+    action = str(spec.get("action") or "").strip().lower()
+    try:
+        state = load()
+        if action == "clear":
+            return clear_log(state, brand_id)
+        if action == "mail":
+            return save_mail(state, brand_id, spec)
+        if action == "mix":
+            return save_mix(state, brand_id, spec)
+        if action == "pause":
+            return save_pause(state, brand_id, spec)
+        if action == "adapt":
+            return save_adapt(state, brand_id, spec)
+        if action == "preview":
+            return preview_week(state, brand_id)
+        if action == "promote":
+            return promote_preview(state, brand_id, str(spec.get("id") or ""))
+        if action == "discard":
+            return discard_previews(state, brand_id, str(spec.get("id") or ""))
+        if action == "export":
+            return export_decisions(state, brand_id, str(spec.get("kind") or "markdown"))
+        if action == "series":
+            return set_series_pause(state, brand_id, str(spec.get("id") or ""), bool(spec.get("paused")))
+        if action == "fill":
+            return fill_series(state, brand_id, str(spec.get("id") or ""))
+        raise DraftError("That support action is not known.")
     except DraftError as exc:
         _fail(exc)
 

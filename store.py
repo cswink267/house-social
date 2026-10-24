@@ -81,6 +81,12 @@ def empty_state() -> dict:
         "mode_batches": [],
         "mode_log": [],
         "mode_limits": {},
+        "mail_prefs": {},
+        "mix_targets": {},
+        "pauses": {},
+        "adapt_rules": {},
+        "previews": [],
+        "series_paused": {},
     }
 
 
@@ -130,6 +136,12 @@ def load(path: Path | None = None) -> dict:
     mode_batches = raw.get("mode_batches")
     mode_log = raw.get("mode_log")
     mode_limits = raw.get("mode_limits")
+    mail_prefs = raw.get("mail_prefs")
+    mix_targets = raw.get("mix_targets")
+    pauses = raw.get("pauses")
+    adapt_rules = raw.get("adapt_rules")
+    previews = raw.get("previews")
+    series_paused = raw.get("series_paused")
     return {
         "version": 1,
         "channels": channels if isinstance(channels, dict) else {},
@@ -171,6 +183,12 @@ def load(path: Path | None = None) -> dict:
         "mode_batches": mode_batches if isinstance(mode_batches, list) else [],
         "mode_log": mode_log if isinstance(mode_log, list) else [],
         "mode_limits": mode_limits if isinstance(mode_limits, dict) else {},
+        "mail_prefs": mail_prefs if isinstance(mail_prefs, dict) else {},
+        "mix_targets": mix_targets if isinstance(mix_targets, dict) else {},
+        "pauses": pauses if isinstance(pauses, dict) else {},
+        "adapt_rules": adapt_rules if isinstance(adapt_rules, dict) else {},
+        "previews": previews if isinstance(previews, list) else [],
+        "series_paused": series_paused if isinstance(series_paused, dict) else {},
     }
 
 
@@ -431,9 +449,10 @@ def remove_brand(state: dict, brand_id: str, path: Path | None = None, root: Pat
         "cross_accepted",
         "mode_batches",
         "mode_log",
+        "previews",
     ):
         updated[key] = [item for item in updated.get(key) or [] if item.get("brand_id") != name]
-    for key in ("channels", "pulls", "voices", "approval_steps", "inbox_errors", "voice_versions", "ingest_maps", "memory_marks", "studio_reads", "prediction_hidden", "sites", "cross_enabled", "modes", "mode_limits"):
+    for key in ("channels", "pulls", "voices", "approval_steps", "inbox_errors", "voice_versions", "ingest_maps", "memory_marks", "studio_reads", "prediction_hidden", "sites", "cross_enabled", "modes", "mode_limits", "mail_prefs", "mix_targets", "pauses", "adapt_rules", "series_paused"):
         current = dict(updated.get(key) or {})
         current.pop(name, None)
         updated[key] = current
@@ -717,6 +736,7 @@ def studio(state: dict, brand_id: str, ledger: dict | None = None, today=None) -
         "series": _series_view(state, brand_id, posts),
         "cross": _cross_view(state, brand_id),
         "modes": _modes_view(state, brand_id, posts),
+        "support": _support_view(state, brand_id, posts),
     }
 
 
@@ -1207,6 +1227,12 @@ def _calendar(pieces: list[dict], posts: list[dict], today) -> dict:
         days.append({"date": key, "label": f"{day.strftime('%a')} {day.day}", "pieces": items})
     unscheduled = [item for item in entries if item.get("kind") == "piece" and not item.get("date")]
     return {"days": days, "unscheduled": unscheduled, "entries": entries}
+
+
+def _support_view(state: dict, brand_id: str, posts: list[dict]) -> dict:
+    from support import support_view
+
+    return support_view(state, brand_id, posts)
 
 
 def _modes_view(state: dict, brand_id: str, posts: list[dict]) -> dict:

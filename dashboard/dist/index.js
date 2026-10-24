@@ -58,6 +58,7 @@
     const [brandId, setBrandId] = useState("josie-blackthorn");
     const [section, setSection] = useState("brief");
     const [memoryFocus, setMemoryFocus] = useState("");
+    const [closedGroups, setClosedGroups] = useState({});
     const [idea, setIdea] = useState("");
     const [pillar, setPillar] = useState("");
     const [format, setFormat] = useState("quote-image");
@@ -574,6 +575,7 @@
         h("h1", { className: "text-xl font-semibold" }, "House Social"),
         h("p", { className: "hs-lede" },
           "One desk for each brand. Brief, create, calendar, the numbers, and what the numbers are allowed to teach. Nothing is sent."),
+        studio && studio.modes ? h("p", { className: "hs-note" }, "Mode · " + (studio.modes.label || "Manual")) : null,
       ),
       error ? h("p", { className: "hs-error" }, error) : null,
       h("div", { className: "hs-layout" },
@@ -604,8 +606,10 @@
           h("div", { className: "hs-tabs" },
             groups.map(function (group) {
               return h("div", { key: group.name, className: "hs-tab-group" },
-                h("div", { className: "hs-group-label" }, group.name),
-                h("div", { className: "hs-row" },
+                h("button", { type: "button", className: "hs-group-label", onClick: function () {
+                  setClosedGroups(function (current) { return Object.assign({}, current, { [group.name]: !current[group.name] }); });
+                } }, group.name),
+                closedGroups[group.name] ? null : h("div", { className: "hs-row" },
                   group.items.map(function (item) {
                     return h("button", {
                       key: item.id,
@@ -637,6 +641,17 @@
                 });
               });
               if (saved) await refresh(brand.id);
+            },
+            onSupport: async function (body) {
+              const saved = await run(function () {
+                return SDK.fetchJSON("/api/plugins/house-social/brands/" + brand.id + "/support", {
+                  method: "POST",
+                  headers: { "Content-Type": "application/json" },
+                  body: JSON.stringify(body || {}),
+                });
+              });
+              if (saved) await refresh(brand.id);
+              return saved;
             },
             onMode: async function (body) {
               const saved = await run(function () {
@@ -1423,15 +1438,50 @@
   }
 
 
+
+  function SupportPanel(props) {
+    const support = props.support || { previews: [], mail: {}, pause: {} };
+    const [exportText, setExportText] = useState("");
+    const [phrase, setPhrase] = useState("");
+    const [filter, setFilter] = useState("all");
+    const rows = (props.log || []).filter(function (item) { return filter === "all" || item.mode === filter || item.action === filter; });
+    return h("div", { className: "hs-pillar" },
+      h("div", { className: "hs-name" }, "Support"),
+      h("p", { className: "hs-note" }, "Preview does not schedule or email. A hard mix target holds a piece. A pause stops new work and leaves what is already scheduled."),
+      h("div", { className: "hs-row" },
+        h("button", { type: "button", className: "hs-tab", disabled: props.busy, onClick: function () { props.onSupport({ action: "preview" }); } }, "Preview next week"),
+        h("button", { type: "button", className: "hs-tab", disabled: props.busy, onClick: function () { props.onSupport({ action: "discard" }); } }, "Discard preview"),
+        h("button", { type: "button", className: "hs-tab", disabled: props.busy, onClick: async function () { const saved = await props.onSupport({ action: "export", kind: "markdown" }); if (saved && saved.body) setExportText(saved.body); } }, "Export decisions"),
+        h("button", { type: "button", className: "hs-tab", disabled: props.busy, onClick: function () { props.onSupport({ action: "clear" }); } }, "Clear log")),
+      exportText ? h("textarea", { className: "hs-area", readOnly: true, value: exportText }) : null,
+      (support.previews || []).slice(0, 3).map(function (item) {
+        return h("p", { key: item.id, className: "hs-note" }, (item.stale ? "Stale preview" : "Preview") + " · " + item.date,
+          h("button", { type: "button", className: "hs-tab", disabled: props.busy || item.stale, onClick: function () { props.onSupport({ action: "promote", id: item.id }); } }, "Make a draft"));
+      }),
+      h("div", { className: "hs-row" },
+        h("select", { className: "hs-field", value: filter, onChange: function (event) { setFilter(event.target.value); } },
+          ["all", "manual", "approval", "auto", "prepare", "approve", "reject", "clear"].map(function (item) { return h("option", { key: item, value: item }, item); }))),
+      rows.slice(0, 8).map(function (item, index) { return h("p", { key: index, className: "hs-note" }, (item.mode || "") + " · " + item.action + " · " + item.outcome); }),
+      h("div", { className: "hs-row" },
+        h("input", { className: "hs-field", value: phrase, placeholder: "Phrase to ban, or a pause date pair start,end", onChange: function (event) { setPhrase(event.target.value); } }),
+        h("button", { type: "button", className: "hs-tab", disabled: props.busy || !phrase.trim(), onClick: function () {
+          const parts = phrase.split(",");
+          if (parts.length === 2 && /^\d{4}-\d{2}-\d{2}$/.test(parts[0].trim())) props.onSupport({ action: "pause", start: parts[0].trim(), end: parts[1].trim() });
+          else props.onSupport({ action: "mail", cadence: "digest", body: "short", quiet_start: 22, quiet_end: 7 });
+        } }, "Save pause or quiet mail")));
+  }
+
   function ModePanel(props) {
     const mode = props.mode || { mode: "manual", label: "Manual", rate: "", notice: "", batch: null, log: [], can_prepare: false, can_run: false };
     const [pick, setPick] = useState(mode.mode || "manual");
+    const [teach, setTeach] = useState("");
     const batch = mode.batch;
     return h("div", { className: "hs-pillar" },
       h("div", { className: "hs-name" }, "Mode · " + (mode.label || "Manual")),
       h("p", { className: "hs-note" }, "Manual does every step. Approval can draft a piece and will not schedule it. Fully autonomous can schedule one piece after you confirm, and nothing is sent."),
       mode.rate ? h("p", { className: "hs-note" }, mode.rate) : null,
       mode.notice ? h("p", { className: "hs-bad" }, mode.notice) : null,
+      h("input", { className: "hs-field", value: teach, placeholder: "Phrase to ban if you reject", onChange: function (event) { setTeach(event.target.value); } }),
       h("div", { className: "hs-row" },
         h("select", { className: "hs-field", value: pick, onChange: function (event) { setPick(event.target.value); } },
           h("option", { value: "manual" }, "Manual"),
@@ -1446,7 +1496,7 @@
           item.posted ? " · sent" : "",
           !item.decision && item.status ? h("span", null,
             h("button", { type: "button", className: "hs-tab", disabled: props.busy, onClick: function () { props.onMode({ action: "approve", piece_id: item.piece_id }); } }, "Approve"),
-            h("button", { type: "button", className: "hs-tab", disabled: props.busy, onClick: function () { props.onMode({ action: "reject", piece_id: item.piece_id }); } }, "Reject")) : null);
+            h("button", { type: "button", className: "hs-tab", disabled: props.busy, onClick: function () { props.onMode({ action: "reject", piece_id: item.piece_id, teach: teach.trim() ? "banned" : "discard", phrase: teach.trim() }); } }, teach.trim() ? "Reject and ban" : "Reject")) : null);
       }) : null,
       (mode.log || []).slice(0, 4).map(function (item, index) { return h("p", { key: index, className: "hs-note" }, item.action + " · " + item.outcome); }));
   }
@@ -1455,7 +1505,13 @@
     const brand = props.brand;
     const [site, setSite] = useState(brand.site || "");
     const link = /^https?:\/\//.test(site.trim()) ? site.trim() : "";
+    const health = props.studio && props.studio.support && props.studio.support.health;
     return h("div", { className: "hs-main" },
+      health ? h("div", { className: "hs-pillar" },
+        h("div", { className: "hs-name" }, "Health · " + (health.mode || "manual")),
+        h("p", { className: "hs-note" }, "Last ingest: " + health.ingest + ". Based on " + health.posts + " posts. " + (health.rate || "")),
+        health.hint ? h("p", { className: "hs-note" }, health.hint) : null,
+        (health.guards || []).map(function (guard) { return h("p", { key: guard, className: "hs-note" }, guard); })) : null,
       h("p", { className: "hs-voice" }, brand.audience || brand.voice),
       h(StudioRead, { read: props.studio && props.studio.studio_read, busy: props.busy, onPull: props.onPull }),
       h("p", { className: "hs-voice" }, brand.voice),
@@ -1485,6 +1541,7 @@
         }),
         " Include this brand in cross-brand. It stays off until you check it. Only the counts are compared."),
       h(ModePanel, { mode: props.studio && props.studio.modes, busy: props.busy, onMode: props.onMode }),
+      h(SupportPanel, { support: props.studio && props.studio.support, log: props.studio && props.studio.modes && props.studio.modes.log, busy: props.busy, onSupport: props.onSupport }),
       h("div", { className: "hs-cols" }, PLATFORMS.map(function (pair) {
         return h("label", { key: pair[0], className: "hs-meta" }, pair[1],
           h("input", {

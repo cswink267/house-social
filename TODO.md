@@ -2,7 +2,7 @@
 
 Chris, Oct 22 2026. These are extras. The order is locked. One at a time, when he asks. Do not pull the next one forward. Do not delete an item. Mark it complete when it is done.
 
-Item 1 through item 7 are complete. The rest are not started.
+Item 1 through item 8 are complete. The rest are not started.
 
 Ingest history, then make the knowledge visible and correctable, then apply it while writing, then capture reusable formats and explicit feedback, then, only if he still wants it, look across brands.
 
@@ -198,7 +198,7 @@ The three modes are progressive. Manual is the starting point. Autonomous-with-a
 
 ## 8. Additional features that support the modes and the learning loop
 
-**Status: not started.**
+**Status: complete.** Brief opens with a health card: mode, last ingest or none, post count, and the approval line. The log can be filtered and cleared, and the clear is logged. Mail can be digest or quiet hours, and it still is not sent. Reject can ban a phrase. A hard mix target holds a piece and names the count. Preview next week does not schedule or email. A series can pause, and a fill uses a pillar this brand already has. Josie stays a quote image. A pause blocks new work. Export is markdown, redacted. Group headers collapse. The current mode shows at the top.
 
 These are optional. None of them are started. They can be built after the three modes exist, or alongside them when they make a mode safer or clearer. A missing number stays missing. Nothing is sent until the active mode and the approval rules allow it. Tokens stay in the vault. A comparison still needs three on both sides and a real gap.
 

@@ -34,7 +34,7 @@ def mode_view(state: dict, brand_id: str, posts: list[dict] | None = None) -> di
         "rate": rate,
         "notice": (batch or {}).get("notice") or "",
         "batch": _public_batch(state, batch),
-        "log": [_public_log(item) for item in (state.get("mode_log") or []) if item.get("brand_id") == brand.id][:8],
+        "log": [_public_log(item) for item in (state.get("mode_log") or []) if item.get("brand_id") == brand.id][:40],
         "limits": _limits(state, brand.id),
         "can_prepare": mode == "approval" and not _open(batch),
         "can_run": mode == "auto",
@@ -57,6 +57,9 @@ def set_mode(state: dict, brand_id: str, mode: str, confirm: bool = False, path:
     modes[brand.id] = name
     updated["modes"] = modes
     updated = _log(updated, brand.id, name, "mode", "", name, rate if name == "auto" else "user")
+    from support import stale_previews
+
+    updated = stale_previews(updated, brand.id)
     save(updated, path)
     return mode_view(updated, brand.id)
 
@@ -80,6 +83,9 @@ def prepare_batch(state: dict, brand_id: str, path: Path | None = None) -> dict:
     from store import brand_history, create_piece, resolve_brand, save
 
     brand = resolve_brand(state, brand_id)
+    from support import assert_running
+
+    assert_running(state, brand.id)
     if _mode(state, brand.id) != "approval":
         raise DraftError("Manual does not start a batch.")
     if _open(_latest(state, brand.id)):
@@ -91,7 +97,9 @@ def prepare_batch(state: dict, brand_id: str, path: Path | None = None) -> dict:
     idea = ("Proposed from the hour that is ahead. " + str(hour.get("detail") or ""))[:500]
     piece = create_piece(state, brand.id, idea, path, status="planned")
     current = _load(path, state)
-    notice = "The mail path is not configured. These pieces stay unscheduled."
+    from support import mail_notice
+
+    notice = mail_notice(state, brand.id)
     batch = {
         "id": str(uuid.uuid4()),
         "brand_id": brand.id,
@@ -106,7 +114,7 @@ def prepare_batch(state: dict, brand_id: str, path: Path | None = None) -> dict:
     return mode_view(updated, brand.id)
 
 
-def decide_batch(state: dict, brand_id: str, piece_id: str, action: str, path: Path | None = None) -> dict:
+def decide_batch(state: dict, brand_id: str, piece_id: str, action: str, path: Path | None = None, teach: str = "", phrase: str = "") -> dict:
     from store import resolve_brand, save
 
     brand = resolve_brand(state, brand_id)
@@ -128,6 +136,10 @@ def decide_batch(state: dict, brand_id: str, piece_id: str, action: str, path: P
         outcome = "scheduled"
     else:
         _reject(current, brand.id, piece, path)
+        if teach and teach != "discard":
+            from support import teach_rejection
+
+            teach_rejection(_load(path, current), brand.id, teach, phrase, str(piece.get("format") or ""), path)
         outcome = "rejected"
     saved = _mark(_load(path, current), brand.id, piece_id, verb)
     saved = _log(saved, brand.id, _mode(saved, brand.id), verb, piece_id, "hour", outcome)
@@ -143,6 +155,9 @@ def run_auto(state: dict, brand_id: str, path: Path | None = None) -> dict:
     from store import brand_history, create_piece, resolve_brand, save
 
     brand = resolve_brand(state, brand_id)
+    from support import assert_running, mix_hold
+
+    assert_running(state, brand.id)
     if _mode(state, brand.id) != "auto":
         raise DraftError("Fully autonomous is not on for this brand.")
     history = brand_history(state, brand.id)[0]
@@ -154,6 +169,11 @@ def run_auto(state: dict, brand_id: str, path: Path | None = None) -> dict:
     idea = ("Scheduled from the hour that is ahead. " + str(hour.get("detail") or ""))[:500]
     piece = create_piece(state, brand.id, idea, path, status="planned")
     current = _load(path, state)
+    held = mix_hold(current, brand.id, str(piece.get("format") or "feed"), str(piece.get("pillar") or ""))
+    if held:
+        current = _log(current, brand.id, "auto", "hold", piece["id"], "mix", held)
+        save(current, path)
+        return mode_view(current, brand.id)
     hold = int(limits.get("hold_hours") or 0)
     if hold:
         _hold(current, piece["id"], hold, path)
@@ -325,7 +345,7 @@ def _public_batch(state: dict, batch: dict | None) -> dict | None:
 
 
 def _public_log(item: dict) -> dict:
-    return {"at": item.get("at") or "", "action": item.get("action") or "", "piece_id": item.get("piece_id") or "", "reason": item.get("reason") or "", "outcome": item.get("outcome") or ""}
+    return {"at": item.get("at") or "", "mode": item.get("mode") or "", "action": item.get("action") or "", "piece_id": item.get("piece_id") or "", "reason": item.get("reason") or "", "outcome": item.get("outcome") or ""}
 
 
 def _limits(state: dict, brand_id: str) -> dict:
@@ -349,8 +369,10 @@ def _mode(state: dict, brand_id: str) -> str:
 
 
 def _log(state: dict, brand_id: str, mode: str, action: str, piece_id: str, reason: str, outcome: str) -> dict:
-    row = {"at": _now(), "brand_id": brand_id, "mode": mode, "action": action, "piece_id": piece_id, "reason": reason, "outcome": str(outcome)[:240]}
-    return {**state, "mode_log": [row, *(state.get("mode_log") or [])][:80]}
+    from memory import redact_memory
+
+    row = {"at": _now(), "brand_id": brand_id, "mode": mode, "action": action, "piece_id": piece_id, "reason": reason, "outcome": redact_memory(str(outcome))[:240]}
+    return {**state, "mode_log": [row, *(state.get("mode_log") or [])][:1000]}
 
 
 def _load(path: Path | None, state: dict) -> dict:
