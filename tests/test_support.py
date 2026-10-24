@@ -89,3 +89,13 @@ def test_a_rejection_can_ban_a_phrase_and_a_paused_series_does_not_fill(tmp_path
     assert "vault:" not in notice
     clear_log(load(path), "okay", path)
     assert load(path)["mode_log"][0]["action"] == "clear"
+
+
+def test_a_mix_target_can_be_taken_back(tmp_path: Path):
+    path = tmp_path / "state.json"
+    save_mix(empty_state(), "okay", {"kind": "pillar", "name": "raw-truth", "bound": "most", "count": 2, "hard": True}, path)
+    view = save_mix(load(path), "okay", {"kind": "format", "name": "feed", "bound": "least", "count": 1}, path)
+    assert len(view["mix"]) == 2
+    view = save_mix(load(path), "okay", {"kind": "pillar", "name": "raw-truth", "bound": "most", "remove": True}, path)
+    assert [(row["kind"], row["name"]) for row in view["mix"]] == [("format", "feed")]
+    assert load(path)["mix_targets"]["okay"] == view["mix"]

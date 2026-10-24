@@ -112,7 +112,7 @@ def save_mix(state: dict, brand_id: str, spec: dict, path: Path | None = None) -
     updated = copy.deepcopy(state)
     book = dict(updated.get("mix_targets") or {})
     current = [item for item in book.get(brand.id) or [] if not (item.get("kind") == row["kind"] and item.get("name") == row["name"] and item.get("bound") == row["bound"])]
-    book[brand.id] = (current + [row])[:12]
+    book[brand.id] = current[:12] if spec.get("remove") else (current + [row])[:12]
     updated["mix_targets"] = book
     save(updated, path)
     return support_view(updated, brand.id)
