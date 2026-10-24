@@ -101,7 +101,7 @@
     series: "A structure you can reuse with a new topic. Pause holds it. Fill uses a pillar this brand already has and does not save a draft. A shape is suggested only when it is already ahead, and stats wait for three uses with numbers. A series stays on this brand.",
     calendar: "Month, week, or day. Drag a piece onto a day to hold it, or into the tray to take it off. A pillar or campaign filter hides published posts, because a live post is not tagged with either.",
     campaigns: "A campaign holds the posts, the assets, the goal, and the dates. Clone keeps the shape and leaves the pieces. A kind is ahead only when both sides have three posts and the gap is real.",
-    approval: "Draft, then needs review, then approved, then scheduled. One name is a single step; extra names are optional and go in order. The trail stays after a notice is marked read. Nothing is mailed.",
+    approval: "Draft, then needs review, then approved, then scheduled. One person is a single step; more go in order. With approval email on, each approver is emailed and can reply APPROVE or CHANGES. The trail stays after a notice is marked read.",
     queue: "Draft, needs approval, approved, scheduled, posted, on the record, or failed. A scheduled piece posts at its time while posting is on. On the record means a pulled post is tied to the draft.",
     performance: "Numbers for this brand only. A missing pull stays missing. Nothing here is a rate unless the count exists.",
     map: "Display only. A missing number stays blank. A format with fewer than three posts says it is thin.",
@@ -304,6 +304,21 @@
     return { state: state, code: code };
   }
 
+  // The approval email links here with ?hs_brand and ?hs_review.
+  function reviewLink() {
+    let params;
+    try { params = new URLSearchParams(window.location.search); } catch (err) { return null; }
+    const piece = params.get("hs_review") || "";
+    if (!piece) return null;
+    const brand = params.get("hs_brand") || "";
+    params.delete("hs_review");
+    params.delete("hs_brand");
+    const rest = params.toString();
+    try { window.history.replaceState(window.history.state, "", window.location.pathname + (rest ? "?" + rest : "")); }
+    catch (err) { /* the link still opened the right piece */ }
+    return { piece: piece, brand: brand };
+  }
+
   function HouseSocial() {
     const [brands, setBrands] = useState([]);
     const [pieces, setPieces] = useState([]);
@@ -329,6 +344,8 @@
     const [panel, setPanel] = useState("");
     const [apps, setApps] = useState({});
     const [house, setHouse] = useState({});
+    const [mail, setMail] = useState({});
+    const [reviewFocus, setReviewFocus] = useState("");
     const [choice, setChoice] = useState(null);
     const [voiceCheck, setVoiceCheck] = useState(null);
     const [library, setLibrary] = useState({ assets: [], folders: [], tags: [] });
@@ -404,6 +421,7 @@
       setCardLimit(roster.card_limit || 240);
       setApps(roster.apps || {});
       setHouse(roster.publishing || {});
+      setMail(roster.mail || {});
       setPieces(withUnsaved((first[1] && first[1].pieces) || []));
       setStudio(desk[0]);
       setLibrary(desk[1] || { assets: [], folders: [], tags: [] });
@@ -714,6 +732,14 @@
     }
 
     useEffect(function () {
+      const review = reviewLink();
+      if (review) {
+        if (review.brand) setBrandId(review.brand);
+        setPanel("");
+        setSection("approval");
+        setReviewFocus(review.piece);
+        return;
+      }
       const back = signInReturn();
       if (back && back.error) {
         setSection("pages");
@@ -942,11 +968,16 @@
           onPull: function () { return act("POST", on("/studio-read"), undefined, "Read from Studio."); },
         });
         case "approval": return h(ApprovalDesk, {
-          studio: studio, busy: busy,
+          studio: studio, busy: busy, focus: reviewFocus, mailReady: !!mail.ready,
           onOpen: openPiece,
           onSteps: function (steps) { return act("POST", on("/approval-steps"), { steps: steps }, "Steps saved."); },
           onReview: function (id) { return act("POST", "/pieces/" + id + "/review", undefined, "Sent for review."); },
-          onDecide: function (id, body) { return act("POST", "/pieces/" + id + "/decision", body, body.decision === "approved" ? "Approved." : "Changes asked for."); },
+          onDecide: function (id, body) {
+            return act("POST", "/pieces/" + id + "/decision", body, function (done) {
+              if (body.decision !== "approved") return "Changes asked for.";
+              return done && done.status === "scheduled" ? "Approved and scheduled." : done && done.status === "pending" ? "Approved. The next step was asked." : "Approved.";
+            });
+          },
           onComment: function (id, body) { return act("POST", "/pieces/" + id + "/comments", body, "Comment added."); },
           onRead: function (id) { return act("POST", "/notices/" + id + "/read"); },
         });
@@ -1076,7 +1107,14 @@
           busy ? h("div", { className: "hs-progress", "aria-hidden": "true" }) : null,
           panel === "add" ? h(AddBrand, { busy: busy, onAdd: addBrand, onCancel: function () { setPanel(""); } })
             : panel === "house" ? h(HouseSettings, {
-              apps: apps, posting: house, busy: busy, onSave: saveApps, onClose: function () { setPanel(""); },
+              apps: apps, posting: house, mail: mail, busy: busy, onSave: saveApps, onClose: function () { setPanel(""); },
+              onSaveMail: function (body) { return act("POST", "/mail", body, body.provider ? "Email settings saved." : "Approval email is off."); },
+              onTestMail: function (to) { return act("POST", "/mail/test", { to: to }, "Test email sent to " + to + "."); },
+              onPollMail: function () {
+                return act("POST", "/mail/poll", undefined, function (read) {
+                  return (read.decided || []).length + " decided by email, " + (read.ignored || []).length + " not counted.";
+                });
+              },
               onPosting: function (value) {
                 return act("POST", "/posting", { on: value }, value ? "Posting is on for the house. Each brand still turns it on under Accounts." : "Posting is off. Nothing will post until it is on again.");
               },
@@ -1412,7 +1450,7 @@
     function secretHint(row) {
       return row.secret_saved ? "Saved in the vault. Paste a new one only to replace it." : "Written to the vault, never to the dashboard.";
     }
-    return h("form", { className: "hs-panel hs-panel-wide", onSubmit: submit },
+    return h("div", { className: "hs-panel hs-panel-wide" },
       h("div", { className: "hs-panel-head" },
         h("h2", { className: "hs-h2", id: "hs-desk-title" }, "House settings"),
         h("p", { className: "hs-note" }, "The Meta app and the Threads app belong to the whole house. Each brand signs in through them on its own Accounts desk.")),
@@ -1429,6 +1467,7 @@
         h("div", { className: "hs-row hs-gap-sm" },
           h("button", { type: "button", className: "hs-tab hs-tab-sm", disabled: props.busy || !posting.on, onClick: props.onRunDue }, "Post what is due now"),
           posting.due_soon ? h("span", { className: "hs-hint" }, posting.due_soon + (posting.due_soon === 1 ? " piece is" : " pieces are") + " scheduled in the next 24 hours.") : null)),
+      h("form", { className: "hs-stack", onSubmit: submit, "aria-label": "Apps" },
       h(Section, { title: "Meta app", note: "Facebook Pages and Instagram professional accounts sign in through this app.", actions: [h(AppStatus, { key: "s", row: meta })] },
         h("div", { className: "hs-grid-2" },
           field("App id", h("input", { className: "hs-field", value: metaId, inputMode: "numeric", autoComplete: "off", onChange: function (event) { setMetaId(event.target.value); } })),
@@ -1444,8 +1483,74 @@
           h("li", null, "Threads app: the Threads use case, then Settings, then Redirect Callback URLs."),
           h("li", null, "Open the dashboard at this same address when you connect. Meta expects https; plain http is only accepted for localhost, and Threads may refuse it."))),
       h("div", { className: "hs-row" },
-        h("button", { type: "submit", className: "hs-button", disabled: props.busy }, "Save house settings"),
+        h("button", { type: "submit", className: "hs-button", disabled: props.busy }, "Save apps"))),
+      h(MailSettings, { mail: props.mail, busy: props.busy, onSave: props.onSaveMail, onTest: props.onTestMail, onPoll: props.onPollMail }),
+      h("div", { className: "hs-row" },
         h("button", { type: "button", className: "hs-tab", onClick: props.onClose }, "Close")));
+  }
+
+  // Who sends approval email, and where replies are read.
+  function MailSettings(props) {
+    const mail = props.mail || {};
+    const agent = mail.agentmail || {};
+    const resend = mail.resend || {};
+    const [provider, setProvider] = useState(mail.provider || "");
+    const [inbox, setInbox] = useState(agent.inbox || "");
+    const [agentKey, setAgentKey] = useState("");
+    const [from, setFrom] = useState(resend.from || "");
+    const [replyTo, setReplyTo] = useState(resend.reply_to || "");
+    const [resendKey, setResendKey] = useState("");
+    const [testTo, setTestTo] = useState("");
+    function submit(event) {
+      event.preventDefault();
+      const body = {
+        provider: provider,
+        agentmail: { inbox: inbox.trim() },
+        resend: { from: from.trim(), reply_to: replyTo.trim() },
+        dashboard_url: returnAddress(),
+      };
+      if (agentKey.trim()) body.agentmail.key = agentKey.trim();
+      if (resendKey.trim()) body.resend.key = resendKey.trim();
+      Promise.resolve(props.onSave(body)).then(function (saved) {
+        if (saved) { setAgentKey(""); setResendKey(""); }
+      });
+    }
+    const status = mail.ready
+      ? h("span", { key: "s", className: "hs-status is-published" }, mail.provider === "resend" ? "Resend" : "AgentMail")
+      : h("span", { key: "s", className: "hs-status is-planned" }, "Off");
+    const reads = mail.ready
+      ? (mail.reads_replies
+        ? "Replies are read from " + agent.inbox + " once a minute. An approver replies APPROVE, or CHANGES and what to change."
+        : "Replies cannot be read without an AgentMail inbox. Approvers use the link in the email instead.")
+      : "Off. Approvers decide on the Approval desk.";
+    return h("form", { className: "hs-stack", onSubmit: submit, "aria-label": "Approval email" },
+      h(Section, {
+        title: "Approval email",
+        note: "When a piece needs review, the approver for that step gets the post by email. Add each approver's address on a brand's Approval desk.",
+        actions: [status],
+      },
+        h(Segmented, { label: "Send with", value: provider, options: [["", "Off"], ["agentmail", "AgentMail"], ["resend", "Resend"]], onChange: setProvider }),
+        provider ? h("div", { className: "hs-grid-2" },
+          field("AgentMail inbox", h("input", { className: "hs-field", type: "email", value: inbox, placeholder: "approvals@agentmail.to", autoComplete: "off", onChange: function (event) { setInbox(event.target.value); } }),
+            provider === "resend" ? "Optional. With it, replies to Resend mail can be read." : "Mail is sent from this inbox, and replies are read from it."),
+          field("AgentMail API key", h("input", { className: "hs-field", type: "password", value: agentKey, placeholder: agent.key_saved ? "Saved" : "Paste once", autoComplete: "new-password", onChange: function (event) { setAgentKey(event.target.value); } }),
+            agent.key_saved ? "Saved in the vault." : "Written to the vault, never to the dashboard.")) : null,
+        provider === "resend" ? h("div", { className: "hs-grid-2" },
+          field("From", h("input", { className: "hs-field", value: from, placeholder: "House Social <approvals@yourdomain.com>", autoComplete: "off", onChange: function (event) { setFrom(event.target.value); } }),
+            "An address on a domain verified in Resend."),
+          field("Resend API key", h("input", { className: "hs-field", type: "password", value: resendKey, placeholder: resend.key_saved ? "Saved" : "Paste once", autoComplete: "new-password", onChange: function (event) { setResendKey(event.target.value); } }),
+            resend.key_saved ? "Saved in the vault." : "Written to the vault, never to the dashboard."),
+          field("Replies go to", h("input", { className: "hs-field", type: "email", value: replyTo, placeholder: inbox || "approvals@agentmail.to", autoComplete: "off", onChange: function (event) { setReplyTo(event.target.value); } }),
+            "Use the AgentMail inbox above so replies can be read.")) : null,
+        h("p", { className: "hs-note" }, reads),
+        mail.dashboard_url ? h("p", { className: "hs-hint" }, "Links in the email open " + mail.dashboard_url + ".") : null,
+        mail.poll_error ? h("p", { className: "hs-error" }, "Reading replies failed: " + mail.poll_error) : null,
+        h("div", { className: "hs-row hs-gap-sm" },
+          h("button", { type: "submit", className: "hs-button", disabled: props.busy }, "Save email settings"),
+          mail.reads_replies ? h("button", { type: "button", className: "hs-tab hs-tab-sm", disabled: props.busy, onClick: props.onPoll }, "Read replies now") : null),
+        mail.ready ? h("div", { className: "hs-row hs-gap-sm" },
+          h("input", { className: "hs-field hs-grow", type: "email", "aria-label": "Send a test to", placeholder: "you@example.com", value: testTo, onChange: function (event) { setTestTo(event.target.value); } }),
+          h("button", { type: "button", className: "hs-tab", disabled: props.busy || !testTo.trim(), onClick: function () { props.onTest(testTo.trim()); } }, "Send a test email")) : null));
   }
 
   const ACCOUNT_ROWS = [
@@ -1965,21 +2070,18 @@
       className: "hs-stack",
       onSubmit: function (event) {
         event.preventDefault();
-        props.onSupport({ action: "mail", cadence: form.cadence, body: form.body, quiet_start: Number(form.quiet_start), quiet_end: Number(form.quiet_end) });
+        props.onSupport({ action: "mail", cadence: "immediate", body: form.body, quiet_start: Number(form.quiet_start), quiet_end: Number(form.quiet_end) });
       },
     },
-      h("div", { className: "hs-grid-4" },
-        field("When", h("select", { className: "hs-field", value: form.cadence, onChange: function (event) { setField("cadence", event.target.value); } },
-          h("option", { value: "immediate" }, "Right away"),
-          h("option", { value: "digest" }, "In a digest"))),
+      h("div", { className: "hs-grid-3" },
         field("Body", h("select", { className: "hs-field", value: form.body, onChange: function (event) { setField("body", event.target.value); } },
-          h("option", { value: "short" }, "Short"),
-          h("option", { value: "full" }, "Full"))),
+          h("option", { value: "short" }, "Facebook words only"),
+          h("option", { value: "full" }, "All three versions"))),
         field("Quiet from", h("select", { className: "hs-field", value: form.quiet_start, onChange: function (event) { setField("quiet_start", event.target.value); } },
           hours.map(function (hour) { return h("option", { key: hour, value: String(hour) }, hourLabel(hour)); }))),
         field("Quiet until", h("select", { className: "hs-field", value: form.quiet_end, onChange: function (event) { setField("quiet_end", event.target.value); } },
           hours.map(function (hour) { return h("option", { key: hour, value: String(hour) }, hourLabel(hour)); })))),
-      h("p", { className: "hs-hint" }, form.quiet_start === form.quiet_end ? "Same start and end means no quiet hours." : "Eastern time."),
+      h("p", { className: "hs-hint" }, form.quiet_start === form.quiet_end ? "Same start and end means no quiet hours. Mail goes out right away." : "Eastern time. Mail asked for in quiet hours goes out when they end."),
       h("div", { className: "hs-row" }, h("button", { type: "submit", className: "hs-tab", disabled: props.busy }, "Save mail settings")));
   }
 
@@ -2113,7 +2215,7 @@
         h(MixPanel, { mix: support.mix, pillars: brand.pillars, busy: props.busy, onSupport: props.onSupport }),
         h("div", { className: "hs-name" }, "Pace"),
         h(LimitsForm, { limits: mode.limits, busy: props.busy, onMode: props.onMode })),
-      h(Section, { title: "Mail", note: "Stored for when a mail path exists. Nothing is mailed today.", collapsible: true },
+      h(Section, { title: "Approval email", note: "How this brand's approval email reads. Who gets it is set on the Approval desk; the sender is in House settings.", collapsible: true },
         h(MailPanel, { mail: support.mail, busy: props.busy, onSupport: props.onSupport })),
       h(Section, { title: "Activity", note: "What each mode did, a preview of next week that does not schedule, and a redacted export.", collapsible: true },
         h(ActivityPanel, { support: support, log: mode.log, busy: props.busy, onSupport: props.onSupport })),
@@ -3151,6 +3253,14 @@
     ["scheduled", "Scheduled", function (status) { return status === "scheduled"; }],
   ];
 
+  function mailLine(mail) {
+    if (!mail || !mail.to) return "";
+    if (mail.error) return "The email to " + mail.to + " did not send. " + mail.error;
+    if (mail.pending) return "Email to " + mail.to + " waits for quiet hours to end.";
+    if (mail.sent_at) return "Emailed to " + mail.to + " at " + String(mail.sent_at).replace("T", " ").slice(0, 16) + " UTC. A reply of APPROVE or CHANGES counts.";
+    return "";
+  }
+
   function ReviewPanel(props) {
     const item = props.item;
     const [author, setAuthor] = useState(item.waiting || "");
@@ -3165,6 +3275,12 @@
         h("button", { type: "button", className: "hs-tab hs-tab-sm", onClick: function () { props.onOpen(item.id); } }, "Open in the composer"),
         item.status !== "pending" && item.status !== "approved" ? h("button", { type: "button", className: "hs-button", disabled: props.busy, onClick: function () { props.onReview(item.id); } }, "Send for review") : null),
       (item.signed || []).length ? h("p", { className: "hs-ok" }, "Signed by " + item.signed.join(", ") + ".") : null,
+      mailLine(item.mail) ? h("p", { className: item.mail && item.mail.error ? "hs-error" : "hs-note" }, mailLine(item.mail)) : null,
+      h("div", { className: "hs-previews" }, PLATFORMS.filter(function (pair) { return (item.bodies || {})[pair[0]]; }).map(function (pair) {
+        return h("div", { key: pair[0], className: "hs-preview" },
+          h("div", { className: "hs-name" }, pair[1]),
+          h("p", { className: "hs-voice hs-pre" }, item.bodies[pair[0]]));
+      })),
       compare.ready ? h("div", { className: "hs-stack" },
         h("div", { className: "hs-overline" }, "What changed since the last version"),
         compare.detail ? h("p", { className: "hs-note" }, compare.detail) : null,
@@ -3204,8 +3320,13 @@
   function ApprovalDesk(props) {
     const desk = (props.studio && props.studio.approval) || { steps: ["Approver"], pieces: [], notices: [] };
     const [openId, setOpenId] = useState("");
-    const [steps, setSteps] = useState((desk.steps || ["Approver"]).join(", "));
     const pieces = desk.pieces || [];
+    useEffect(function () {
+      if (!props.focus) return;
+      setOpenId(props.focus);
+      const node = document.getElementById("hs-review-" + props.focus);
+      if (node && node.scrollIntoView) node.scrollIntoView({ block: "start" });
+    }, [props.focus, pieces.length]);
     return h("div", { className: "hs-main" },
       (desk.notices || []).length ? h(Section, { title: "Notices" },
         h("ul", { className: "hs-rows" }, desk.notices.map(function (notice) {
@@ -3219,7 +3340,7 @@
         return h(Section, { key: group[0], title: group[1] + " · " + rows.length },
           rows.length ? h("ul", { className: "hs-rows" }, rows.map(function (item) {
             const on = openId === item.id;
-            return h("li", { key: item.id },
+            return h("li", { key: item.id, id: "hs-review-" + item.id },
               h("button", {
                 type: "button", className: "hs-row-button" + (on ? " is-on" : ""), "aria-expanded": on,
                 onClick: function () { setOpenId(on ? "" : item.id); },
@@ -3232,17 +3353,42 @@
           })) : h("p", { className: "hs-note" }, "Nothing is waiting for review."));
       }),
       !pieces.length ? h(Empty, null, "No pieces on this desk yet. Send one for review from the Composer or the Queue.") : null,
-      h(Section, { title: "Review steps", note: "One name is a single step. Extra names are optional and go in order. Nothing is mailed.", collapsible: true },
-        h("form", {
-          className: "hs-row",
-          onSubmit: function (event) {
-            event.preventDefault();
-            props.onSteps(steps.split(",").map(function (item) { return item.trim(); }).filter(Boolean));
-          },
-        },
-          h("input", { className: "hs-field hs-grow", "aria-label": "Approvers, in order", value: steps, placeholder: "Approver names, comma separated", onChange: function (event) { setSteps(event.target.value); } }),
-          h("button", { type: "submit", className: "hs-tab", disabled: props.busy || !steps.trim() }, "Save steps"))),
+      h(Section, {
+        title: "Review steps",
+        note: "One person is a single step. More go in order. With an email, that person is asked by mail when approval email is on in House settings.",
+        collapsible: true, open: !(desk.people || []).some(function (row) { return row.email; }),
+      },
+        h(StepsEditor, { people: desk.people, busy: props.busy, onSave: props.onSteps, mailReady: props.mailReady })),
     );
+  }
+
+  function StepsEditor(props) {
+    const start = (props.people || []).length ? props.people : [{ name: "Approver", email: "" }];
+    const [rows, setRows] = useState(start.map(function (row) { return { name: row.name || "", email: row.email || "" }; }));
+    function setRow(index, key, value) {
+      setRows(function (current) {
+        return current.map(function (row, at) { return at === index ? Object.assign({}, row, { [key]: value }) : row; });
+      });
+    }
+    const named = rows.filter(function (row) { return row.name.trim(); });
+    return h("form", {
+      className: "hs-stack",
+      onSubmit: function (event) {
+        event.preventDefault();
+        props.onSave(named.map(function (row) { return { name: row.name.trim(), email: row.email.trim() }; }));
+      },
+    },
+      rows.map(function (row, index) {
+        return h("div", { key: index, className: "hs-step-row" },
+          h("span", { className: "hs-meta" }, (index + 1) + "."),
+          h("input", { className: "hs-field", "aria-label": "Step " + (index + 1) + " name", value: row.name, placeholder: "Name", onChange: function (event) { setRow(index, "name", event.target.value); } }),
+          h("input", { className: "hs-field", type: "email", "aria-label": "Step " + (index + 1) + " email", value: row.email, placeholder: "Email, to ask by mail", onChange: function (event) { setRow(index, "email", event.target.value); } }),
+          rows.length > 1 ? h("button", { type: "button", className: "hs-chip-button", onClick: function () { setRows(rows.filter(function (_, at) { return at !== index; })); } }, "Remove") : h("span", null));
+      }),
+      h("div", { className: "hs-row hs-gap-sm" },
+        h("button", { type: "submit", className: "hs-tab", disabled: props.busy || !named.length }, "Save steps"),
+        rows.length < 4 ? h("button", { type: "button", className: "hs-link-button", onClick: function () { setRows(rows.concat([{ name: "", email: "" }])); } }, "+ Add a step") : null,
+        props.mailReady ? null : h("span", { className: "hs-hint" }, "Approval email is off in House settings.")));
   }
 
   function SeriesApply(props) {

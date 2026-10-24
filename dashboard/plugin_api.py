@@ -74,6 +74,7 @@ def _fail(exc: DraftError) -> None:
 
 @router.get("/roster")
 def get_roster() -> dict:
+    from approval_mail import mail_view
     from publish import posting_view
     from store import apps_view
 
@@ -87,6 +88,7 @@ def get_roster() -> dict:
         "card_limit": JOSIE_CARD,
         "brands": roster(state),
         "apps": apps_view(state),
+        "mail": mail_view(state),
     }
 
 
@@ -302,6 +304,33 @@ def post_disconnect(brand_id: str, body: dict) -> dict:
         return disconnect(load(), brand_id, str(body.get("platform") or ""))
     except DraftError as exc:
         _fail(exc)
+
+
+@router.post("/mail")
+def post_mail(body: dict) -> dict:
+    from approval_mail import save_mail_settings
+
+    try:
+        return save_mail_settings(load(), body if isinstance(body, dict) else {})
+    except DraftError as exc:
+        _fail(exc)
+
+
+@router.post("/mail/test")
+def post_mail_test(body: dict) -> dict:
+    from approval_mail import MailError, send_test_mail
+
+    try:
+        return send_test_mail(load(), str((body or {}).get("to") or ""))
+    except (DraftError, MailError) as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+
+
+@router.post("/mail/poll")
+def post_mail_poll() -> dict:
+    from approval_mail import poll_replies
+
+    return poll_replies(load())
 
 
 @router.post("/posting")

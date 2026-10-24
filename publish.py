@@ -390,7 +390,13 @@ def tick(path: Path | None = None) -> dict | None:
         if not held:
             return None
         state = load(path) if path else load()
-        return run_due(state, path)
+        result = run_due(state, path)
+        from approval_mail import poll_replies, send_waiting
+
+        # Approvals by email can schedule a piece, so read them after posting.
+        result["mail"] = poll_replies(load(path) if path else load(), path)
+        result["mail"]["sent"] = send_waiting(load(path) if path else load(), path)
+        return result
 
 
 def _loop(interval: int) -> None:

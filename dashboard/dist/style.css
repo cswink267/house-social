@@ -279,6 +279,12 @@ button.hs-badge:hover { border-color: var(--hs-border-strong); color: var(--hs-f
 .hs-pick + .hs-pick { margin-top: 6px; }
 .hs-pick legend { padding: 0; margin-bottom: 8px; }
 .hs-account .hs-danger-zone { margin-top: 8px; }
+.hs-step-row { display: grid; grid-template-columns: 1.5rem minmax(0, 1fr) minmax(0, 1.4fr) auto; gap: 8px; align-items: center; }
+@media (max-width: 640px) {
+  .hs-step-row { grid-template-columns: 1.5rem minmax(0, 1fr); }
+  .hs-step-row > :nth-child(3) { grid-column: 2; }
+  .hs-step-row > :nth-child(4) { grid-column: 2; justify-self: start; }
+}
 .hs-grid-2 { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 12px; }
 .hs-hint { color: var(--hs-subtle); font-size: 0.76rem; font-weight: 400; }
 .hs-callout {
@@ -792,6 +798,7 @@ label:has(> input[type="checkbox"]) > input[type="checkbox"] { margin-top: 1px; 
 }
 .hs-row-button:hover { background: color-mix(in srgb, var(--hs-fg) 7%, var(--hs-sunken)); }
 .hs-row-button.is-on { background: var(--hs-accent-soft); box-shadow: inset 3px 0 0 var(--hs-accent); }
+.hs-row-button .hs-status { background: var(--hs-card); }
 .hs-row-text { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 
 .hs-num { font-weight: 600; font-variant-numeric: tabular-nums; min-width: 2.5em; text-align: right; }
