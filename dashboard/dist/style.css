@@ -620,6 +620,7 @@ label:has(> input[type="checkbox"]) > input[type="checkbox"] { margin-top: 1px; 
 /* ---- Segmented control ----------------------------------------------- */
 
 .hs-seg {
+  align-self: flex-start;
   display: inline-flex;
   flex-wrap: wrap;
   padding: 2px;
@@ -793,6 +794,29 @@ label:has(> input[type="checkbox"]) > input[type="checkbox"] { margin-top: 1px; 
 .hs-diff.is-removed { background: color-mix(in srgb, var(--hs-danger) 12%, transparent); text-decoration: line-through; text-decoration-color: color-mix(in srgb, var(--hs-danger) 60%, transparent); }
 .hs-diff.is-added { background: color-mix(in srgb, var(--hs-ok) 14%, transparent); }
 .hs-thread { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 4px; font-size: 0.86rem; }
+
+.hs-steps { margin: 0; padding-left: 1.3rem; display: grid; gap: 3px; font-size: 0.88rem; }
+.hs-steps li::marker { color: var(--hs-subtle); font-variant-numeric: tabular-nums; }
+.hs-section.is-paused { border-style: dashed; }
+.hs-section.is-paused .hs-steps { opacity: 0.7; }
+.hs-meter {
+  display: block;
+  height: 4px;
+  max-width: 240px;
+  margin-top: 4px;
+  border-radius: 99px;
+  background: var(--hs-hover);
+  overflow: hidden;
+}
+.hs-meter > span { display: block; height: 100%; background: var(--hs-accent); border-radius: 99px; }
+.hs-quote {
+  margin: 0;
+  padding: 6px 12px;
+  border-left: 3px solid var(--hs-border-strong);
+  color: var(--hs-fg);
+  font-size: 0.92rem;
+  white-space: pre-wrap;
+}
 
 /* ---- Checklists ------------------------------------------------------ */
 
