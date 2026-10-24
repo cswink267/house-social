@@ -70,6 +70,8 @@ def empty_state() -> dict:
         "ingest_maps": {},
         "memory_marks": {},
         "memory_log": [],
+        "predictions": [],
+        "prediction_hidden": {},
     }
 
 
@@ -108,6 +110,8 @@ def load(path: Path | None = None) -> dict:
     ingest_maps = raw.get("ingest_maps")
     memory_marks = raw.get("memory_marks")
     memory_log = raw.get("memory_log")
+    predictions = raw.get("predictions")
+    prediction_hidden = raw.get("prediction_hidden")
     return {
         "version": 1,
         "channels": channels if isinstance(channels, dict) else {},
@@ -138,6 +142,8 @@ def load(path: Path | None = None) -> dict:
         "ingest_maps": ingest_maps if isinstance(ingest_maps, dict) else {},
         "memory_marks": memory_marks if isinstance(memory_marks, dict) else {},
         "memory_log": memory_log if isinstance(memory_log, list) else [],
+        "predictions": predictions if isinstance(predictions, list) else [],
+        "prediction_hidden": prediction_hidden if isinstance(prediction_hidden, dict) else {},
     }
 
 
@@ -355,9 +361,10 @@ def remove_brand(state: dict, brand_id: str, path: Path | None = None, root: Pat
         "recurrences",
         "ingest_log",
         "memory_log",
+        "predictions",
     ):
         updated[key] = [item for item in updated.get(key) or [] if item.get("brand_id") != name]
-    for key in ("channels", "pulls", "voices", "approval_steps", "inbox_errors", "voice_versions", "ingest_maps", "memory_marks", "studio_reads"):
+    for key in ("channels", "pulls", "voices", "approval_steps", "inbox_errors", "voice_versions", "ingest_maps", "memory_marks", "studio_reads", "prediction_hidden"):
         current = dict(updated.get(key) or {})
         current.pop(name, None)
         updated[key] = current
@@ -416,6 +423,9 @@ def record_stat(state: dict, spec: dict, path: Path | None = None) -> dict:
     }
     updated = _copy(state)
     updated["stats"] = [stat, *updated.get("stats", [])]
+    from predict import apply_grades
+
+    updated = apply_grades(updated, brand.id)
     save(updated, path)
     return stat
 

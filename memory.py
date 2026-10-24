@@ -62,7 +62,14 @@ def memory_for(state: dict, brand_id: str, posts: list[dict], pieces: list[dict]
         "sections": _sections(lines),
         "timeline": _timeline(state, brand_id, posts),
         "marks": marks,
+        "accuracy": _accuracy(state, brand_id),
     }
+
+
+def _accuracy(state: dict, brand_id: str) -> list[dict]:
+    from predict import accuracy_for
+
+    return accuracy_for(state, brand_id)
 
 
 def correct_memory(state: dict, brand_id: str, pattern_id: str, action: str, path: Path | None = None) -> dict:

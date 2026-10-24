@@ -242,8 +242,38 @@ def post_draft_read(brand_id: str, body: dict) -> dict:
         ledger = read_ledger(ledger_dir())
     posts, _days = brand_history(state, brand.id, ledger)
     from memory import marks_for
+    from predict import is_hidden, predict_range, remember_prediction
 
-    return read_draft(str((body or {}).get("text") or ""), posts, marks=marks_for(state, brand.id))
+    reading = read_draft(str((body or {}).get("text") or ""), posts, marks=marks_for(state, brand.id))
+    found = predict_range(
+        str((body or {}).get("text") or ""),
+        posts,
+        fmt=str((body or {}).get("format") or ""),
+        pillar=str((body or {}).get("pillar") or ""),
+        marks=marks_for(state, brand.id),
+        hidden=is_hidden(state, brand.id),
+    )
+    piece_id = str((body or {}).get("piece_id") or "")
+    owned = next((item for item in state.get("pieces") or [] if item.get("id") == piece_id and item.get("brand_id") == brand.id), None)
+    if owned and not found.get("hidden"):
+        remember_prediction(state, brand.id, piece_id, found)
+    reading["range"] = found
+    return reading
+
+
+@router.post("/brands/{brand_id}/prediction-hide")
+def post_prediction_hide(brand_id: str, body: dict) -> dict:
+    from predict import set_prediction_hidden
+
+    try:
+        return set_prediction_hidden(
+            load(),
+            brand_id,
+            bool((body or {}).get("hidden")),
+            str((body or {}).get("scope") or "brand"),
+        )
+    except DraftError as exc:
+        _fail(exc)
 
 
 @router.post("/brands/{brand_id}/assist")

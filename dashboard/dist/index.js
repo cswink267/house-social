@@ -166,7 +166,13 @@
         return SDK.fetchJSON("/api/plugins/house-social/brands/" + brand.id + "/draft-read", {
           method: "POST",
           headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ text: text == null ? assistText() : text }),
+          body: JSON.stringify({
+            text: text == null ? assistText() : text,
+            format: format,
+            pillar: pillar,
+            piece_id: active && active.brand_id === brand.id ? active.id : "",
+            has_media: Boolean(active && active.asset_ids && active.asset_ids.length),
+          }),
         });
       });
       if (report) setDraftRead(report);
@@ -731,6 +737,21 @@
             onRead: function () { readDraft(assistText()); },
             onImprove: improveDraft,
             onWhy: function (patternId) { setMemoryFocus(patternId || ""); setSection("memory"); },
+            onUseChange: function (line) {
+              const text = String(line || "").trim();
+              if (!text) return;
+              setIdea(function (current) { return current ? current + "\n\n" + text : text; });
+            },
+            onHideRange: async function (hidden, scope) {
+              const saved = await run(function () {
+                return SDK.fetchJSON("/api/plugins/house-social/brands/" + brand.id + "/prediction-hide", {
+                  method: "POST",
+                  headers: { "Content-Type": "application/json" },
+                  body: JSON.stringify({ hidden: hidden, scope: scope }),
+                });
+              });
+              if (saved) await readDraft(assistText());
+            },
             draftRead: draftRead,
             onHold: function (date) {
               if (active && active.brand_id === brand.id) placePiece(active.id, date);
@@ -1363,6 +1384,22 @@
         h("p", { className: "hs-note" }, props.draftRead.hook),
         h("p", { className: "hs-note" }, props.draftRead.cta),
         h("p", { className: "hs-voice" }, props.draftRead.improve),
+        props.draftRead.range ? h("div", { className: "hs-pillar" },
+          h("div", { className: "hs-name" }, props.draftRead.range.hidden ? "Range hidden" : ("Range · " + (props.draftRead.range.band || "wide"))),
+          h("p", { className: "hs-note" }, props.draftRead.range.detail),
+          (props.draftRead.range.factors || []).map(function (factor) {
+            return h("p", { key: factor.id, className: "hs-note" }, factor.title + (factor.matched ? " matches." : " misses."));
+          }),
+          (props.draftRead.range.similar || []).map(function (item) {
+            return h("p", { key: "near-" + item.id, className: "hs-note" }, item.engagements + " engagements · " + item.preview);
+          }),
+          props.draftRead.range.change ? h("button", {
+            type: "button", className: "hs-tab", disabled: props.busy,
+            onClick: function () { if (props.onUseChange) props.onUseChange(props.draftRead.range.change); },
+          }, "Try one change") : null,
+          h("div", { className: "hs-row" },
+            props.draftRead.range.hidden ? h("button", { type: "button", className: "hs-tab", disabled: props.busy, onClick: function () { props.onHideRange(false, "brand"); } }, "Show the range") : h("button", { type: "button", className: "hs-tab", disabled: props.busy, onClick: function () { props.onHideRange(true, "brand"); } }, "Hide the range"),
+            h("button", { type: "button", className: "hs-tab", disabled: props.busy, onClick: function () { props.onHideRange(props.draftRead.range.hidden ? false : true, "all"); } }, props.draftRead.range.hidden ? "Show it on every brand" : "Hide it on every brand"))) : null,
         (props.draftRead.pattern_ids || []).length ? h("button", {
           type: "button", className: "hs-tab",
           onClick: function () { if (props.onWhy) props.onWhy(props.draftRead.pattern_ids[0]); },
@@ -2256,6 +2293,9 @@
                 line.standing !== "open" ? h("button", { type: "button", className: "hs-tab", disabled: props.busy, onClick: function () { props.onCorrect("restore", line.id); } }, "Restore") : null));
           }));
       }),
+      (desk.accuracy || []).length ? h("div", null,
+        h("div", { className: "hs-name" }, "How the range held up"),
+        desk.accuracy.map(function (item) { return h("p", { key: item.id, className: "hs-note" }, item.detail); })) : null,
       h("div", { className: "hs-name" }, "Changes"),
       (desk.timeline || []).length ? (desk.timeline || []).map(function (item) {
         return h("p", { key: item.id, className: "hs-note" }, (item.kind || "") + (item.pattern_id ? " · " + item.pattern_id : "") + (item.after ? " · " + item.after : ""));

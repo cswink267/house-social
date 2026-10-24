@@ -2,7 +2,7 @@
 
 Chris, Oct 22 2026. These are extras. The order is locked. One at a time, when he asks. Do not pull the next one forward. Do not delete an item. Mark it complete when it is done.
 
-Item 1 and item 2 are complete. The rest are not started.
+Item 1, item 2, and item 3 are complete. The rest are not started.
 
 Ingest history, then make the knowledge visible and correctable, then apply it while writing, then capture reusable formats and explicit feedback, then, only if he still wants it, look across brands.
 
@@ -48,7 +48,7 @@ Implementation notes:
 
 ## 3. Performance Prediction Score
 
-**Status: not started.**
+**Status: complete.** The Composer shows a wide, low, medium, or high range. It narrows only when a pattern already clears the three-post gap. A thin window stays wide and names the post count. The closest posts show their real engagements. A grade is written only after a real engagement count arrives, and it shows up on Memory. Hide is per brand or for every brand. Nothing is sent.
 
 A visible range on a draft that reflects similarity to this brand's past posts. Build it only after the history exists.
 
