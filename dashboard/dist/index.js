@@ -60,43 +60,6 @@
     return h("div", { className: "hs-empty" }, props.children);
   }
 
-  function BarChart(props) {
-    const points = props.points || [];
-    if (!points.length) return h("p", { className: "hs-note" }, props.empty || "No engagement data yet.");
-    const width = 640;
-    const height = 150;
-    const max = Math.max.apply(null, points.map(function (point) { return point.value || 0; }).concat([1]));
-    const gap = width / points.length;
-    return h("div", null,
-      h("div", { className: "hs-name" }, props.label),
-      h("svg", { className: "hs-chart", viewBox: "0 0 " + width + " " + height, role: "img", "aria-label": props.label },
-        points.map(function (point, index) {
-          const barHeight = Math.max(2, ((point.value || 0) / max) * (height - 28));
-          return h("rect", {
-            key: point.id,
-            x: index * gap + 1,
-            y: height - 16 - barHeight,
-            width: Math.max(2, gap - 3),
-            height: barHeight,
-            className: "hs-bar" + (props.selected === point.id ? " is-on" : ""),
-            onClick: function () { props.onPick(point); },
-          }, h("title", null, (point.label || point.id) + " · " + (point.value || 0)));
-        })),
-      h("select", {
-        className: "hs-field",
-        value: props.selected || "",
-        onChange: function (event) {
-          const point = points.find(function (item) { return item.id === event.target.value; });
-          if (point) props.onPick(point);
-        },
-      },
-        h("option", { value: "" }, "Choose a bar"),
-        points.map(function (point) {
-          return h("option", { key: point.id, value: point.id }, (point.label || point.id) + " · " + (point.value || 0));
-        })),
-    );
-  }
-
   const BASE = "/api/plugins/house-social";
   const JSON_HEADERS = { "Content-Type": "application/json" };
 
@@ -3146,53 +3109,90 @@
     );
   }
 
+  const STANDINGS = [["all", "All"], ["pinned", "Pinned"], ["demoted", "Lowered"], ["deleted", "Deleted"], ["thin", "Thin"]];
+  const STANDING_LABELS = { open: "", pinned: "Pinned", demoted: "Lowered", deleted: "Deleted" };
+
   function MemoryDesk(props) {
     const desk = (props.studio && props.studio.memory) || { sections: [], timeline: [] };
     const [exported, setExported] = useState("");
+    const [filter, setFilter] = useState("all");
+    const [resetting, setResetting] = useState(false);
+    const [history, setHistory] = useState(false);
     useEffect(function () { props.onSync(); }, []);
     useEffect(function () {
       if (!props.focus) return;
       const node = document.getElementById("hs-memory-" + props.focus);
       if (node && node.scrollIntoView) node.scrollIntoView({ block: "center" });
     }, [props.focus, desk.sections]);
+    function keep(line) {
+      if (filter === "all") return true;
+      if (filter === "thin") return !!line.thin;
+      return line.standing === filter;
+    }
+    const sections = (desk.sections || []).map(function (section) {
+      return Object.assign({}, section, { lines: (section.lines || []).filter(keep) });
+    }).filter(function (section) { return section.lines.length; });
+    const entries = (desk.feedback && desk.feedback.entries) || [];
+    const timeline = desk.timeline || [];
+    async function exportAs(kind) {
+      const found = await props.onExport(kind);
+      if (found) setExported(found.body || "");
+    }
     return h("div", { className: "hs-main" },
-      h("div", { className: "hs-row" },
-        h("button", { type: "button", className: "hs-tab", disabled: props.busy, onClick: function () { props.onCorrect("reset", ""); } }, "Reset learned patterns"),
-        h("button", { type: "button", className: "hs-tab", disabled: props.busy, onClick: async function () { const found = await props.onExport("markdown"); if (found) setExported(found.body || ""); } }, "Export markdown"),
-        h("button", { type: "button", className: "hs-tab", disabled: props.busy, onClick: async function () { const found = await props.onExport("json"); if (found) setExported(found.body || ""); } }, "Export JSON")),
-      exported ? h("textarea", { className: "hs-area", readOnly: true, value: exported }) : null,
-      (desk.sections || []).map(function (section) {
-        return h("div", { key: section.id },
-          h("div", { className: "hs-name" }, section.label),
-          (section.lines || []).map(function (line) {
-            return h("div", { key: line.id, id: "hs-memory-" + line.id, className: "hs-pillar" },
-              h("div", { className: "hs-name" }, line.title + " · " + line.standing + (line.thin ? " · thin" : "")),
-              h("p", { className: line.standing === "deleted" ? "hs-bad" : "hs-note" }, line.detail),
-              h("div", { className: "hs-row" },
-                line.standing !== "pinned" ? h("button", { type: "button", className: "hs-tab", disabled: props.busy, onClick: function () { props.onCorrect("pin", line.id); } }, "Pin") : null,
-                line.standing !== "demoted" ? h("button", { type: "button", className: "hs-tab", disabled: props.busy, onClick: function () { props.onCorrect("demote", line.id); } }, "Lower") : null,
-                line.standing !== "deleted" ? h("button", { type: "button", className: "hs-tab", disabled: props.busy, onClick: function () { props.onCorrect("delete", line.id); } }, "Delete") : null,
-                line.standing !== "open" ? h("button", { type: "button", className: "hs-tab", disabled: props.busy, onClick: function () { props.onCorrect("restore", line.id); } }, "Restore") : null));
-          }));
-      }),
-      (desk.accuracy || []).length ? h("div", null,
-        h("div", { className: "hs-name" }, "How the range held up"),
-        desk.accuracy.map(function (item) { return h("p", { key: item.id, className: "hs-note" }, item.detail); })) : null,
-      h("div", { className: "hs-name" }, "Feedback"),
-      ((desk.feedback && desk.feedback.lines) || ["No feedback yet."]).map(function (line, index) { return h("p", { key: "fb" + index, className: "hs-note" }, line); }),
-      ((desk.feedback && desk.feedback.entries) || []).map(function (entry) {
-        return h("div", { key: entry.id, className: "hs-pillar" },
-          h("p", { className: "hs-note" }, entry.kind + " · " + entry.target + " · " + entry.verdict + (entry.note ? " · " + entry.note : "")),
-          h("div", { className: "hs-row" },
-            h("button", { type: "button", className: "hs-tab", disabled: props.busy, onClick: function () { props.onFeedback({ action: "delete", id: entry.id }); } }, "Delete"),
-            ["used", "better", "worse", "off-brand", "irrelevant"].map(function (verdict) {
-              return h("button", { key: verdict, type: "button", className: "hs-tab", disabled: props.busy || verdict === entry.verdict, onClick: function () { props.onFeedback({ action: "correct", id: entry.id, verdict: verdict, note: entry.note }); } }, verdict);
-            })));
-      }),
-      h("div", { className: "hs-name" }, "Changes"),
-      (desk.timeline || []).length ? (desk.timeline || []).map(function (item) {
-        return h("p", { key: item.id, className: "hs-note" }, (item.kind || "") + (item.pattern_id ? " · " + item.pattern_id : "") + (item.after ? " · " + item.after : ""));
-      }) : h("p", { className: "hs-note" }, "No changes yet."));
+      h("div", { className: "hs-cal-toolbar" },
+        h(Segmented, { label: "Show", value: filter, options: STANDINGS, onChange: setFilter }),
+        h("div", { className: "hs-row hs-gap-sm" },
+          h("button", { type: "button", className: "hs-tab hs-tab-sm", disabled: props.busy, onClick: function () { exportAs("markdown"); } }, "Export markdown"),
+          h("button", { type: "button", className: "hs-tab hs-tab-sm", disabled: props.busy, onClick: function () { exportAs("json"); } }, "Export JSON"),
+          h("button", { type: "button", className: "hs-tab hs-tab-sm is-danger", disabled: props.busy, onClick: function () { setResetting(true); } }, "Reset corrections…"))),
+      resetting ? h("div", { className: "hs-danger-zone is-open", role: "alertdialog", "aria-label": "Reset corrections" },
+        h("p", null, "Reset clears every pin, lower, and delete on this brand. The posts and the patterns they show stay."),
+        h("div", { className: "hs-row" },
+          h("button", { type: "button", className: "hs-button is-danger", disabled: props.busy, onClick: async function () { await props.onCorrect("reset", ""); setResetting(false); } }, "Reset corrections"),
+          h("button", { type: "button", className: "hs-tab", onClick: function () { setResetting(false); } }, "Cancel"))) : null,
+      exported ? h("div", { className: "hs-stack" },
+        h("textarea", { className: "hs-area hs-mono", readOnly: true, value: exported, "aria-label": "Export" }),
+        h("div", { className: "hs-row" },
+          h("button", { type: "button", className: "hs-tab hs-tab-sm", onClick: function () { downloadText(exported.trim().charAt(0) === "{" ? "memory.json" : "memory.md", exported, exported.trim().charAt(0) === "{" ? "application/json" : "text/markdown"); } }, "Download"),
+          h("button", { type: "button", className: "hs-link-button", onClick: function () { setExported(""); } }, "Close"))) : null,
+      sections.length ? sections.map(function (section) {
+        return h(Section, { key: section.id, title: section.label + " · " + section.lines.length },
+          h("ul", { className: "hs-rows" }, section.lines.map(function (line) {
+            const focused = props.focus && props.focus === line.id;
+            return h("li", { key: line.id, id: "hs-memory-" + line.id, className: "hs-list-row" + (focused ? " is-focus" : "") + (line.standing === "deleted" ? " is-muted" : "") },
+              h("div", { className: "hs-list-main" },
+                h("div", { className: "hs-row hs-gap-xs" },
+                  h("strong", null, line.title),
+                  STANDING_LABELS[line.standing] ? h("span", { className: "hs-tag" + (line.standing === "deleted" ? " is-warn" : "") }, STANDING_LABELS[line.standing]) : null,
+                  line.thin ? h("span", { className: "hs-tag hs-tag-flat" }, "Thin") : null),
+                h("div", { className: "hs-meta" }, line.detail)),
+              h("div", { className: "hs-row hs-gap-xs" },
+                line.standing !== "pinned" ? h("button", { type: "button", className: "hs-chip-button", disabled: props.busy, onClick: function () { props.onCorrect("pin", line.id); } }, "Pin") : null,
+                line.standing !== "demoted" ? h("button", { type: "button", className: "hs-chip-button", disabled: props.busy, onClick: function () { props.onCorrect("demote", line.id); } }, "Lower") : null,
+                line.standing !== "deleted" ? h("button", { type: "button", className: "hs-chip-button", disabled: props.busy, onClick: function () { props.onCorrect("delete", line.id); } }, "Delete") : null,
+                line.standing !== "open" ? h("button", { type: "button", className: "hs-chip-button", disabled: props.busy, onClick: function () { props.onCorrect("restore", line.id); } }, "Restore") : null));
+          })));
+      }) : h(Empty, null, filter === "all" ? "No patterns yet. Ingest or pull posts first." : "No pattern is " + (STANDINGS.find(function (pair) { return pair[0] === filter; }) || ["", filter])[1].toLowerCase() + "."),
+      (desk.accuracy || []).length ? h(Section, { title: "How the range held up" },
+        h("ul", { className: "hs-list" }, desk.accuracy.map(function (item) { return h("li", { key: item.id, className: "hs-note" }, item.detail); }))) : null,
+      h(Section, { title: "Feedback", note: ((desk.feedback && desk.feedback.lines) || ["No feedback yet."]).join(" ") },
+        entries.length ? h("ul", { className: "hs-rows" }, entries.map(function (entry) {
+          return h("li", { key: entry.id, className: "hs-list-row" },
+            h("div", { className: "hs-list-main" },
+              h("div", { className: "hs-clamp" }, entry.target),
+              h("div", { className: "hs-meta" }, [entry.kind, entry.note].filter(Boolean).join(" · "))),
+            h("div", { className: "hs-row hs-gap-xs" },
+              h("select", {
+                className: "hs-field hs-field-sm hs-w-sm", "aria-label": "Mark", value: entry.verdict, disabled: props.busy,
+                onChange: function (event) { props.onFeedback({ action: "correct", id: entry.id, verdict: event.target.value, note: entry.note }); },
+              }, VERDICTS.map(function (pair) { return h("option", { key: pair[0], value: pair[0] }, pair[1]); })),
+              h("button", { type: "button", className: "hs-chip-button", disabled: props.busy, onClick: function () { props.onFeedback({ action: "delete", id: entry.id }); } }, "Delete")));
+        })) : null),
+      h(Section, { title: "Changes · " + timeline.length, collapsible: true },
+        timeline.length ? h("ul", { className: "hs-list" }, (history ? timeline : timeline.slice(0, 10)).map(function (item) {
+          return h("li", { key: item.id, className: "hs-note" }, [item.kind, item.pattern_id, item.after].filter(Boolean).join(" · "));
+        })) : h("p", { className: "hs-note" }, "No changes yet."),
+        timeline.length > 10 ? h("button", { type: "button", className: "hs-link-button", onClick: function () { setHistory(!history); } }, history ? "Show fewer" : "Show all " + timeline.length) : null));
   }
 
   function IngestDesk(props) {
@@ -3265,24 +3265,85 @@
   }
 
 
+  function dayNumber(iso) {
+    return Math.round(utcDate(String(iso).slice(0, 10)).getTime() / 86400000);
+  }
+
+  // One line a platform on a shared day axis, so the same x is the same day.
   function MapLines(props) {
-    const series = props.series || [];
-    const colors = { facebook: "#c4a574", instagram: "#7d9a92", threads: "#d4c4a8" };
+    const series = (props.series || []).filter(function (row) { return (row.points || []).length; });
     if (!series.length) return h("p", { className: "hs-note" }, "No numbers in this window.");
-    const points = series.reduce(function (all, row) { return all.concat(row.points || []); }, []);
-    const max = Math.max.apply(null, points.map(function (point) { return point.value || 0; }).concat([1]));
-    const width = 640;
-    const height = 160;
-    return h("svg", { className: "hs-chart", viewBox: "0 0 " + width + " " + height, role: "img", "aria-label": "Daily engagements" },
-      series.map(function (row) {
-        const step = width / Math.max(1, (row.points || []).length - 1);
-        const d = (row.points || []).map(function (point, index) {
-          const x = (row.points.length === 1 ? width / 2 : index * step);
-          const y = height - 16 - ((point.value || 0) / max) * (height - 28);
-          return (index ? "L" : "M") + x + " " + y;
-        }).join(" ");
-        return h("path", { key: row.platform, d: d, fill: "none", stroke: colors[row.platform] || "#8aa4b5", strokeWidth: 2 });
-      }));
+    const all = series.reduce(function (list, row) { return list.concat(row.points); }, []);
+    const days = all.map(function (point) { return dayNumber(point.date); });
+    const first = Math.min.apply(null, days);
+    const last = Math.max.apply(null, days);
+    const span = Math.max(1, last - first);
+    const max = Math.max.apply(null, all.map(function (point) { return point.value || 0; }).concat([1]));
+    const width = 800;
+    const height = 220;
+    const pad = { left: 44, right: 12, top: 12, bottom: 26 };
+    function x(date) { return pad.left + ((dayNumber(date) - first) / span) * (width - pad.left - pad.right); }
+    function y(value) { return height - pad.bottom - ((value || 0) / max) * (height - pad.top - pad.bottom); }
+    const firstIso = all.reduce(function (low, point) { return !low || point.date < low ? point.date : low; }, "");
+    const lastIso = all.reduce(function (high, point) { return point.date > high ? point.date : high; }, "");
+    return h("figure", { className: "hs-chart" },
+      h("figcaption", { className: "hs-row hs-spread" },
+        h("span", { className: "hs-name" }, "Daily engagements"),
+        h("span", { className: "hs-legend" }, series.map(function (row) {
+          return h("span", { key: row.platform, className: "hs-note" }, h("span", { className: "hs-swatch", style: { background: PLATFORM_COLORS[row.platform] || NO_COLOR } }), platformName(row.platform));
+        }))),
+      h("svg", { className: "hs-line-chart", viewBox: "0 0 " + width + " " + height, role: "img", "aria-label": "Daily engagements by platform, " + firstIso + " to " + lastIso },
+        [0, 0.5, 1].map(function (step) {
+          const value = Math.round(max * step);
+          return h("g", { key: step },
+            h("line", { x1: pad.left, x2: width - pad.right, y1: y(value), y2: y(value), className: "hs-grid-line" }),
+            h("text", { x: pad.left - 8, y: y(value) + 4, textAnchor: "end", className: "hs-axis-text" }, formatNumber(value)));
+        }),
+        h("text", { x: pad.left, y: height - 6, className: "hs-axis-text" }, firstIso.slice(5)),
+        h("text", { x: width - pad.right, y: height - 6, textAnchor: "end", className: "hs-axis-text" }, lastIso.slice(5)),
+        series.map(function (row) {
+          const color = PLATFORM_COLORS[row.platform] || NO_COLOR;
+          const sorted = row.points.slice().sort(function (left, right) { return left.date < right.date ? -1 : 1; });
+          const d = sorted.map(function (point, index) { return (index ? "L" : "M") + x(point.date).toFixed(1) + " " + y(point.value).toFixed(1); }).join(" ");
+          return h("g", { key: row.platform },
+            h("path", { d: d, fill: "none", stroke: color, strokeWidth: 2, strokeLinejoin: "round" }),
+            sorted.map(function (point) {
+              return h("circle", { key: point.date, cx: x(point.date), cy: y(point.value), r: 3.5, fill: color },
+                h("title", null, platformName(row.platform) + " · " + point.date + " · " + formatNumber(point.value)));
+            }));
+        })));
+  }
+
+  const HEAT_DAYS = ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"];
+
+  function Heatmap(props) {
+    const cells = props.cells || [];
+    if (!cells.length) return h("p", { className: "hs-note" }, "No post in this window has a local hour.");
+    const max = Math.max.apply(null, cells.map(function (cell) { return cell.mean || 0; }).concat([1]));
+    const find = {};
+    cells.forEach(function (cell) { find[cell.weekday + " " + cell.hour] = cell; });
+    const hours = Array.from({ length: 24 }, function (_, index) { return String(index).padStart(2, "0") + ":00"; });
+    return h("figure", { className: "hs-chart" },
+      h("figcaption", { className: "hs-row hs-spread" },
+        h("span", { className: "hs-name" }, "Mean engagements by day and hour"),
+        h("span", { className: "hs-meta" }, "Eastern time · darker is higher · highest " + formatNumber(max))),
+      h("div", { className: "hs-heat", role: "table", "aria-label": "Mean engagements by weekday and hour" },
+        h("div", { className: "hs-heat-row", role: "row" },
+          h("span", { role: "columnheader" }),
+          hours.map(function (hour, index) { return h("span", { key: hour, role: "columnheader", className: "hs-heat-hour" }, index % 3 === 0 ? hour.slice(0, 2) : ""); })),
+        HEAT_DAYS.map(function (day) {
+          return h("div", { key: day, className: "hs-heat-row", role: "row" },
+            h("span", { role: "rowheader", className: "hs-heat-day" }, day),
+            hours.map(function (hour) {
+              const cell = find[day + " " + hour];
+              const tip = cell ? day + " " + hour + " · mean " + formatNumber(cell.mean) + " · n=" + cell.n : day + " " + hour + " · no posts";
+              return h("span", {
+                key: hour, role: "cell", title: tip, "aria-label": tip,
+                className: "hs-heat-cell" + (cell ? "" : " is-empty"),
+                style: cell ? { "--hs-heat": Math.max(0.22, cell.mean / max) } : null,
+              });
+            }));
+        })));
   }
 
   function MapDesk(props) {
@@ -3290,51 +3351,117 @@
     const [size, setSize] = useState("28");
     const [view, setView] = useState("overview");
     const [postId, setPostId] = useState("");
-    const window = (map.windows && map.windows[size]) || { cards: {}, series: [], formats: [], heatmap: [], top: [], change: [], followers: [], rates: [] };
+    const frame = (map.windows && map.windows[size]) || { cards: {}, series: [], formats: [], heatmap: [], top: [], change: [], followers: [], rates: [] };
     const post = (map.posts || []).find(function (item) { return item.id === postId; }) || (map.posts || [])[0];
-    const cards = window.cards || {};
+    const cards = frame.cards || {};
     return h("div", { className: "hs-main" },
-      h("div", { className: "hs-row" },
-        ["7", "28", "90"].map(function (item) { return h("button", { key: item, type: "button", className: "hs-tab" + (size === item ? " is-on" : ""), onClick: function () { setSize(item); } }, item + " days"); }),
-        ["overview", "post", "formats", "audience"].map(function (item) { return h("button", { key: item, type: "button", className: "hs-tab" + (view === item ? " is-on" : ""), onClick: function () { setView(item); } }, item); })),
-      view === "overview" ? h("div", null,
-        h(MapLines, { series: window.series }),
-        ["facebook", "instagram", "threads"].map(function (name) {
-          const card = cards[name] || { detail: "No numbers in this window.", rows: [] };
-          return h("div", { key: name, className: "hs-pillar" },
-            h("div", { className: "hs-name" }, name),
+      h("div", { className: "hs-cal-toolbar" },
+        h(Segmented, { label: "View", value: view, options: [["overview", "Overview"], ["post", "One post"], ["formats", "Formats and hours"], ["audience", "Audience"]], onChange: setView }),
+        h(Segmented, { label: "Window", value: size, options: [["7", "7 days"], ["28", "28 days"], ["90", "90 days"]], onChange: setSize })),
+      view === "overview" ? h("div", { className: "hs-stack" },
+        h(MapLines, { series: frame.series }),
+        h("div", { className: "hs-grid-3 hs-align-start" }, PLATFORMS.map(function (pair) {
+          const card = cards[pair[0]] || { detail: "No numbers in this window.", rows: [] };
+          const change = (frame.change || []).find(function (item) { return item.platform === pair[0]; });
+          return h("div", { key: pair[0], className: "hs-pillar" },
+            h("div", { className: "hs-row hs-spread" },
+              h("div", { className: "hs-name" }, h("span", { className: "hs-swatch", style: { background: PLATFORM_COLORS[pair[0]] } }), pair[1])),
+            (card.rows || []).length ? h("dl", { className: "hs-dl" }, (card.rows || []).map(function (row) {
+              return [h("dt", { key: row.label + "t" }, row.label), h("dd", { key: row.label + "d" }, formatNumber(row.value))];
+            })) : null,
             card.detail ? h("p", { className: "hs-note" }, card.detail) : null,
-            (card.rows || []).map(function (row) { return h("p", { key: row.label, className: "hs-note" }, row.label + ": " + (row.value == null ? "—" : row.value)); }));
-        }),
-        (window.change || []).map(function (item) { return h("p", { key: item.platform, className: "hs-note" }, item.platform + " · " + item.detail); }),
-        (window.followers || []).map(function (item) { return h("p", { key: item.platform, className: "hs-note" }, item.detail); })) : null,
-      view === "post" ? h("div", null,
-        map.hourly ? null : h("p", { className: "hs-note" }, "Hourly counts are not in the pull."),
-        h("select", { className: "hs-field", value: post ? post.id : "", onChange: function (event) { setPostId(event.target.value); } },
-          (map.posts || []).map(function (item) { return h("option", { key: item.id, value: item.id }, (item.platform || "") + " · " + (item.preview || item.id)); })),
-        post ? h("div", { className: "hs-pillar" },
-          h("p", { className: "hs-voice" }, post.preview || "No caption in the pull."),
-          h("p", { className: "hs-note" }, [post.platform, post.format, post.at].filter(Boolean).join(" · ")),
-          h("p", { className: "hs-note" }, "Engagements: " + (post.engagements == null ? "—" : post.engagements) + ". Reach: " + (post.impressions == null ? "—" : post.impressions)),
-          (post.parts || []).map(function (part) { return h("p", { key: part.label, className: "hs-note" }, part.label + ": " + part.value); })) : h("p", { className: "hs-note" }, "No post in the pull.")) : null,
-      view === "formats" ? h("div", null,
-        (window.formats || []).length ? (window.formats || []).map(function (item) { return h("p", { key: item.format, className: "hs-note" }, item.format + " · " + item.detail); }) : h("p", { className: "hs-note" }, "No format in this window."),
-        (window.heatmap || []).slice(0, 24).map(function (cell) { return h("p", { key: cell.weekday + cell.hour, className: "hs-note" }, cell.weekday + " " + cell.hour + " · " + cell.mean + " (n=" + cell.n + ")"); }),
-        (window.top || []).map(function (item) { return h("p", { key: item.id, className: "hs-note" }, item.platform + " · " + item.format + " · " + (item.engagements == null ? "—" : item.engagements) + (item.rate == null ? "" : " · " + item.rate + " percent") + " · " + item.preview); })) : null,
-      view === "audience" ? h("div", null,
-        map.demographics ? null : h("p", { className: "hs-note" }, "No city or age breakdown was returned."),
-        (window.followers || []).length ? (window.followers || []).map(function (item) { return h("p", { key: item.platform, className: "hs-note" }, item.detail); }) : h("p", { className: "hs-note" }, "No follower numbers in this window."),
-        (window.rates || []).length ? (window.rates || []).map(function (item) { return h("p", { key: item.label, className: "hs-note" }, item.detail); }) : h("p", { className: "hs-note" }, "No rate. Reach was not in the pull.")) : null);
+            change ? h("p", { className: "hs-note" }, change.detail) : null);
+        })),
+        (frame.followers || []).map(function (item) { return h("p", { key: item.platform, className: "hs-note" }, item.detail); })) : null,
+      view === "post" ? h("div", { className: "hs-stack" },
+        map.hourly ? null : h("p", { className: "hs-hint" }, "Hourly counts are not in the pull, so there is no first-48-hours curve."),
+        (map.posts || []).length ? field("Post", h("select", { className: "hs-field", value: post ? post.id : "", onChange: function (event) { setPostId(event.target.value); } },
+          (map.posts || []).map(function (item) { return h("option", { key: item.id, value: item.id }, platformName(item.platform) + " · " + (item.preview || item.id).slice(0, 80)); }))) : null,
+        post ? h(Section, { title: post.preview || "No caption in the pull." },
+          h("p", { className: "hs-meta" }, [platformName(post.platform), post.format, String(post.at || "").replace("T", " ").slice(0, 16)].filter(Boolean).join(" · ")),
+          h("div", { className: "hs-stats" },
+            h(Stat, { label: "Engagements", value: formatNumber(post.engagements), missing: post.engagements == null }),
+            h(Stat, { label: "Reach", value: formatNumber(post.impressions), missing: post.impressions == null }),
+            (post.parts || []).map(function (part) { return h(Stat, { key: part.label, label: part.label, value: formatNumber(part.value) }); }))) : h("p", { className: "hs-note" }, "No post in the pull.")) : null,
+      view === "formats" ? h("div", { className: "hs-stack" },
+        h(Section, { title: "Formats" },
+          (frame.formats || []).length ? h("ul", { className: "hs-rows" }, (frame.formats || []).map(function (item) {
+            return h("li", { key: item.format, className: "hs-list-row" }, h("div", { className: "hs-list-main" }, h("strong", null, item.format), h("span", { className: "hs-meta" }, item.detail)));
+          })) : h("p", { className: "hs-note" }, "No format in this window.")),
+        h(Heatmap, { cells: frame.heatmap }),
+        h(Section, { title: "Top posts" },
+          (frame.top || []).length ? h("ul", { className: "hs-rows" }, (frame.top || []).map(function (item) {
+            return h("li", { key: item.id, className: "hs-list-row" },
+              h("div", { className: "hs-list-main" },
+                h("div", { className: "hs-clamp" }, item.preview),
+                h("div", { className: "hs-meta" }, [platformName(item.platform), item.format, item.rate == null ? "" : item.rate + " percent"].filter(Boolean).join(" · "))),
+              h("span", { className: "hs-num" }, formatNumber(item.engagements)));
+          })) : h("p", { className: "hs-note" }, "No posts in this window."))) : null,
+      view === "audience" ? h("div", { className: "hs-stack" },
+        map.demographics ? null : h("p", { className: "hs-hint" }, "No city or age breakdown was returned, so none is shown."),
+        h(Section, { title: "Followers" },
+          (frame.followers || []).length ? (frame.followers || []).map(function (item) { return h("p", { key: item.platform, className: "hs-voice" }, item.detail); }) : h("p", { className: "hs-note" }, "No follower numbers in this window.")),
+        h(Section, { title: "Rates", note: "Each rate names what it divides by. No rate appears without its denominator." },
+          (frame.rates || []).length ? (frame.rates || []).map(function (item) { return h("p", { key: item.label, className: "hs-voice" }, item.detail); }) : h("p", { className: "hs-note" }, "No rate. Reach was not in the pull."))) : null);
   }
+
+  function formatNumber(value) {
+    if (value == null || value === "") return "—";
+    const number = Number(value);
+    if (!isFinite(number)) return String(value);
+    return number.toLocaleString("en-US", { maximumFractionDigits: 1 });
+  }
+
+  // Bars as HTML: they fill the width, take focus, and say their value.
+  function BarChart(props) {
+    const points = props.points || [];
+    if (!points.length) return h("div", { className: "hs-chart" },
+      h("div", { className: "hs-name" }, props.label),
+      h("p", { className: "hs-note" }, props.empty || "No numbers yet."));
+    const values = points.map(function (point) { return Number(point.value) || 0; });
+    const max = Math.max.apply(null, values.concat([1]));
+    const every = Math.max(1, Math.ceil(points.length / 12));
+    const pickable = !!props.onPick;
+    return h("figure", { className: "hs-chart" },
+      h("figcaption", { className: "hs-row hs-spread" },
+        h("span", { className: "hs-name" }, props.label),
+        h("span", { className: "hs-meta" }, "Highest " + formatNumber(max))),
+      h("div", { className: "hs-bars", style: { "--hs-bars": points.length } },
+        points.map(function (point, index) {
+          const on = props.selected === point.id;
+          const tip = (point.label || point.id) + ": " + formatNumber(values[index]) + (point.note ? " · " + point.note : "");
+          const fill = h("span", { className: "hs-bar-fill", style: { height: Math.max(2, (values[index] / max) * 100) + "%" } });
+          return pickable
+            ? h("button", { key: point.id, type: "button", className: "hs-bar-col" + (on ? " is-on" : ""), title: tip, "aria-label": tip, "aria-pressed": on, onClick: function () { props.onPick(point); } }, fill)
+            : h("div", { key: point.id, className: "hs-bar-col", title: tip, role: "img", "aria-label": tip }, fill);
+        })),
+      h("div", { className: "hs-bars hs-bar-axis", style: { "--hs-bars": points.length }, "aria-hidden": "true" },
+        points.map(function (point, index) {
+          return h("span", { key: point.id }, index % every === 0 ? String(point.label || point.id).split(" · ")[0] : "");
+        })));
+  }
+
+  const METRICS = [
+    ["reach", "Reach", "reach_note"],
+    ["impressions", "Impressions", "impressions_note"],
+    ["engagements", "Engagements", null],
+    ["rate", "Rate", "rate_note"],
+    ["saves", "Saves", "saves_note"],
+    ["shares", "Shares", null],
+    ["comments", "Comments", "comments_note"],
+    ["clicks", "Clicks", "clicks_note"],
+    ["video_completion", "Video completion", "video_note"],
+    ["growth", "Follower change", "growth_note"],
+  ];
 
   function Performance(props) {
     const perf = (props.studio && props.studio.performance) || { page_days: [], recorded_days: [], hours: [], posts: [], source: "none", ranges: {} };
-    const [range, setRange] = useState("7");
+    const [range, setRange] = useState("28");
     const [campaign, setCampaign] = useState("");
     const report = (perf.ranges && perf.ranges[range]) || { totals: {}, comparison: { lines: [] }, campaigns: [], formats: [], top: [], bottom: [], patterns: [], alerts: [] };
-    const [goal, setGoal] = useState({ metric: "engagements", change: "20", start: "", end: "" });
     const totals = report.totals || {};
-    const chosen = (report.campaigns || []).find(function (item) { return item.name === campaign; }) || (report.campaigns || [])[0] || null;
+    const named = (report.campaigns || []).filter(function (item) { return item.name; });
+    const chosen = named.find(function (item) { return item.name === campaign; }) || named[0] || null;
     const pageDays = perf.page_days || [];
     const recordedDays = perf.recorded_days || [];
     const usePage = pageDays.length > 0;
@@ -3345,117 +3472,95 @@
       return { id: day.id, label: day.label, value: day.engagements, raw: day };
     }) : [];
     const hours = (perf.hours || []).map(function (hour) {
-      return { id: hour.id, label: hour.label + " · n=" + hour.n, value: hour.mean, raw: hour };
+      return { id: hour.id, label: hour.label, note: "n=" + hour.n, value: hour.mean, raw: hour };
     });
     const posts = perf.posts || [];
     const picked = pageDays.concat(recordedDays).find(function (day) { return day.id === props.pickedDay; });
     const post = posts.find(function (item) { return item.id === props.pickedPost; });
     const hourPosts = posts.filter(function (item) { return String(item.local_hour) === props.pickedHour; });
     const formatPoints = (report.formats || []).map(function (item) {
-      return { id: item.id, label: item.label + " · n=" + item.n, value: item.mean, raw: item };
+      return { id: item.id, label: item.label, note: "n=" + item.n, value: item.mean, raw: item };
     });
-    function tile(label, value, note) {
-      return h("div", { key: label, className: "hs-pillar" },
-        h("div", { className: "hs-note" }, label),
-        h("div", { className: "hs-name" }, value == null ? "Not in the pull" : String(value)),
-        note ? h("div", { className: "hs-note" }, note) : null);
+    const shown = METRICS.filter(function (metric) { return totals[metric[0]] != null; });
+    const missing = METRICS.filter(function (metric) { return totals[metric[0]] == null; });
+    const patterns = report.patterns || [];
+    const clear = patterns.filter(function (item) { return item.clear; });
+    const thin = patterns.filter(function (item) { return !item.clear; });
+    function postList(rows, empty) {
+      if (!rows.length) return h("p", { className: "hs-note" }, empty);
+      return h("ul", { className: "hs-rows" }, rows.map(function (item) {
+        return h("li", { key: item.id, className: "hs-list-row" },
+          h("div", { className: "hs-list-main" },
+            h("div", { className: "hs-clamp" }, item.preview || "Untitled"),
+            h("div", { className: "hs-meta" }, [platformName(item.platform), item.format, item.shares != null ? item.shares + " shares" : "", item.saves != null ? item.saves + " saves" : ""].filter(Boolean).join(" · ")),
+            (item.reasons || []).map(function (reason) { return h("div", { key: reason, className: "hs-meta" }, reason); })),
+          h("div", { className: "hs-row hs-gap-sm" },
+            h("span", { className: "hs-num", title: "Engagements" }, formatNumber(item.engagements)),
+            item.permalink ? h("a", { href: item.permalink, target: "_blank", rel: "noopener noreferrer" }, "Open") : null));
+      }));
     }
     return h("div", { className: "hs-main" },
-      h("div", { className: "hs-row" },
-        [["7", "7 days"], ["28", "28 days"], ["90", "90 days"], ["all", "All"]].map(function (pair) {
-          return h("button", {
-            key: pair[0], type: "button",
-            className: "hs-tab" + (range === pair[0] ? " is-on" : ""),
-            onClick: function () { setRange(pair[0]); },
-          }, pair[1]);
-        })),
-      h("div", { className: "hs-previews" },
-        tile("Reach", totals.reach, totals.reach_note),
-        tile("Impressions", totals.impressions, totals.impressions_note),
-        tile("Engagements", totals.engagements, totals.posts + " posts"),
-        tile("Rate", totals.rate, totals.rate_note),
-        tile("Saves", totals.saves, totals.saves_note),
-        tile("Shares", totals.shares, ""),
-        tile("Comments", totals.comments, totals.comments_note),
-        tile("Clicks", totals.clicks, totals.clicks_note),
-        tile("Video completion", totals.video_completion, totals.video_note),
-        tile("Follower change", totals.growth, totals.growth_note)),
-      h("div", { className: "hs-name" }, "Patterns"),
-      (report.patterns || []).map(function (item) {
-        return h("p", { key: item.id, className: item.clear ? "hs-ok" : "hs-note" }, item.title + ". " + item.detail);
-      }),
-      h("div", { className: "hs-name" }, "Outliers"),
-      (report.alerts || []).length ? report.alerts.map(function (item) {
-        return h("p", { key: item.id, className: "hs-note" }, item.detail);
-      }) : h("p", { className: "hs-note" }, "No post in this window is at least 3× the other posts."),
-      h("div", { className: "hs-name" }, (report.comparison && report.comparison.label) || "Comparison"),
-      ((report.comparison && report.comparison.lines) || []).map(function (line) {
-        return h("p", { key: line, className: "hs-note" }, line);
-      }),
-      h("div", { className: "hs-name" }, "Campaign against the other posts"),
-      (report.campaigns || []).some(function (item) { return item.name; }) ? h("select", {
-        className: "hs-field",
-        value: chosen ? chosen.name : "",
-        onChange: function (event) { setCampaign(event.target.value); },
-      }, (report.campaigns || []).filter(function (item) { return item.name; }).map(function (item) {
-        return h("option", { key: item.name, value: item.name }, item.name);
-      })) : null,
-      chosen ? h("p", { className: "hs-note" }, chosen.detail) : null,
-      h(BarChart, { label: "Mean engagements by format", points: formatPoints, empty: "No format in this window." }),
-      h("div", { className: "hs-name" }, "Top posts"),
-      (report.top || []).length ? report.top.map(function (item) {
-        return h("div", { key: item.id, className: "hs-pillar" },
-          h("div", { className: "hs-name" }, item.engagements + " engagements"),
-          h("div", { className: "hs-note" }, [item.platform, item.format, item.shares + " shares", item.saves == null ? "" : item.saves + " saves", item.preview].filter(Boolean).join(" · ")),
-          (item.reasons || []).map(function (reason) { return h("p", { key: reason, className: "hs-note" }, reason); }),
-          item.permalink ? h("a", { href: item.permalink, target: "_blank", rel: "noopener noreferrer" }, "Open the post") : null);
-      }) : h("p", { className: "hs-note" }, "No posts in this window."),
-      h("div", { className: "hs-name" }, "Quiet posts"),
-      (report.bottom || []).length ? report.bottom.map(function (item) {
-        return h("div", { key: "low-" + item.id, className: "hs-pillar" },
-          h("div", { className: "hs-name" }, item.engagements + " engagements"),
-          h("div", { className: "hs-note" }, item.preview || "Untitled"),
-          (item.reasons || []).map(function (reason) { return h("p", { key: reason, className: "hs-note" }, reason); }));
-      }) : null,
-      h("p", { className: "hs-note" }, usePage
-        ? "Page totals from the Facebook ledger. A bar is a day. Click it. These are not estimated."
-        : "No page ledger for this brand. Record a result and the bars are the posts you logged."),
-      h(BarChart, { label: usePage ? "Organic impressions" : "Recorded engagements", points: days, selected: props.pickedDay, onPick: props.onDay, empty: "No days yet." }),
-      engagements.length ? h(BarChart, { label: "Page engagements", points: engagements, selected: props.pickedDay, onPick: props.onDay }) : null,
-      picked ? h("p", { className: "hs-note" }, picked.date + (picked.impressions != null ? " · impressions " + picked.impressions : "") + " · engagements " + (picked.engagements || 0) + (picked.follows != null ? " · follows " + picked.follows : "")) : null,
-      h(BarChart, { label: "Mean engagements by local hour", points: hours, selected: props.pickedHour, onPick: props.onHour, empty: "No hours yet." }),
-      hourPosts.length ? h("div", null, hourPosts.map(function (item) {
-        return h("div", { key: item.id, className: "hs-note" }, item.preview || item.id);
-      })) : null,
-      h("div", { className: "hs-name" }, "Posts"),
-      posts.length ? posts.map(function (item) {
-        return h("button", {
-          key: item.id, type: "button",
-          className: "hs-post" + (props.pickedPost === item.id ? " is-on" : ""),
-          onClick: function () { props.onPost(item); },
-        }, item.engagements + " · " + (item.preview || "Untitled"));
-      }) : h("p", { className: "hs-note" }, "No posts in this window."),
-      post ? h("div", { className: "hs-pillar" },
-        h("div", null, (post.reactions || 0) + " reactions · " + (post.comments || 0) + " comments · " + (post.shares || 0) + " shares"),
-        post.permalink ? h("a", { href: post.permalink, target: "_blank", rel: "noopener noreferrer" }, "Open the post") : null,
-      ) : null,
-      h("div", { className: "hs-name" }, "Goals"),
-      h("p", { className: "hs-note" }, (perf.imported || 0) + " imported posts with a date and an engagement count are in these numbers. A row without either stays stored and out of the window."),
-      (perf.goals || []).length ? perf.goals.map(function (item) {
-        return h("p", { key: item.id, className: "hs-note" }, item.detail);
-      }) : h("p", { className: "hs-note" }, "No goal yet."),
-      h("form", { className: "hs-row", onSubmit: function (event) {
-        event.preventDefault();
-        props.onGoal({ metric: goal.metric, change: Number(goal.change), start: goal.start, end: goal.end });
-      } },
-        h("select", { className: "hs-field", value: goal.metric, onChange: function (event) { setGoal(Object.assign({}, goal, { metric: event.target.value })); } },
-          ["engagements", "shares", "saves", "reach", "follows"].map(function (metric) { return h("option", { key: metric, value: metric }, metric); })),
-        h("input", { className: "hs-field", value: goal.change, placeholder: "Percent, such as 20", onChange: function (event) { setGoal(Object.assign({}, goal, { change: event.target.value })); } }),
-        h("input", { className: "hs-field", type: "date", value: goal.start, onChange: function (event) { setGoal(Object.assign({}, goal, { start: event.target.value })); } }),
-        h("input", { className: "hs-field", type: "date", value: goal.end, onChange: function (event) { setGoal(Object.assign({}, goal, { end: event.target.value })); } }),
-        h("button", { type: "submit", className: "hs-button", disabled: props.busy || !goal.start || !goal.end }, "Save goal")),
-      h("label", { className: "hs-note" }, "Past posts CSV",
-        h("input", {
+      h("div", { className: "hs-cal-toolbar" },
+        h(Segmented, { label: "Window", value: range, options: [["7", "7 days"], ["28", "28 days"], ["90", "90 days"], ["all", "All"]], onChange: setRange }),
+        h("span", { className: "hs-note" }, (totals.posts != null ? totals.posts + " posts in this window" : "") + (perf.imported ? " · " + perf.imported + " imported" : ""))),
+      h("div", { className: "hs-stats" }, shown.map(function (metric) {
+        return h(Stat, {
+          key: metric[0], label: metric[1],
+          value: formatNumber(totals[metric[0]]),
+          note: metric[0] === "engagements" ? (totals.posts != null ? totals.posts + " posts" : null) : metric[2] ? totals[metric[2]] : null,
+        });
+      })),
+      missing.length ? h("p", { className: "hs-hint" }, "Not in the pull: " + missing.map(function (metric) { return metric[1].toLowerCase(); }).join(", ") + ". They stay missing rather than zero.") : null,
+      h("div", { className: "hs-grid-2 hs-align-start" },
+        h(Section, { title: (report.comparison && report.comparison.label) || "Against the period before" },
+          ((report.comparison && report.comparison.lines) || []).length
+            ? h("ul", { className: "hs-list" }, report.comparison.lines.map(function (line) { return h("li", { key: line, className: "hs-note" }, line); }))
+            : h("p", { className: "hs-note" }, "Nothing to compare yet.")),
+        h(Section, { title: "Patterns", note: clear.length ? null : "Nothing is clear in this window yet." },
+          clear.length ? h("ul", { className: "hs-checks" }, clear.map(function (item) {
+            return h("li", { key: item.id, className: "is-ok" },
+              h("span", { className: "hs-check-mark", "aria-hidden": "true" }, "✓"),
+              h("span", null, h("strong", null, item.title + ". "), item.detail));
+          })) : null,
+          thin.length ? h("details", { className: "hs-more" },
+            h("summary", null, "Not clear yet · " + thin.length),
+            h("ul", { className: "hs-list" }, thin.map(function (item) { return h("li", { key: item.id, className: "hs-note" }, h("strong", null, item.title + ". "), item.detail); }))) : null,
+          (report.alerts || []).length ? h("div", { className: "hs-stack hs-gap-xs" },
+            h("div", { className: "hs-overline" }, "Outliers"),
+            report.alerts.map(function (item) { return h("p", { key: item.id, className: "hs-voice" }, item.detail); })) : null)),
+      h(Section, { title: "Charts", note: usePage ? "Page totals come from the Facebook ledger, a bar a day. They are not estimated." : "No page ledger for this brand, so the daily bars are the posts you logged." },
+        h("div", { className: "hs-grid-2" },
+          h(BarChart, { label: "Mean engagements by format", points: formatPoints, empty: "No format in this window." }),
+          h(BarChart, { label: "Mean engagements by local hour", points: hours, selected: props.pickedHour, onPick: props.onHour, empty: "No hours yet." })),
+        hourPosts.length ? h("div", { className: "hs-advice" },
+          h("div", { className: "hs-overline" }, "Posted at " + props.pickedHour.padStart(2, "0") + ":00"),
+          hourPosts.map(function (item) { return h("p", { key: item.id, className: "hs-note" }, formatNumber(item.engagements) + " · " + (item.preview || item.id)); })) : null,
+        h(BarChart, { label: usePage ? "Organic impressions by day" : "Recorded engagements by day", points: days, selected: props.pickedDay, onPick: props.onDay, empty: "No days yet." }),
+        engagements.length ? h(BarChart, { label: "Page engagements by day", points: engagements, selected: props.pickedDay, onPick: props.onDay }) : null,
+        picked ? h("p", { className: "hs-advice" }, h("strong", null, picked.date), (picked.impressions != null ? " · impressions " + formatNumber(picked.impressions) : "") + " · engagements " + formatNumber(picked.engagements) + (picked.follows != null ? " · follows " + formatNumber(picked.follows) : "")) : null),
+      h("div", { className: "hs-grid-2 hs-align-start" },
+        h(Section, { title: "Top posts" }, postList(report.top || [], "No posts in this window.")),
+        h(Section, { title: "Quiet posts" }, postList(report.bottom || [], "No quiet posts in this window."))),
+      named.length ? h(Section, { title: "A campaign against the other posts" },
+        h("select", { className: "hs-field hs-w-lg", "aria-label": "Campaign", value: chosen ? chosen.name : "", onChange: function (event) { setCampaign(event.target.value); } },
+          named.map(function (item) { return h("option", { key: item.name, value: item.name }, item.name); })),
+        chosen ? h("p", { className: "hs-note" }, chosen.detail) : null) : null,
+      h(Section, { title: "Every post · " + posts.length, collapsible: true },
+        posts.length ? h("ul", { className: "hs-rows" }, posts.map(function (item) {
+          const on = props.pickedPost === item.id;
+          return h("li", { key: item.id },
+            h("button", { type: "button", className: "hs-row-button" + (on ? " is-on" : ""), "aria-expanded": on, onClick: function () { props.onPost(item); } },
+              h("span", { className: "hs-num" }, formatNumber(item.engagements)),
+              h("span", { className: "hs-row-text" }, item.preview || "Untitled")),
+            on && post ? h("div", { className: "hs-review" },
+              h("p", { className: "hs-note" }, formatNumber(post.reactions) + " reactions · " + formatNumber(post.comments) + " comments · " + formatNumber(post.shares) + " shares"),
+              post.permalink ? h("a", { href: post.permalink, target: "_blank", rel: "noopener noreferrer" }, "Open the post") : null) : null);
+        })) : h("p", { className: "hs-note" }, "No posts in this window.")),
+      h(Section, { title: "Goals", note: (perf.imported || 0) + " imported posts with a date and an engagement count are in these numbers." },
+        (perf.goals || []).length ? h("ul", { className: "hs-list" }, perf.goals.map(function (item) { return h("li", { key: item.id, className: "hs-voice" }, item.detail); })) : h("p", { className: "hs-note" }, "No goal yet."),
+        h(GoalForm, { busy: props.busy, onGoal: props.onGoal })),
+      h(Section, { title: "Add numbers by hand", note: "For posts the pull cannot see. A missing number stays missing.", collapsible: true },
+        field("A CSV of past posts", h("input", {
           className: "hs-field", type: "file", accept: ".csv,text/csv",
           onChange: function (event) {
             const file = event.target.files && event.target.files[0];
@@ -3463,41 +3568,72 @@
             const reader = new FileReader();
             reader.onload = function () { props.onHistory(String(reader.result || "")); };
             reader.readAsText(file);
+            event.target.value = "";
           },
-        })),
-      h(RecordForm, { busy: props.busy, onRecorded: props.onRecorded }),
+        }), "The Ingest desk maps columns for you, if the CSV has other names."),
+        h(RecordForm, { busy: props.busy, onRecorded: props.onRecorded })),
     );
   }
 
+  function GoalForm(props) {
+    const [goal, setGoal] = useState({ metric: "engagements", change: "20", start: "", end: "" });
+    function setField(name, value) {
+      setGoal(function (current) { return Object.assign({}, current, { [name]: value }); });
+    }
+    return h("form", {
+      className: "hs-stack",
+      onSubmit: async function (event) {
+        event.preventDefault();
+        const saved = await props.onGoal({ metric: goal.metric, change: Number(goal.change), start: goal.start, end: goal.end });
+        if (saved) setGoal(Object.assign({}, goal, { start: "", end: "" }));
+      },
+    },
+      h("div", { className: "hs-grid-4" },
+        field("Metric", h("select", { className: "hs-field", value: goal.metric, onChange: function (event) { setField("metric", event.target.value); } },
+          ["engagements", "shares", "saves", "reach", "follows"].map(function (metric) { return h("option", { key: metric, value: metric }, metric); }))),
+        field("Change, in percent", h("input", { className: "hs-field", inputMode: "decimal", value: goal.change, onChange: function (event) { setField("change", event.target.value); } })),
+        field("From", h("input", { className: "hs-field", type: "date", value: goal.start, onChange: function (event) { setField("start", event.target.value); } })),
+        field("Through", h("input", { className: "hs-field", type: "date", value: goal.end, min: goal.start || undefined, onChange: function (event) { setField("end", event.target.value); } }))),
+      h("div", { className: "hs-row" }, h("button", { type: "submit", className: "hs-tab", disabled: props.busy || !goal.start || !goal.end }, "Save goal")));
+  }
+
+  const RECORD_FIELDS = [
+    ["impressions", "Impressions"], ["engagements", "Engagements"], ["likes", "Likes"], ["comments", "Comments"], ["shares", "Shares"],
+    ["saves", "Saves"], ["follows", "Follows"], ["clicks", "Clicks"], ["video_completion", "Video completion"],
+  ];
+
   function RecordForm(props) {
-    const [form, setForm] = useState({ platform: "facebook", format: "unknown", published_at: "", local_hour: "", impressions: "", engagements: "", likes: "", comments: "", shares: "", saves: "", follows: "", clicks: "", video_completion: "", note: "" });
-    function setField(field, value) { setForm(function (current) { return Object.assign({}, current, { [field]: value }); }); }
+    const blank = { platform: "facebook", format: "unknown", published_at: "", local_hour: "", note: "" };
+    RECORD_FIELDS.forEach(function (pair) { blank[pair[0]] = ""; });
+    const [form, setForm] = useState(blank);
+    function setField(name, value) { setForm(function (current) { return Object.assign({}, current, { [name]: value }); }); }
     async function submit(event) {
       event.preventDefault();
       const metrics = {};
-      ["impressions", "engagements", "likes", "comments", "shares", "saves", "follows", "clicks", "video_completion"].forEach(function (key) {
-        if (form[key] !== "") metrics[key] = Number(form[key]);
+      RECORD_FIELDS.forEach(function (pair) {
+        if (form[pair[0]] !== "") metrics[pair[0]] = Number(form[pair[0]]);
       });
       const body = { platform: form.platform, format: form.format, metrics: metrics, note: form.note, preview: form.note };
       if (form.published_at) body.published_at = new Date(form.published_at).toISOString();
       if (form.local_hour !== "") body.local_hour = Number(form.local_hour);
-      await props.onRecorded(body);
+      const saved = await props.onRecorded(body);
+      if (saved) setForm(Object.assign({}, blank, { platform: form.platform }));
     }
-    return h("form", { className: "hs-main", onSubmit: submit },
-      h("div", { className: "hs-name" }, "Record a result"),
-      h("div", { className: "hs-cols" },
-        h("select", { className: "hs-field", value: form.platform, onChange: function (event) { setField("platform", event.target.value); } },
-          PLATFORMS.map(function (pair) { return h("option", { key: pair[0], value: pair[0] }, pair[1]); })),
-        h("select", { className: "hs-field", value: form.format, onChange: function (event) { setField("format", event.target.value); } },
-          ["unknown"].concat(FORMATS).map(function (item) { return h("option", { key: item, value: item }, item); })),
-        h("input", { className: "hs-field", type: "datetime-local", value: form.published_at, onChange: function (event) { setField("published_at", event.target.value); } }),
-        h("input", { className: "hs-field", placeholder: "local hour 0-23", value: form.local_hour, onChange: function (event) { setField("local_hour", event.target.value); } }),
-        ["impressions", "engagements", "likes", "comments", "shares", "saves", "follows", "clicks", "video_completion"].map(function (key) {
-          return h("input", { key: key, className: "hs-field", placeholder: key, value: form[key], onChange: function (event) { setField(key, event.target.value); } });
-        })),
-      h("input", { className: "hs-field", placeholder: "What the post was", value: form.note, onChange: function (event) { setField("note", event.target.value); } }),
-      h("button", { type: "submit", className: "hs-button", disabled: props.busy }, "Save result"),
-    );
+    return h("form", { className: "hs-stack", onSubmit: submit },
+      h("div", { className: "hs-overline" }, "Record one result"),
+      field("What the post was", h("input", { className: "hs-field", value: form.note, onChange: function (event) { setField("note", event.target.value); } })),
+      h("div", { className: "hs-grid-4" },
+        field("Platform", h("select", { className: "hs-field", value: form.platform, onChange: function (event) { setField("platform", event.target.value); } },
+          PLATFORMS.map(function (pair) { return h("option", { key: pair[0], value: pair[0] }, pair[1]); }))),
+        field("Format", h("select", { className: "hs-field", value: form.format, onChange: function (event) { setField("format", event.target.value); } },
+          ["unknown"].concat(FORMATS).map(function (item) { return h("option", { key: item, value: item }, item); }))),
+        field("Published", h("input", { className: "hs-field", type: "datetime-local", value: form.published_at, onChange: function (event) { setField("published_at", event.target.value); } })),
+        field("Local hour", h("input", { className: "hs-field", inputMode: "numeric", placeholder: "0 to 23", value: form.local_hour, onChange: function (event) { setField("local_hour", event.target.value); } }))),
+      h("div", { className: "hs-grid-4" }, RECORD_FIELDS.map(function (pair) {
+        return h("label", { key: pair[0], className: "hs-note" }, pair[1],
+          h("input", { className: "hs-field", inputMode: "decimal", placeholder: "—", value: form[pair[0]], onChange: function (event) { setField(pair[0], event.target.value); } }));
+      })),
+      h("div", { className: "hs-row" }, h("button", { type: "submit", className: "hs-tab", disabled: props.busy }, "Save result")));
   }
 
   function HashtagDesk(props) {
