@@ -436,6 +436,36 @@ def post_keep_shape(brand_id: str, post_id: str) -> dict:
         _fail(exc)
 
 
+@router.post("/brands/{brand_id}/series")
+def post_series(brand_id: str, body: dict) -> dict:
+    from series import save_series
+
+    try:
+        return save_series(load(), brand_id, body if isinstance(body, dict) else {})
+    except DraftError as exc:
+        _fail(exc)
+
+
+@router.post("/brands/{brand_id}/series/keep")
+def post_series_keep(brand_id: str, body: dict) -> dict:
+    from series import keep_series
+
+    try:
+        return keep_series(load(), brand_id, str((body or {}).get("shape") or ""))
+    except DraftError as exc:
+        _fail(exc)
+
+
+@router.post("/brands/{brand_id}/series/{series_id}/apply")
+def post_series_apply(brand_id: str, series_id: str, body: dict) -> dict:
+    from series import apply_series
+
+    try:
+        return apply_series(load(), brand_id, series_id, str((body or {}).get("topic") or ""))
+    except DraftError as exc:
+        _fail(exc)
+
+
 @router.post("/brands/{brand_id}/ideas")
 def post_idea(brand_id: str, body: dict) -> dict:
     try:

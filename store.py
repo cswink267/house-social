@@ -72,6 +72,7 @@ def empty_state() -> dict:
         "memory_log": [],
         "predictions": [],
         "prediction_hidden": {},
+        "series": [],
     }
 
 
@@ -112,6 +113,7 @@ def load(path: Path | None = None) -> dict:
     memory_log = raw.get("memory_log")
     predictions = raw.get("predictions")
     prediction_hidden = raw.get("prediction_hidden")
+    series = raw.get("series")
     return {
         "version": 1,
         "channels": channels if isinstance(channels, dict) else {},
@@ -144,6 +146,7 @@ def load(path: Path | None = None) -> dict:
         "memory_log": memory_log if isinstance(memory_log, list) else [],
         "predictions": predictions if isinstance(predictions, list) else [],
         "prediction_hidden": prediction_hidden if isinstance(prediction_hidden, dict) else {},
+        "series": series if isinstance(series, list) else [],
     }
 
 
@@ -362,6 +365,7 @@ def remove_brand(state: dict, brand_id: str, path: Path | None = None, root: Pat
         "ingest_log",
         "memory_log",
         "predictions",
+        "series",
     ):
         updated[key] = [item for item in updated.get(key) or [] if item.get("brand_id") != name]
     for key in ("channels", "pulls", "voices", "approval_steps", "inbox_errors", "voice_versions", "ingest_maps", "memory_marks", "studio_reads", "prediction_hidden"):
@@ -645,6 +649,7 @@ def studio(state: dict, brand_id: str, ledger: dict | None = None, today=None) -
         "studio_read": _studio_read_view(state, brand_id),
         "ingest": _ingest_view(state, brand_id),
         "memory": _memory_view(state, brand_id, posts, pieces),
+        "series": _series_view(state, brand_id, posts),
     }
 
 
@@ -1135,6 +1140,12 @@ def _calendar(pieces: list[dict], posts: list[dict], today) -> dict:
         days.append({"date": key, "label": f"{day.strftime('%a')} {day.day}", "pieces": items})
     unscheduled = [item for item in entries if item.get("kind") == "piece" and not item.get("date")]
     return {"days": days, "unscheduled": unscheduled, "entries": entries}
+
+
+def _series_view(state: dict, brand_id: str, posts: list[dict]) -> dict:
+    from series import series_for
+
+    return series_for(state, brand_id, posts)
 
 
 def _memory_view(state: dict, brand_id: str, posts: list[dict], pieces: list[dict]) -> dict:

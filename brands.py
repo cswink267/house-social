@@ -223,6 +223,7 @@ SECTIONS = (
     {"id": "ideas", "label": "Ideas", "group": "Create"},
     {"id": "create", "label": "Composer", "group": "Create"},
     {"id": "library", "label": "Library", "group": "Create"},
+    {"id": "series", "label": "Series", "group": "Create"},
     # Plan — calendar and campaigns
     {"id": "calendar", "label": "Calendar", "group": "Plan"},
     {"id": "campaigns", "label": "Campaigns", "group": "Plan"},

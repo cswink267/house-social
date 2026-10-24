@@ -696,6 +696,20 @@
               });
               if (saved) await refresh(brand.id);
             },
+            onApplySeries: async function (seriesId, topic) {
+              const saved = await run(function () {
+                return SDK.fetchJSON("/api/plugins/house-social/brands/" + brand.id + "/series/" + encodeURIComponent(seriesId) + "/apply", {
+                  method: "POST",
+                  headers: { "Content-Type": "application/json" },
+                  body: JSON.stringify({ topic: topic }),
+                });
+              });
+              if (!saved) return;
+              setIdea(saved.idea || topic);
+              setActiveId(saved.piece_id || "");
+              setSection("create");
+              await refresh(brand.id);
+            },
           }) : null,
           section === "create" ? h(CreatePanel, {
             brand: brand, idea: idea, setIdea: setIdea, pillar: pillar, setPillar: setPillar,
@@ -766,7 +780,22 @@
           }) : null,
           section === "library" ? h(Library, {
             library: library,
+            series: studio && studio.series,
             busy: busy,
+            onApplySeries: async function (seriesId, topic) {
+              const saved = await run(function () {
+                return SDK.fetchJSON("/api/plugins/house-social/brands/" + brand.id + "/series/" + encodeURIComponent(seriesId) + "/apply", {
+                  method: "POST",
+                  headers: { "Content-Type": "application/json" },
+                  body: JSON.stringify({ topic: topic }),
+                });
+              });
+              if (!saved) return;
+              setIdea(saved.idea || topic);
+              setActiveId(saved.piece_id || "");
+              setSection("create");
+              await refresh(brand.id);
+            },
             piece: active && active.brand_id === brand.id ? active : null,
             posts: (studio && studio.feed) || [],
             onSave: saveAsset,
@@ -779,6 +808,44 @@
               if (saved) await refresh(brand.id);
             },
             onFail: function (text) { setError(text); },
+          }) : null,
+          section === "series" ? h(SeriesDesk, {
+            studio: studio,
+            busy: busy,
+            onSave: async function (body) {
+              const saved = await run(function () {
+                return SDK.fetchJSON("/api/plugins/house-social/brands/" + brand.id + "/series", {
+                  method: "POST",
+                  headers: { "Content-Type": "application/json" },
+                  body: JSON.stringify(body),
+                });
+              });
+              if (saved) await refresh(brand.id);
+            },
+            onKeep: async function (shape) {
+              const saved = await run(function () {
+                return SDK.fetchJSON("/api/plugins/house-social/brands/" + brand.id + "/series/keep", {
+                  method: "POST",
+                  headers: { "Content-Type": "application/json" },
+                  body: JSON.stringify({ shape: shape }),
+                });
+              });
+              if (saved) await refresh(brand.id);
+            },
+            onApply: async function (seriesId, topic) {
+              const saved = await run(function () {
+                return SDK.fetchJSON("/api/plugins/house-social/brands/" + brand.id + "/series/" + encodeURIComponent(seriesId) + "/apply", {
+                  method: "POST",
+                  headers: { "Content-Type": "application/json" },
+                  body: JSON.stringify({ topic: topic }),
+                });
+              });
+              if (!saved) return;
+              setIdea(saved.idea || topic);
+              setActiveId(saved.piece_id || "");
+              setSection("create");
+              await refresh(brand.id);
+            },
           }) : null,
           section === "calendar" ? h(Calendar, {
             onWhy: function (patternId) { setMemoryFocus(patternId || ""); setSection("memory"); },
@@ -1805,6 +1872,76 @@
     );
   }
 
+
+  function SeriesApply(props) {
+    const rows = (props.series && props.series.items) || [];
+    const [picked, setPicked] = useState(rows[0] ? rows[0].id : "");
+    const [topic, setTopic] = useState("");
+    if (!rows.length) return null;
+    return h("form", { className: "hs-row", onSubmit: function (event) {
+      event.preventDefault();
+      if (picked && topic.trim() && props.onApply) props.onApply(picked, topic.trim());
+    } },
+      h("select", { className: "hs-field", value: picked, onChange: function (event) { setPicked(event.target.value); } },
+        rows.map(function (item) { return h("option", { key: item.id, value: item.id }, item.name); })),
+      h("input", { className: "hs-field", value: topic, placeholder: "New topic for this series", onChange: function (event) { setTopic(event.target.value); } }),
+      h("button", { type: "submit", className: "hs-button", disabled: props.busy || !topic.trim() }, "Open in the composer"));
+  }
+
+  function SeriesDesk(props) {
+    const desk = (props.studio && props.studio.series) || { items: [], suggestions: [] };
+    const [draft, setDraft] = useState({ name: "", structure: "", hook: "", media: "", examples: "", tags: "" });
+    const [q, setQ] = useState("");
+    const [tag, setTag] = useState("");
+    const items = (desk.items || []).filter(function (item) {
+      const blob = (item.name + " " + item.hook + " " + (item.structure || []).join(" ") + " " + (item.tags || []).join(" ")).toLowerCase();
+      if (q.trim() && blob.indexOf(q.trim().toLowerCase()) < 0) return false;
+      if (tag.trim() && (item.tags || []).map(function (name) { return name.toLowerCase(); }).indexOf(tag.trim().toLowerCase()) < 0) return false;
+      return true;
+    });
+    return h("div", { className: "hs-main" },
+      h("p", { className: "hs-note" }, "A series is a structure you can reuse with a new topic. A suggestion appears only when that shape is already ahead. Stats wait for three uses with numbers. A refresh note does not delete anything. A series stays on this brand."),
+      h(SeriesApply, { series: desk, busy: props.busy, onApply: props.onApply }),
+      (desk.suggestions || []).map(function (item) {
+        return h("div", { key: item.id, className: "hs-pillar" },
+          h("p", { className: "hs-note" }, item.detail),
+          h("button", { type: "button", className: "hs-tab", disabled: props.busy, onClick: function () { props.onKeep(item.id); } }, "Keep " + item.name));
+      }),
+      h("form", { className: "hs-cols", onSubmit: function (event) {
+        event.preventDefault();
+        props.onSave({
+          name: draft.name,
+          structure: draft.structure,
+          hook: draft.hook,
+          media: draft.media,
+          examples: draft.examples.split(",").map(function (item) { return item.trim(); }).filter(Boolean),
+          tags: draft.tags.split(",").map(function (item) { return item.trim(); }).filter(Boolean),
+        });
+      } },
+        h("input", { className: "hs-field", value: draft.name, placeholder: "Name", onChange: function (event) { setDraft(Object.assign({}, draft, { name: event.target.value })); } }),
+        h("textarea", { className: "hs-area", value: draft.structure, placeholder: "Structure, one section a line. Use {topic} where the new topic goes.", onChange: function (event) { setDraft(Object.assign({}, draft, { structure: event.target.value })); } }),
+        h("input", { className: "hs-field", value: draft.hook, placeholder: "Typical hook", onChange: function (event) { setDraft(Object.assign({}, draft, { hook: event.target.value })); } }),
+        h("input", { className: "hs-field", value: draft.media, placeholder: "Media note", onChange: function (event) { setDraft(Object.assign({}, draft, { media: event.target.value })); } }),
+        h("input", { className: "hs-field", value: draft.examples, placeholder: "Example post ids, comma separated", onChange: function (event) { setDraft(Object.assign({}, draft, { examples: event.target.value })); } }),
+        h("input", { className: "hs-field", value: draft.tags, placeholder: "Tags, pillar or free text", onChange: function (event) { setDraft(Object.assign({}, draft, { tags: event.target.value })); } }),
+        h("button", { type: "submit", className: "hs-button", disabled: props.busy || !draft.name.trim() || !draft.structure.trim() }, "Save series")),
+      h("div", { className: "hs-row" },
+        h("input", { className: "hs-field", value: q, placeholder: "Search", onChange: function (event) { setQ(event.target.value); } }),
+        h("input", { className: "hs-field", value: tag, placeholder: "Tag", onChange: function (event) { setTag(event.target.value); } })),
+      items.length ? items.map(function (item) {
+        return h("div", { key: item.id, className: "hs-pillar" },
+          h("div", { className: "hs-name" }, item.name),
+          (item.structure || []).map(function (line, index) { return h("p", { key: index, className: "hs-note" }, line); }),
+          item.hook ? h("p", { className: "hs-note" }, item.hook) : null,
+          item.media ? h("p", { className: "hs-note" }, item.media) : null,
+          h("p", { className: "hs-note" }, item.stats && item.stats.detail),
+          item.notice ? h("p", { className: "hs-bad" }, item.notice) : null,
+          (item.examples || []).map(function (example) {
+            return h("p", { key: example.id, className: "hs-note" }, (example.engagements == null ? "Not in the pull" : example.engagements + " engagements") + " · " + example.preview);
+          }));
+      }) : h("p", { className: "hs-note" }, "No series saved for this brand."));
+  }
+
   function IdeasBoard(props) {
     const board = (props.studio && props.studio.ideas) || { ideas: [], sources: ["spark", "competitor", "trend", "question"], priorities: ["low", "normal", "high"] };
     const [mode, setMode] = useState("board");
@@ -1848,6 +1985,7 @@
     });
     return h("div", { className: "hs-main" },
       h("p", { className: "hs-note" }, "Sparks, competitor notes, trends, questions, and comments. Make this a draft opens it in the composer. A pattern line appears only when the posts already show one. Nothing here is a predicted score."),
+      h(SeriesApply, { series: props.studio && props.studio.series, busy: props.busy, onApply: props.onApplySeries }),
       h("form", { className: "hs-cols", onSubmit: save },
         h("textarea", { className: "hs-area", value: draft.text, placeholder: "The idea, still rough", onChange: function (event) { setField("text", event.target.value); } }),
         h("select", { className: "hs-field", value: draft.source, onChange: function (event) { setField("source", event.target.value); } },
@@ -2152,6 +2290,7 @@
 
     return h("div", { className: "hs-main" },
       h("p", { className: "hs-note" }, "Month, week, or day. Drag a piece onto a day to hold it. Drag it back down to take it off. Published posts are already on the page. A pillar or campaign filter hides them, because a live post is not tagged with either."),
+      h(SeriesApply, { series: props.series, busy: props.busy, onApply: props.onApplySeries }),
       h("div", { className: "hs-row" },
         h("button", { type: "button", className: "hs-tab", onClick: function () { moveCursor(-1); } }, "Back"),
         h("button", { type: "button", className: "hs-tab", onClick: function () { setCursor(today); } }, "Today"),
