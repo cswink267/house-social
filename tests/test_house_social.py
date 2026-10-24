@@ -159,6 +159,9 @@ def test_the_brief_can_set_and_clear_a_brand_site(tmp_path: Path):
     assert next(item for item in roster(load(path)) if item["id"] == "north-room")["site"] == "http://north.example"
     with pytest.raises(DraftError, match="https://"):
         set_site(load(path), "morgan-rae", "javascript:alert(1)", path)
+
+
+def test_custom_brand_and_channel_edit_roundtrip(tmp_path: Path):
     path = tmp_path / "state.json"
     state = empty_state()
     add_brand(
