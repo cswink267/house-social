@@ -2,7 +2,7 @@
 
 A [Hermes](https://github.com/NousResearch/hermes-agent) dashboard plugin for the Misfit House brands. It reads Facebook, Instagram, and Threads, keeps a local draft queue, and learns from engagement that was actually returned.
 
-It does not publish. Nothing in this module sends a post.
+It posts to Facebook, Instagram, and Threads once posting is switched on, for the house in House settings and for each brand on its Accounts desk. Both switches start off. The brand's mode decides how much a person signs off: manual and approval need someone to approve every post; fully autonomous lets the agent schedule and post what it writes.
 
 Studio (`studio.misfitmindset.com`) still owns the weekly posts, the peak posts, the quote cards, and the now posts. Misfit Mindset can read that queue, those cards, and the used quotes. This module does not generate them and does not write back.
 
@@ -14,20 +14,20 @@ Each brand has the same desks.
 | --- | --- |
 | Brief | Health first: the mode, the last ingest, the posts with numbers, and the channels. Then the audience, voice line, guards, pillars, website, and public handles. The mode, a pause, content mix targets, pace limits, mail settings, and the activity log sit below. Misfit Mindset also shows the last read from Studio. Removing a brand is at the bottom and asks for its name. |
 | Voice | Tone, personality, formality, humor, point of view, do and don't, visual notes, banned lines, preferred lines, required lines, and competitor notes. Pillars keep the angles you write. On-brand and off-brand examples can be written, pasted, or taken from posts when the gap is real. Create scores a draft and can ask for a rewrite. Each save keeps a version. |
-| Accounts | Connect with Facebook or Connect with Threads signs in through the house app. Back on the desk you pick this brand's Page and Instagram account, or confirm its Threads account. The tokens go to the vault. Change, disconnect, or paste a token by hand. Pull reads. Nothing is sent. |
+| Accounts | Connect with Facebook or Connect with Threads signs in through the house app. Back on the desk you pick this brand's Page and Instagram account, or confirm its Threads account. The tokens go to the vault. Change, disconnect, or paste a token by hand. Posting is switched on here for this brand. Check posting proves each account can post and leaves nothing visible. A test post is real and public, and Facebook and Threads tests can be deleted from the desk. |
 | Ideas | A board or a list of sparks, competitor notes, trends, questions, and comments. One click makes a draft and opens the composer. A pattern line appears only when the posts already show it. An idea is archived as ahead only when its draft has a post at least 3× the others. Suggest uses the voice, the pillars, those posts, and the trend notes you saved. |
-| Approval | Draft, then needs review, then approved, then scheduled. One name is a single step. Extra names are optional and go in order. Comments, the lines that changed between versions, and a trail that stays after a notice is marked read. Nothing is mailed and nothing is sent. |
-| Composer | The creation hub. Start from a subject, an idea, an image, or a post that is at least 3× the others. Facebook, Instagram, and Threads each get a preview and a count. The assistant stays inside the brand voice. A variation shows the historical pattern it matches, and only when that pattern is clear. Improve this draft asks for a rewrite from those misses. What the posts say lists similar posts with the engagements they earned. Hold a day on the calendar, or save the words to the library. Nothing is sent. |
+| Approval | Draft, then needs review, then approved, then scheduled. One name is a single step. Extra names are optional and go in order. Comments, the lines that changed between versions, and a trail that stays after a notice is marked read. An approved piece that already has a future time is scheduled at once. Nothing is mailed. |
+| Composer | The creation hub. Start from a subject, an idea, an image, or a post that is at least 3× the others. Facebook, Instagram, and Threads each get a preview and a count. The assistant stays inside the brand voice. A variation shows the historical pattern it matches, and only when that pattern is clear. Improve this draft asks for a rewrite from those misses. What the posts say lists similar posts with the engagements they earned. Hold a day on the calendar, or save the words to the library. Saving does not post. |
 | Library | Images, video, carousels, templates, logos, and copy blocks. Hooks, CTAs, hashtags, and bios insert into the composer. Tags, search, folders, and versions. Mean engagement and last used come from the uses that have numbers. A version or a topic is called ahead only when both sides have three uses and the gap is real. Image tags come from tags this brand already uses, or from the vision model when it answers. |
 | Series | A structure you can open again with a new topic. Pause holds it. Fill uses a pillar this brand already has and does not save a draft. A shape is suggested only when it is already ahead. Stats wait for three uses with numbers. A later drop is a note, and the series stays. It does not move to another brand. Nothing is sent. |
 | Feedback | Used, better, worse, off-brand, or irrelevant on a composer, idea, hashtag, or series suggestion. Memory shows the counts. Delete restores the earlier mark. Nothing is sent. |
 | Across | Off until two brands are included from Brief. Format, hour, and content counts only, and only when the gap is real. No caption crosses. Accept on the composer does not change the draft. |
-| Modes | Manual, approval, or fully autonomous, chosen on Brief. Manual starts nothing. Approval drafts one piece and does not schedule it until you approve. Fully autonomous schedules only after you confirm. Nothing is sent. |
+| Modes | Manual, approval, or fully autonomous, chosen on Brief. Manual starts nothing. Approval drafts one piece and does not schedule it until you approve. Fully autonomous, once confirmed, lets the agent approve and schedule what it writes, inside the pace limits; it posts at its time while posting is on. A piece the desk drafts by itself is a placeholder and never posts until someone writes it. |
 | Support | Health on Brief, a filterable log, preview that does not schedule, a hard mix hold, a pause, and a redacted export. Mail settings are stored. Nothing is sent. |
 | Map | Overview, post, formats, and audience. Only stored numbers. A missing reach stays blank. A thin format says it is thin. Nothing is sent. |
 | Notes | Brief can let Josie append a real gap to the todo. Off until that check is on. Two a day. Nothing already written is deleted. |
-| Calendar | Month, week, and day. Drag a piece onto a day. Color by status, pillar, campaign, or platform. The next 7 days name any pillar that has nothing planned. A suggested day or hour appears only when that pattern is clear. An idea or a library block can be held on the chosen day. A recurrence holds the same words on that weekday for up to 8 weeks. Nothing is sent. |
-| Queue | Draft, needs approval, approved, scheduled, on the record, or failed. On the record is a post already tied to the draft, with its engagements. Bulk actions still move pieces. A format hour is used when that format is clearly ahead; otherwise the brand hour, and only when the gap is real. A slot warning names an hour that has underperformed for that format. The pace line counts what is scheduled and does not apply a Meta rate limit. Nothing is sent. |
+| Calendar | Month, week, and day. Drag a piece onto a day. Color by status, pillar, campaign, or platform. The next 7 days name any pillar that has nothing planned. A suggested day or hour appears only when that pattern is clear. An idea or a library block can be held on the chosen day. A recurrence holds the same words on that weekday for up to 8 weeks. A scheduled piece posts at its time while posting is on. |
+| Queue | Draft, needs approval, approved, scheduled, posted, on the record, or failed. Posted links to each platform it went out on. Post now sends an approved piece at once, after a confirm. A failed platform can be retried without posting the others twice. On the record is a pulled post tied to the draft, with its engagements. Bulk actions still move pieces. A format hour is used when that format is clearly ahead; otherwise the brand hour, and only when the gap is real. A slot warning names an hour that has underperformed for that format. The pace line counts what is scheduled and does not apply a Meta rate limit. |
 | Campaigns | A named effort with a kind, a goal, dates, the pieces, and the assets. Clone copies the shape and leaves the pieces where they are. A kind is ahead of the others only when both sides have three posts and the gap is real. A closed campaign can keep that lesson: the post's words go to the voice, and the comparison goes to the ideas board. Nothing is sent. |
 | Analytics | Reach, impressions, engagements, a rate only when impressions exist, saves, shares, comments, clicks, video completion, and follower change. 7, 28, or 90 days, or the whole history. Patterns for hour, day, format, pillar, hook, length, and assisted drafts appear only when both sides have three posts and the gap is real. A goal is the percent you set, measured against the stretch before it. Paste a CSV of old posts. A row counts when it has a date and an engagement count. |
 | Ingest | Map a paste, CSV, JSON, or Excel file onto caption, date, and counts. A missing number stays missing. A row already imported is skipped. |
@@ -50,7 +50,19 @@ Clone this repository into the Hermes plugins directory:
 git clone https://github.com/cswink267/house-social.git ~/.hermes/plugins/house-social
 ```
 
-Add `house-social` to `plugins.enabled` in `~/.hermes/config.yaml`. Restart the Hermes dashboard so the new Python routes load. Restart the gateway only when you also want the `house_social_roster` and `house_social_draft` tools. Those tools list brands and save a draft. They do not post.
+Add `house-social` to `plugins.enabled` in `~/.hermes/config.yaml`. Restart the Hermes dashboard so the new Python routes load. Restart the gateway when you also want the agent tools:
+
+| Tool | What it does |
+| --- | --- |
+| `house_social_roster` | Brands, their channels, and whether posting is on. |
+| `house_social_draft` | Save a draft, optionally with the exact Facebook, Instagram, and Threads words. Saving does not post. |
+| `house_social_queue` | A brand's pieces, their status and time, and links to what posted. |
+| `house_social_schedule` | Give a piece a time. Fully autonomous approves and schedules it; manual and approval send it for review first. |
+| `house_social_post_now` | Post an approved piece right away. |
+| `house_social_post_due` | Post every scheduled piece whose time has come. |
+| `house_social_posting` | Whether posting is on, and which accounts can post. |
+
+A Hermes cron job that calls `house_social_draft` and `house_social_schedule` each morning is how a fully autonomous brand runs on its own.
 
 The web tab is `House Social`. The desktop pane lists the roster. Both talk to `/api/plugins/house-social/`.
 
@@ -76,6 +88,16 @@ The Page token comes from a long-lived sign-in and does not expire. The Instagra
 While you pick, the tokens wait in the dashboard's memory for up to 20 minutes. Only the chosen ones are written, with `vault set`, to `vault:house-social.<brand>.<platform>.token`. `state.json` keeps the vault name, never the token. A sign-in that is not finished in 30 minutes expires. Disconnect forgets the connection; the vault entry stays until you remove it there.
 
 **Paste a token instead**, on the same desk, still saves a hand-made token. Saving it again without a token keeps the old vault name.
+
+## Posting
+
+Turn on **Let the desk post** in House settings, then **Post from** the brand on its Accounts desk. Press **Check posting** first: Facebook makes a hidden post and deletes it, and Instagram and Threads read their daily posting allowance. A connection made before posting existed needs **Change** once, so the sign-in grants posting.
+
+While the dashboard runs, it checks once a minute and posts each scheduled piece whose time has come. A piece posts only when it is approved, it is not the desk's placeholder, it passes the brand rules, the brand is not paused, and both switches are on. A piece more than six hours past its time does not post late; it is marked failed and waits for a new time. Two runs never post the same piece: a lock file beside `state.json` and a claim on the piece keep them apart.
+
+Facebook takes text or one image. Instagram needs one image; a text piece skips Instagram. Threads takes text or one image. Instagram and Threads fetch an image from a public address, so the desk uses the image the Facebook post just made, or uploads it to the Page unpublished, to get one. Video and carousel posts are not posted by the desk yet. Instagram hashtags are added to the caption when it posts.
+
+Set `HOUSE_SOCIAL_WORKER=0` to keep the dashboard from posting on its own; the agent tool and the House settings button still post what is due.
 
 There is no token, app secret, or page token in this repository. `brands.py` may include a public handle or a public page id. That is not a credential.
 
@@ -120,6 +142,7 @@ voice.py                 the brand profile, the checklist, and lessons from post
 library.py               assets, versions, and use
 store.py                 state, connections, calendar, pulls
 connect.py               sign-in through the house apps, and the account picker
+publish.py               posting, the once-a-minute run, checks, and test posts
 learn.py                 performance and lessons
 analytics_desk.py        patterns, goals, and imported history
 calendar_desk.py         gaps, slots, and the mix for the next 7 days

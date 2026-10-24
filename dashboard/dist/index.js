@@ -94,7 +94,7 @@
   const DESK_NOTES = {
     brief: "Who this brand speaks to, the rules it keeps, and how far the desk may act on its own.",
     voice: "The memory of this brand. Composer checks a draft against it. A suggestion is saved only when you accept it, and only when the posts actually show the gap.",
-    pages: "Connect signs in through the house Meta or Threads app, then you pick this brand's Page, Instagram account, and Threads account. Tokens go to the vault. Pull only reads. Nothing is sent.",
+    pages: "Connect signs in through the house Meta or Threads app, then you pick this brand's Page, Instagram account, and Threads account. Tokens go to the vault. Posting is switched on here and in House settings.",
     ideas: "Sparks, competitor notes, trends, questions, and comments. Make this a draft opens it in the composer. A pattern line appears only when the posts already show one. Nothing here is a predicted score.",
     create: "One idea becomes a Facebook, Instagram, and Threads version. The assistant stays inside the brand voice.",
     library: "Images, video, carousels, templates, logos, and copy for this brand. A new save of the words or the file keeps the older version. Files stay beside the desk, not in git.",
@@ -102,7 +102,7 @@
     calendar: "Month, week, or day. Drag a piece onto a day to hold it, or into the tray to take it off. A pillar or campaign filter hides published posts, because a live post is not tagged with either.",
     campaigns: "A campaign holds the posts, the assets, the goal, and the dates. Clone keeps the shape and leaves the pieces. A kind is ahead only when both sides have three posts and the gap is real.",
     approval: "Draft, then needs review, then approved, then scheduled. One name is a single step; extra names are optional and go in order. The trail stays after a notice is marked read. Nothing is mailed.",
-    queue: "Draft, needs approval, approved, scheduled, on the record, or failed. On the record means a post is already tied to the draft, with its engagements.",
+    queue: "Draft, needs approval, approved, scheduled, posted, on the record, or failed. A scheduled piece posts at its time while posting is on. On the record means a pulled post is tied to the draft.",
     performance: "Numbers for this brand only. A missing pull stays missing. Nothing here is a rate unless the count exists.",
     map: "Display only. A missing number stays blank. A format with fewer than three posts says it is thin.",
     ingest: "Paste rows or choose a CSV, JSON, or Excel file. Map the columns, then import. A missing number stays missing, and a row already here is skipped.",
@@ -128,7 +128,7 @@
   const MODE_DONE = {
     set: "Mode saved.",
     prepare: "Batch prepared. Nothing is scheduled until you approve.",
-    run: "Ran once. Nothing is sent.",
+    run: "Ran once. A piece posts only after someone writes it.",
     approve: "Approved.",
     reject: "Rejected.",
   };
@@ -328,6 +328,7 @@
     const [loaded, setLoaded] = useState(false);
     const [panel, setPanel] = useState("");
     const [apps, setApps] = useState({});
+    const [house, setHouse] = useState({});
     const [choice, setChoice] = useState(null);
     const [voiceCheck, setVoiceCheck] = useState(null);
     const [library, setLibrary] = useState({ assets: [], folders: [], tags: [] });
@@ -402,6 +403,7 @@
       setLimits(roster.limits || { facebook: 5000, instagram: 2200, threads: 500 });
       setCardLimit(roster.card_limit || 240);
       setApps(roster.apps || {});
+      setHouse(roster.publishing || {});
       setPieces(withUnsaved((first[1] && first[1].pieces) || []));
       setStudio(desk[0]);
       setLibrary(desk[1] || { assets: [], folders: [], tags: [] });
@@ -590,7 +592,7 @@
         variants[pair[0]] = { body: variant.body || "", hashtags: variant.hashtags || [], image_ready: !!variant.image_ready, first_comment: variant.first_comment || "" };
       });
       const status = extra && extra.status;
-      const done = status === "ready" ? "Marked ready." : status === "planned" ? "Marked planned." : status === "scheduled" ? "Scheduled. Nothing is sent." : "Draft saved.";
+      const done = status === "ready" ? "Marked ready." : status === "planned" ? "Marked planned." : status === "scheduled" ? "Scheduled. It posts at that time while posting is on." : "Draft saved.";
       const id = active.id;
       const sent = unsaved.current[id];
       delete unsaved.current[id];
@@ -801,6 +803,22 @@
           },
           onSave: function (body) { return act("POST", "/connections", Object.assign({ brand_id: brand.id }, body), "Connection saved. The token went to the vault."); },
           onPull: function () { return pullPosts(brand.id); },
+          onBrandPosting: function (value) {
+            return act("POST", "/posting", { brand_id: brand.id, on: value }, value ? brand.name + " can post now." : brand.name + " will not post.");
+          },
+          onCheck: function () {
+            return act("POST", on("/posting/check"), undefined, function (found) {
+              const bad = (found.rows || []).filter(function (row) { return !row.ok; }).length;
+              return bad ? bad + (bad === 1 ? " account cannot" : " accounts cannot") + " post yet. See below." : "Every connected account can post.";
+            });
+          },
+          onTest: function (body) {
+            return act("POST", on("/posting/test"), body, function (found) {
+              const good = (found.rows || []).filter(function (row) { return row.ok; }).length;
+              return good + " of " + (found.rows || []).length + " test posts went out.";
+            });
+          },
+          onDeleteTest: function (id) { return act("DELETE", "/posting/tests/" + encodeURIComponent(id), undefined, "Test post deleted."); },
         });
         case "ideas": return h(IdeasBoard, {
           studio: studio, busy: busy,
@@ -915,6 +933,11 @@
         case "queue": return h(QueueDesk, {
           studio: studio, busy: busy,
           onOpen: openPiece,
+          onPostNow: function (id) {
+            return act("POST", "/pieces/" + encodeURIComponent(id) + "/publish", undefined, function (done) {
+              return done.status === "published" ? "Posted." : "It did not fully post. " + (done.failure || "");
+            });
+          },
           onBulk: runQueue,
           onPull: function () { return act("POST", on("/studio-read"), undefined, "Read from Studio."); },
         });
@@ -1006,7 +1029,11 @@
             title: "Change the mode on the Brief",
             onClick: function () { pickSection("brief"); },
           }, h("span", { className: "hs-dot-live", "aria-hidden": "true" }), (mode.label || "Manual") + " mode") : null,
-          h("span", { className: "hs-badge", title: "No post leaves this desk until a publisher is attached." }, "Local only · nothing is sent"))),
+          h(PostingBadge, {
+            house: !!house.on, live: !!(studio && studio.posting),
+            onHouse: function () { setPanel("house"); },
+            onBrand: function () { pickSection("pages"); },
+          }))),
       h("div", { className: "hs-shell" },
         h("aside", { className: "hs-rail" },
           h("div", { className: "hs-switch" },
@@ -1048,7 +1075,17 @@
         h("section", { className: "hs-desk", "aria-busy": busy ? "true" : "false", "aria-labelledby": "hs-desk-title" },
           busy ? h("div", { className: "hs-progress", "aria-hidden": "true" }) : null,
           panel === "add" ? h(AddBrand, { busy: busy, onAdd: addBrand, onCancel: function () { setPanel(""); } })
-            : panel === "house" ? h(HouseSettings, { apps: apps, busy: busy, onSave: saveApps, onClose: function () { setPanel(""); } })
+            : panel === "house" ? h(HouseSettings, {
+              apps: apps, posting: house, busy: busy, onSave: saveApps, onClose: function () { setPanel(""); },
+              onPosting: function (value) {
+                return act("POST", "/posting", { on: value }, value ? "Posting is on for the house. Each brand still turns it on under Accounts." : "Posting is off. Nothing will post until it is on again.");
+              },
+              onRunDue: function () {
+                return act("POST", "/posting/run", undefined, function (ran) {
+                  return (ran.posted || []).length + " posted, " + (ran.failed || []).length + " failed, " + (ran.waiting || []).length + " waiting.";
+                });
+              },
+            })
             : !loaded ? h("p", { className: "hs-note hs-loading" }, "Loading the desk…")
               : !brand ? h("div", { className: "hs-empty" }, "No brand on the roster yet. Add one to start.")
                 : h("div", { className: "hs-desk-body", key: brand.id + ":" + desk },
@@ -1344,8 +1381,19 @@
   }
 
   // The house apps, once for every brand. Brands sign in through them.
+  function workerLine(posting) {
+    const worker = posting.worker || {};
+    const last = worker.last;
+    const parts = [];
+    parts.push(worker.started ? "The poster is running" + (worker.last_tick ? ", last checked " + String(worker.last_tick).slice(11, 16) + " UTC." : ".") : "The poster starts with the dashboard.");
+    if (last) parts.push("Last run: " + (last.posted || []).length + " posted, " + (last.failed || []).length + " failed, " + (last.late || []).length + " too late.");
+    if (worker.error) parts.push("Last error: " + worker.error);
+    return parts.join(" ");
+  }
+
   function HouseSettings(props) {
     const apps = props.apps || {};
+    const posting = props.posting || {};
     const meta = apps.meta || {};
     const threads = apps.threads || {};
     const [metaId, setMetaId] = useState(meta.app_id || "");
@@ -1367,7 +1415,20 @@
     return h("form", { className: "hs-panel hs-panel-wide", onSubmit: submit },
       h("div", { className: "hs-panel-head" },
         h("h2", { className: "hs-h2", id: "hs-desk-title" }, "House settings"),
-        h("p", { className: "hs-note" }, "The Meta app and the Threads app belong to the whole house. Each brand signs in through them on its own Accounts desk. Nothing here sends a post.")),
+        h("p", { className: "hs-note" }, "The Meta app and the Threads app belong to the whole house. Each brand signs in through them on its own Accounts desk.")),
+      h(Section, {
+        title: "Posting",
+        note: "The switch for every brand at once. Each brand also turns posting on for itself under Accounts. While on, the desk checks once a minute and posts what is due.",
+        actions: [h("span", { key: "s", className: "hs-status " + (posting.on ? "is-published" : "is-planned") }, posting.on ? "On" : "Off")],
+      },
+        h(SaveCheck, {
+          checked: posting.on, disabled: props.busy, onChange: props.onPosting,
+          title: "Let the desk post", note: "Turning it off stops every brand at once. Scheduled pieces wait.",
+        }),
+        h("p", { className: "hs-note" }, workerLine(posting)),
+        h("div", { className: "hs-row hs-gap-sm" },
+          h("button", { type: "button", className: "hs-tab hs-tab-sm", disabled: props.busy || !posting.on, onClick: props.onRunDue }, "Post what is due now"),
+          posting.due_soon ? h("span", { className: "hs-hint" }, posting.due_soon + (posting.due_soon === 1 ? " piece is" : " pieces are") + " scheduled in the next 24 hours.") : null)),
       h(Section, { title: "Meta app", note: "Facebook Pages and Instagram professional accounts sign in through this app.", actions: [h(AppStatus, { key: "s", row: meta })] },
         h("div", { className: "hs-grid-2" },
           field("App id", h("input", { className: "hs-field", value: metaId, inputMode: "numeric", autoComplete: "off", onChange: function (event) { setMetaId(event.target.value); } })),
@@ -1413,6 +1474,7 @@
           h("span", { className: "hs-status " + (item ? "is-published" : "is-planned") }, item ? "Connected" : "Not connected")),
         h("div", { className: "hs-meta" }, item ? accountLine(item) : row.empty),
         item ? h("div", { className: "hs-meta" }, "Token in ", h("code", { className: "hs-code" }, item.token_vault)) : null,
+        item && props.account ? h("div", { className: "hs-meta" }, postingLine(props.account)) : null,
         days != null && days <= 14 ? h("p", { className: days <= 0 ? "hs-error" : "hs-warn" },
           days <= 0 ? "This sign-in has ended. Connect again." : "This sign-in ends in " + days + (days === 1 ? " day" : " days") + ". Connect again to renew it.") : null,
         props.leaving ? h("div", { className: "hs-danger-zone is-open", role: "alertdialog", "aria-label": "Disconnect " + row.label },
@@ -1493,6 +1555,121 @@
         h("button", { type: "button", className: "hs-tab", disabled: props.busy, onClick: props.onCancel }, "Cancel")));
   }
 
+  // A checkbox that saves on change. It shows the new value while the save runs,
+  // and falls back to what the desk says once it answers.
+  function SaveCheck(props) {
+    const [pending, setPending] = useState(null);
+    const shown = pending === null ? !!props.checked : pending;
+    return h("label", { className: "hs-note" },
+      h("input", {
+        type: "checkbox", checked: shown, disabled: props.disabled || pending !== null,
+        onChange: function (event) {
+          const value = event.target.checked;
+          setPending(value);
+          Promise.resolve(props.onChange(value)).finally(function () { setPending(null); });
+        },
+      }),
+      h("span", null, h("span", { className: "hs-check-title" }, props.title), " ", props.note));
+  }
+
+  // What the header says about posting, and where a click takes you to change it.
+  function PostingBadge(props) {
+    if (!props.house) {
+      return h("button", { type: "button", className: "hs-badge", title: "Posting is off for every brand. Turn it on in House settings.", onClick: props.onHouse }, "Posting off");
+    }
+    if (!props.live) {
+      return h("button", { type: "button", className: "hs-badge", title: "Turn posting on for this brand under Accounts.", onClick: props.onBrand }, "Posting off for this brand");
+    }
+    return h("button", { type: "button", className: "hs-badge is-mode", title: "Approved, scheduled pieces post at their time.", onClick: props.onBrand },
+      h("span", { className: "hs-dot-live", "aria-hidden": "true" }), "Posting on");
+  }
+
+  function postingLine(account) {
+    if (!account) return "";
+    const checked = account.checked || {};
+    if (checked.at) return (checked.ok ? "Can post. " : "Cannot post. ") + (checked.detail || "") + " Checked " + String(checked.at).slice(0, 10) + ".";
+    if (account.can_post === true) return "This sign-in allows posting. Check posting to prove it.";
+    if (account.can_post === false) return "This sign-in does not allow posting. Press Change and connect again.";
+    return "Not checked for posting yet. Press Check posting, or Change to sign in again.";
+  }
+
+  function andList(names) {
+    if (names.length < 2) return names.join("");
+    return names.slice(0, -1).join(", ") + " and " + names[names.length - 1];
+  }
+
+  const TEST_TEXT = "Testing a post from House Social. This will be deleted.";
+
+  function PostingPanel(props) {
+    const posting = props.posting || {};
+    const connected = props.connected || [];
+    const tests = posting.tests || [];
+    const [picked, setPicked] = useState(function () { return connected.filter(function (platform) { return platform !== "instagram"; }); });
+    const [text, setText] = useState(TEST_TEXT);
+    const [image, setImage] = useState("");
+    const [confirming, setConfirming] = useState(false);
+    const [made, setMade] = useState(null);
+    const usable = picked.filter(function (platform) { return connected.indexOf(platform) >= 0; });
+    function toggle(platform) {
+      setPicked(function (current) {
+        return current.indexOf(platform) >= 0 ? current.filter(function (item) { return item !== platform; }) : current.concat([platform]);
+      });
+    }
+    async function send() {
+      const found = await props.onTest({ platforms: usable, text: text, image_url: image.trim() });
+      setConfirming(false);
+      if (found) setMade(found.rows || []);
+    }
+    const names = andList(usable.map(platformName));
+    return h(Section, {
+      title: "Posting",
+      note: "Approved, scheduled pieces post at their time while posting is on here and in House settings. A piece more than " + (posting.late_hours || 6) + " hours late waits for a new time.",
+    },
+      !posting.on && connected.length ? h("div", { className: "hs-callout hs-row hs-spread" },
+        h("span", null, "Posting is off for the whole house. This brand will not post until it is on there too."),
+        h("button", { type: "button", className: "hs-tab hs-tab-sm", onClick: props.onOpenHouse }, "Open House settings")) : null,
+      h(SaveCheck, {
+        checked: posting.brand_on, disabled: props.busy, onChange: props.onToggle,
+        title: "Post from " + props.brandName, note: "Off until checked. Turning it off stops this brand; scheduled pieces wait.",
+      }),
+      connected.length ? h("div", { className: "hs-row hs-gap-sm" },
+        h("button", { type: "button", className: "hs-tab", disabled: props.busy, onClick: props.onCheck }, "Check posting"),
+        h("span", { className: "hs-hint" }, "Proves each account can post, and shows the answer on its row above. Nothing visible is left behind.")) : h("p", { className: "hs-note" }, "Connect an account above before posting."),
+      connected.length ? h(Section, { title: "Send a test post", collapsible: true, note: "A real, public post marked as a test. Delete it from here afterwards." },
+        h("fieldset", { className: "hs-pick" },
+          h("legend", { className: "hs-name" }, "Post it on"),
+          h("div", { className: "hs-row hs-gap-sm" }, connected.map(function (platform) {
+            return h("label", { key: platform, className: "hs-note" },
+              h("input", { type: "checkbox", checked: picked.indexOf(platform) >= 0, onChange: function () { toggle(platform); } }),
+              h("span", null, platformName(platform)));
+          }))),
+        field("Words", h("textarea", { className: "hs-area", rows: 2, maxLength: 500, value: text, onChange: function (event) { setText(event.target.value); } })),
+        field("Image address", h("input", { className: "hs-field", type: "url", inputMode: "url", placeholder: "https://", value: image, onChange: function (event) { setImage(event.target.value); } }),
+          "Optional. Instagram needs one, and it must be a public https JPEG."),
+        confirming ? h("div", { className: "hs-danger-zone is-open", role: "alertdialog", "aria-label": "Confirm the test post" },
+          h("p", null, "This posts publicly on " + names + " as " + props.brandName + "."),
+          h("div", { className: "hs-row" },
+            h("button", { type: "button", className: "hs-button", disabled: props.busy, onClick: send }, "Post the test"),
+            h("button", { type: "button", className: "hs-tab", onClick: function () { setConfirming(false); } }, "Cancel")))
+          : h("div", { className: "hs-row" },
+            h("button", { type: "button", className: "hs-button", disabled: props.busy || !usable.length || !text.trim(), onClick: function () { setConfirming(true); } }, usable.length ? "Send a test to " + names : "Pick a platform")),
+        made && made.some(function (row) { return !row.ok; }) ? h("ul", { className: "hs-checks", "aria-label": "Test result" }, made.filter(function (row) { return !row.ok; }).map(function (row) {
+          return h("li", { key: row.platform, className: row.ok ? "is-ok" : "is-bad" },
+            h("span", { className: "hs-check-mark", "aria-hidden": "true" }, row.ok ? "✓" : "✕"),
+            h("span", null, h("strong", null, platformName(row.platform) + ": "), row.detail));
+        })) : null,
+        tests.length ? h("ul", { className: "hs-rows" }, tests.map(function (item) {
+          return h("li", { key: item.id, className: "hs-list-row" + (item.deleted ? " is-muted" : "") },
+            h("div", { className: "hs-list-main" },
+              h("strong", null, platformName(item.platform) + " test"),
+              h("span", { className: "hs-meta" }, String(item.at || "").replace("T", " ").slice(0, 16) + (item.deleted ? " · deleted" : ""))),
+            h("div", { className: "hs-row hs-gap-xs" },
+              item.permalink ? h("a", { href: item.permalink, target: "_blank", rel: "noopener noreferrer" }, "Open") : null,
+              !item.deleted && item.platform !== "instagram" ? h("button", { type: "button", className: "hs-chip-button", disabled: props.busy, onClick: function () { props.onDeleteTest(item.id); } }, "Delete") : null,
+              !item.deleted && item.platform === "instagram" ? h("span", { className: "hs-hint" }, "Delete it in the Instagram app.") : null));
+        })) : null) : null);
+  }
+
   function Accounts(props) {
     const studio = props.studio || {};
     const connections = studio.connections || [];
@@ -1533,6 +1710,7 @@
             ready: row.app === "meta" ? metaReady : threadsReady,
             leaving: leaving === row.platform,
             quiet: !!choice,
+            account: ((studio.publishing || {}).accounts || {})[row.platform],
             foundInstagram: !!(byPlatform.instagram && byPlatform.instagram.via === "facebook"),
             onConnect: props.onConnect,
             onLeave: function () { setLeaving(row.platform); },
@@ -1545,6 +1723,12 @@
         })),
         pull.pulled_at ? h("p", { className: "hs-note" }, "Last pull " + String(pull.pulled_at).replace("T", " ").slice(0, 16) + " · " + pull.count + " posts.") : null,
         (pull.errors || []).map(function (item) { return h("p", { key: item, className: "hs-error" }, item); })),
+      h(PostingPanel, {
+        posting: studio.publishing, brandName: props.brand.name, busy: props.busy,
+        connected: ACCOUNT_ROWS.map(function (row) { return row.platform; }).filter(function (platform) { return byPlatform[platform]; }),
+        onToggle: props.onBrandPosting, onCheck: props.onCheck, onTest: props.onTest, onDeleteTest: props.onDeleteTest,
+        onOpenHouse: props.onOpenHouse,
+      }),
       h(Section, { title: "Paste a token instead", collapsible: true, note: "For a token made by hand, such as a system user's Page token." },
         h("form", { className: "hs-stack", onSubmit: paste },
           h("div", { className: "hs-grid-2" },
@@ -1602,7 +1786,7 @@
   const MODE_CHOICES = [
     ["manual", "Manual", "You do every step. Nothing starts on its own."],
     ["approval", "Autonomous with approval", "Drafts a batch for you. Nothing is scheduled until you approve it."],
-    ["auto", "Fully autonomous", "Schedules one piece at a time once you confirm the switch. Nothing is sent."],
+    ["auto", "Fully autonomous", "The agent schedules and posts what it writes, inside the limits below, once you confirm the switch."],
   ];
 
   const LOG_FILTERS = [
@@ -1632,7 +1816,7 @@
       mode.rate ? h("p", { className: "hs-note" }, mode.rate) : null,
       mode.notice ? h("p", { className: "hs-warn" }, mode.notice) : null,
       pick !== now ? h("div", { className: "hs-confirm" },
-        pick === "auto" ? h("p", { className: "hs-warn" }, "Fully autonomous can schedule without asking each time. Nothing is sent, and you can switch back whenever you like.") : null,
+        pick === "auto" ? h("p", { className: "hs-warn" }, "Fully autonomous lets the agent schedule and post without asking each time, while posting is on. You can switch back whenever you like.") : null,
         h("div", { className: "hs-row" },
           h("button", {
             type: "button", className: "hs-button", disabled: props.busy,
@@ -1920,7 +2104,7 @@
       h(StudioRead, { read: studio.studio_read, busy: props.busy, onPull: props.onPull }),
       h(Section, { title: "Profile", note: "Public handles and the website. A handle is not a credential; accounts connect on the Accounts desk." },
         h(ProfileForm, { brand: brand, handles: props.handles, setHandles: props.setHandles, busy: props.busy, onSave: props.onSave, onSaveSite: props.onSaveSite })),
-      h(Section, { title: "How far the desk acts", note: "The mode decides what starts without you. Nothing is sent in any mode." },
+      h(Section, { title: "How far the desk acts", note: "The mode decides what starts without you. Manual and approval need a person to approve every post. Posting itself is switched on under Accounts." },
         h(ModePanel, { mode: studio.modes, busy: props.busy, onMode: props.onMode })),
       h(Section, { title: "Pause", note: "Stops new work for a stretch of days without changing the mode.", collapsible: true, open: !!(support.pause && support.pause.start) },
         h(PausePanel, { pause: support.pause, busy: props.busy, onSupport: props.onSupport })),
@@ -2323,7 +2507,7 @@
             h("input", { className: "hs-field hs-w-lg", type: "datetime-local", value: when, "aria-label": "Schedule for", onChange: function (event) { setWhen(event.target.value); } }),
             h("button", { type: "button", className: "hs-tab", disabled: props.busy || !when, onClick: function () { props.onSave({ status: "scheduled", scheduled_for: new Date(when).toISOString() }); } }, "Schedule")))),
       h("div", { className: "hs-row hs-spread hs-editor-foot" },
-        h("span", { className: "hs-hint" }, "Scheduling holds the time on the calendar. Nothing is sent."),
+        h("span", { className: "hs-hint" }, "Scheduling holds the time. It posts then while posting is on for this brand."),
         deleting ? h("div", { className: "hs-row hs-gap-xs" },
           h("span", { className: "hs-note" }, "Delete this draft?"),
           h("button", { type: "button", className: "hs-button is-danger", disabled: props.busy, onClick: props.onDelete }, "Delete"),
@@ -3210,6 +3394,7 @@
     const [mode, setMode] = useState("list");
     const [stage, setStage] = useState("all");
     const [picked, setPicked] = useState([]);
+    const [posting, setPosting] = useState("");
     const suggestion = queue.suggestion || {};
     const stages = queue.stages || [];
     const all = queue.items || [];
@@ -3228,7 +3413,7 @@
     function row(item) {
       const record = item.record || {};
       const weak = item.slot && item.slot.indexOf("underperformed") >= 0;
-      const tone = item.status === "pending" ? "pending" : item.status === "scheduled" ? "scheduled" : item.status === "failed" ? "failed" : item.status === "ready" ? "ready" : "draft";
+      const tone = item.status === "pending" ? "pending" : item.status === "scheduled" ? "scheduled" : item.status === "failed" ? "failed" : item.status === "ready" ? "ready" : item.status === "published" ? "published" : "draft";
       const on = live.indexOf(item.id) >= 0;
       return h("li", { key: item.id, className: "hs-q hs-q-" + tone + (on ? " is-picked" : "") },
         h("input", { type: "checkbox", checked: on, "aria-label": "Select " + item.idea, onChange: function () { toggle(item.id); } }),
@@ -3240,6 +3425,17 @@
               item.date ? h("span", { className: "hs-meta" }, dayLabel(item.date, { weekday: "short", month: "short", day: "numeric" }) + (item.time ? " · " + item.time : "")) : null),
             h("span", { className: "hs-q-title" }, item.idea)),
           item.failure ? h("p", { className: "hs-bad" }, item.failure) : null,
+          (item.published || []).length ? h("p", { className: "hs-note" }, "Posted on ", (item.published || []).map(function (row, index) {
+            return [index ? " · " : "", row.permalink ? h("a", { key: row.platform, href: row.permalink, target: "_blank", rel: "noopener noreferrer" }, platformName(row.platform)) : platformName(row.platform)];
+          })) : null,
+          item.placeholder ? h("p", { className: "hs-hint" }, "The desk's placeholder. Write the post before it can go out.") : null,
+          item.can_post_now && queue.live && !item.placeholder ? (posting === item.id
+            ? h("div", { className: "hs-danger-zone is-open", role: "alertdialog", "aria-label": "Post now" },
+              h("p", null, "Post this now, in public, to every connected account that has words for it?"),
+              h("div", { className: "hs-row" },
+                h("button", { type: "button", className: "hs-button", disabled: props.busy, onClick: async function () { await props.onPostNow(item.id); setPosting(""); } }, "Post now"),
+                h("button", { type: "button", className: "hs-tab", onClick: function () { setPosting(""); } }, "Cancel")))
+            : h("div", { className: "hs-row" }, h("button", { type: "button", className: "hs-chip-button", disabled: props.busy, onClick: function () { setPosting(item.id); } }, "Post now…"))) : null,
           item.slot ? h("p", { className: weak ? "hs-warn" : "hs-note" }, item.slot) : null,
           record.linked ? h("p", { className: "hs-note" }, record.detail, record.permalink ? [" · ", h("a", { key: "a", href: record.permalink, target: "_blank", rel: "noopener noreferrer" }, "Open the post")] : null) : null,
           (item.problems || []).length && item.status !== "failed" ? h("p", { className: "hs-note" }, item.problems[0]) : null));

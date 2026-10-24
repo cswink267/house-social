@@ -22,7 +22,7 @@ from brands import FORMATS, PLATFORMS, SECTIONS, Brand, Channel, brand_dict, bra
 
 
 _ID = re.compile(r"^[a-z0-9]+(?:-[a-z0-9]+)*$")
-STATUSES = ("draft", "planned", "ready", "pending", "approved", "scheduled", "failed")
+STATUSES = ("draft", "planned", "ready", "pending", "approved", "scheduled", "failed", "published")
 
 
 def state_path() -> Path:
@@ -92,6 +92,8 @@ def empty_state() -> dict:
         "todo_held": [],
         "apps": {},
         "oauth_pending": [],
+        "publishing": {"on": False, "brands": {}},
+        "test_posts": [],
     }
 
 
@@ -152,6 +154,8 @@ def load(path: Path | None = None) -> dict:
     todo_held = raw.get("todo_held")
     apps = raw.get("apps")
     oauth_pending = raw.get("oauth_pending")
+    publishing = raw.get("publishing")
+    test_posts = raw.get("test_posts")
     return {
         "version": 1,
         "channels": channels if isinstance(channels, dict) else {},
@@ -204,6 +208,8 @@ def load(path: Path | None = None) -> dict:
         "todo_held": todo_held if isinstance(todo_held, list) else [],
         "apps": apps if isinstance(apps, dict) else {},
         "oauth_pending": oauth_pending if isinstance(oauth_pending, list) else [],
+        "publishing": publishing if isinstance(publishing, dict) else {"on": False, "brands": {}},
+        "test_posts": test_posts if isinstance(test_posts, list) else [],
     }
 
 
@@ -281,8 +287,12 @@ def update_piece(
     index, piece = _find(updated, piece_id)
     brand = resolve_brand(updated, piece["brand_id"])
     next_piece = copy.deepcopy(piece)
+    if piece.get("status") == "published" and (status is not None or scheduled_for is not None or clear_schedule):
+        raise DraftError("This piece already posted. Start a new draft to post it again.")
     if variants:
         next_piece["variants"] = _merge_variants(next_piece["variants"], variants)
+        # Words someone wrote replace the desk's placeholder.
+        next_piece.pop("placeholder", None)
     if clear_schedule:
         next_piece["scheduled_for"] = None
         if next_piece.get("status") == "scheduled":
@@ -313,13 +323,15 @@ def update_piece(
             problems = issues(brand, next_piece["variants"])
             if problems:
                 raise DraftError(" ".join(problems))
+        if status == "published":
+            raise DraftError("A piece is marked posted only when it posts.")
         if status == "scheduled" and not (next_piece.get("approval") or {}).get("complete"):
             raise DraftError("Schedule waits until the piece is approved.")
         if status == "scheduled" and not next_piece.get("scheduled_for"):
             raise DraftError("A scheduled piece needs a time.")
         next_piece["status"] = status
         next_piece["failure"] = _label(failure or "It did not pass the schedule rules.", 300) if status == "failed" else ""
-    next_piece["posted"] = False
+    next_piece["posted"] = bool(next_piece.get("published"))
     updated["pieces"][index] = next_piece
     save(updated, path)
     return next_piece
@@ -722,8 +734,11 @@ def studio(state: dict, brand_id: str, ledger: dict | None = None, today=None) -
         "goals": _goal_view(state, brand_id, posts, page_days, when),
         "imported": _imported_count(state, brand_id),
     }
+    from publish import is_live, posting_view
+
     return {
-        "posting": False,
+        "posting": is_live(state, brand_id),
+        "publishing": posting_view(state, brand_id),
         "brand": row,
         "calendar": _calendar_view(state, brand_id, pieces, posts, when),
         "performance": desk,
@@ -1538,8 +1553,8 @@ def _piece_entry(piece: dict) -> dict:
         "format": piece.get("format") or "",
         "campaign": piece.get("campaign") or "",
         "platforms": platforms,
-        "draggable": True,
-        "permalink": "",
+        "draggable": status != "published",
+        "permalink": next((row.get("permalink") for row in (piece.get("published") or {}).values() if row.get("permalink")), ""),
     }
 
 
@@ -1656,7 +1671,14 @@ def _local_date_time(value: str) -> tuple[str, str]:
 
 
 def _merged_channels(brand_id: str, seeds: tuple[Channel, ...], state: dict) -> list[dict]:
+    from publish import is_live
+
     overrides = state["channels"].get(brand_id, {})
+    live = is_live(state, brand_id)
+    connected = {
+        item.get("platform") for item in state.get("connections") or []
+        if item.get("brand_id") == brand_id and item.get("token_vault")
+    }
     rows = []
     for seed in seeds:
         over = overrides.get(seed.platform)
@@ -1672,7 +1694,7 @@ def _merged_channels(brand_id: str, seeds: tuple[Channel, ...], state: dict) -> 
                 "handle": handle,
                 "external_id": external_id,
                 "known": known,
-                "posting": False,
+                "posting": live and seed.platform in connected,
             }
         )
     return rows

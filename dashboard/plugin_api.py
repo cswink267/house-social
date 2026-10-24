@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import os
 import sys
 from pathlib import Path
 
@@ -60,6 +61,12 @@ from studio_read import pull_studio
 
 router = APIRouter()
 
+if os.environ.get("HOUSE_SOCIAL_WORKER", "1") != "0":
+    # Posts what is due once a minute. It does nothing while posting is off.
+    from publish import start_worker
+
+    start_worker()
+
 
 def _fail(exc: DraftError) -> None:
     raise HTTPException(status_code=400, detail=str(exc)) from exc
@@ -67,11 +74,14 @@ def _fail(exc: DraftError) -> None:
 
 @router.get("/roster")
 def get_roster() -> dict:
+    from publish import posting_view
     from store import apps_view
 
     state = load()
+    house = posting_view(state)
     return {
-        "posting": False,
+        "posting": house["on"],
+        "publishing": house,
         "platforms": list(PLATFORMS),
         "limits": LIMITS,
         "card_limit": JOSIE_CARD,
@@ -290,6 +300,69 @@ def post_disconnect(brand_id: str, body: dict) -> dict:
     body = body if isinstance(body, dict) else {}
     try:
         return disconnect(load(), brand_id, str(body.get("platform") or ""))
+    except DraftError as exc:
+        _fail(exc)
+
+
+@router.post("/posting")
+def post_posting(body: dict) -> dict:
+    from publish import set_posting
+
+    try:
+        return set_posting(load(), body if isinstance(body, dict) else {})
+    except DraftError as exc:
+        _fail(exc)
+
+
+@router.post("/posting/run")
+def post_posting_run() -> dict:
+    from publish import tick
+
+    try:
+        result = tick()
+    except DraftError as exc:
+        _fail(exc)
+    if result is None:
+        raise HTTPException(status_code=409, detail="Another run is posting right now. Try again in a minute.")
+    return result
+
+
+@router.post("/brands/{brand_id}/posting/check")
+def post_posting_check(brand_id: str) -> dict:
+    from publish import check_posting
+
+    try:
+        return check_posting(load(), brand_id)
+    except DraftError as exc:
+        _fail(exc)
+
+
+@router.post("/brands/{brand_id}/posting/test")
+def post_posting_test(brand_id: str, body: dict) -> dict:
+    from publish import send_test_post
+
+    try:
+        return send_test_post(load(), brand_id, body if isinstance(body, dict) else {})
+    except DraftError as exc:
+        _fail(exc)
+
+
+@router.delete("/posting/tests/{test_id}")
+def delete_posting_test(test_id: str) -> dict:
+    from publish import delete_test
+
+    try:
+        return delete_test(load(), test_id)
+    except DraftError as exc:
+        _fail(exc)
+
+
+@router.post("/pieces/{piece_id}/publish")
+def post_piece_publish(piece_id: str) -> dict:
+    from publish import publish_piece
+
+    try:
+        return publish_piece(load(), piece_id, immediate=True)
     except DraftError as exc:
         _fail(exc)
 

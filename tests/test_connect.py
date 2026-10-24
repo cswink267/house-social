@@ -50,6 +50,12 @@ class FakeMeta:
             assert params["redirect_uri"] == REDIRECT
             assert params["client_secret"] == "meta-fixture"
             return {"access_token": "short-user"}
+        if url.endswith("/me/permissions"):
+            return {"data": [
+                {"permission": "pages_show_list", "status": "granted"},
+                {"permission": "pages_manage_posts", "status": "granted"},
+                {"permission": "instagram_content_publish", "status": "declined"},
+            ]}
         if url.endswith("/me/accounts"):
             assert params["access_token"] == "long-user"
             return {
@@ -107,7 +113,8 @@ def test_meta_connect_picks_the_page_and_instagram_and_keeps_tokens_out_of_state
     assert url.netloc == "www.facebook.com"
     assert query["client_id"] == [META_ID]
     assert "pages_show_list" in query["scope"][0]
-    assert "publish" not in query["scope"][0]
+    assert "pages_manage_posts" in query["scope"][0]
+    assert "instagram_content_publish" in query["scope"][0]
     nonce = query["state"][0]
 
     fake = FakeMeta()
@@ -142,6 +149,12 @@ def test_meta_connect_picks_the_page_and_instagram_and_keeps_tokens_out_of_state
     assert rows["instagram"]["external_id"] == "178003"
     assert rows["instagram"]["page_id"] == "333"
     assert rows["instagram"]["via"] == "login"
+    stored = {item["platform"]: item for item in load(path)["connections"]}
+    assert "pages_manage_posts" in stored["facebook"]["scopes"]
+    assert "instagram_content_publish" not in stored["instagram"]["scopes"]
+    accounts = view["publishing"]["accounts"]
+    assert accounts["facebook"]["can_post"] is True
+    assert accounts["instagram"]["can_post"] is False
     channels = {item["platform"]: item for item in view["brand"]["channels"]}
     assert channels["instagram"]["handle"] == "third.ig"
     assert channels["facebook"]["external_id"] == "111"

@@ -1,8 +1,9 @@
-"""The publishing queue. It does not send anything.
+"""The publishing queue.
 
-A piece moves from draft to review, then scheduled. On the record
-means a real post is already tied to that draft. A slot is called
-weak only when that format already has a real gap between hours.
+A piece moves from draft to review, then scheduled, then posted when
+posting is on for the brand. On the record means a pulled post is tied
+to that draft. A slot is called weak only when that format already has a
+real gap between hours.
 """
 
 from __future__ import annotations
@@ -17,13 +18,14 @@ from learn import suggest_hour
 from store import _find, _local_date_time, load, resolve_brand, update_piece
 
 
-_OUT = {"pending", "approved", "scheduled", "failed"}
+_OUT = {"pending", "approved", "scheduled", "failed", "published"}
 _ACTIONS = {"pending", "schedule", "draft", "retry"}
 _STAGES = (
     ("draft", "Draft"),
     ("review", "Needs approval"),
     ("approved", "Approved"),
     ("scheduled", "Scheduled"),
+    ("posted", "Posted"),
     ("recorded", "On the record"),
     ("failed", "Failed"),
 )
@@ -35,6 +37,7 @@ _STAGE = {
     "approved": "approved",
     "scheduled": "scheduled",
     "failed": "failed",
+    "published": "posted",
 }
 _LABELS = {
     "draft": "Draft",
@@ -44,6 +47,7 @@ _LABELS = {
     "approved": "Approved",
     "scheduled": "Scheduled",
     "failed": "Failed",
+    "published": "Posted",
 }
 
 
@@ -70,7 +74,8 @@ def queue_for(state: dict, brand_id: str, posts: list[dict] | None = None) -> di
         "formats": formats,
         "pace": pace_line([piece for piece in state.get("pieces") or [] if piece.get("brand_id") == brand.id]),
         "stages": [{"id": stage_id, "label": label} for stage_id, label in _STAGES],
-        "rules": rules_for(brand),
+        "rules": rules_for(brand, _live(state, brand.id)),
+        "live": _live(state, brand.id),
     }
 
 
@@ -103,13 +108,16 @@ def bulk_queue(
     return view
 
 
-def rules_for(brand: Brand) -> list[str]:
+def rules_for(brand: Brand, live: bool = False) -> list[str]:
     rules = [
-        "Nothing in this queue is sent.",
+        "A scheduled piece posts at its time while posting is on for this brand."
+        if live else "Posting is off for this brand, so nothing here is sent. Turn it on under Accounts.",
+        "Only an approved piece is scheduled, and the desk's own placeholders never post.",
+        "A piece more than six hours past its time does not post late.",
         "Facebook holds 5000 characters, Instagram 2200, and Threads 500.",
         "Facebook, Instagram, and Threads cannot share the same words.",
-        "Instagram hashtags stay out of the caption.",
-        "Meta's rate limit is not applied here, because nothing is sent.",
+        "Instagram hashtags stay out of the caption until it posts. Instagram needs an image.",
+        "Instagram allows 100 posts a day and Threads 250. Meta's rate limit is not applied here beyond that.",
     ]
     if brand.id == "josie-blackthorn":
         rules.append("Josie Facebook needs the quote image before it can be scheduled.")
@@ -199,9 +207,9 @@ def pace_line(pieces: list[dict]) -> str:
             if body:
                 counts[(day, platform)] = counts.get((day, platform), 0) + 1
     if not counts:
-        return "Nothing is scheduled, so there is no rate to watch. This queue does not send."
+        return "Nothing is scheduled, so there is no rate to watch."
     parts = [f"{platform} {count} on {day}" for (day, platform), count in sorted(counts.items())]
-    return "Scheduled, not sent: " + ", ".join(parts) + ". Meta's rate limit is not applied here."
+    return "Scheduled: " + ", ".join(parts) + ". Meta's rate limit is not applied here."
 
 
 def _one(
@@ -267,8 +275,20 @@ def _item(brand: Brand, piece: dict, posts: list[dict] | None = None) -> dict:
         "problems": issues(brand, piece.get("variants") or {}),
         "slot": slot_warning(history, str(piece.get("format") or ""), _clock_hour(clock)),
         "record": record,
-        "posted": False,
+        "posted": bool(piece.get("published")),
+        "published": [
+            {"platform": platform, "permalink": row.get("permalink") or "", "at": row.get("at") or ""}
+            for platform, row in (piece.get("published") or {}).items()
+        ],
+        "placeholder": bool(piece.get("placeholder")),
+        "can_post_now": status in {"approved", "scheduled", "failed"} and bool((piece.get("approval") or {}).get("complete")),
     }
+
+
+def _live(state: dict, brand_id: str) -> bool:
+    from publish import is_live
+
+    return is_live(state, brand_id)
 
 
 def hour_rows(posts: list[dict]) -> list[dict]:
