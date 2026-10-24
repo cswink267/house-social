@@ -24,7 +24,7 @@
   --hs-danger: var(--color-destructive, #e5484d);
   --hs-ok: var(--color-success, #46a758);
   --hs-warn: var(--color-warning, #f5a524);
-  --hs-danger-text: color-mix(in srgb, var(--hs-danger) 78%, var(--hs-fg));
+  --hs-danger-text: color-mix(in srgb, var(--hs-danger) 65%, var(--hs-fg));
   --hs-ok-text: color-mix(in srgb, var(--hs-ok) 62%, var(--hs-fg));
   --hs-warn-text: color-mix(in srgb, var(--hs-warn) 70%, var(--hs-fg));
   --hs-radius: var(--radius, 8px);
@@ -37,6 +37,20 @@
   color: var(--hs-fg);
   font-size: 0.9rem;
   line-height: 1.5;
+}
+/* Light themes leave little room between the text and the canvas, so the
+   quieter tones lean toward slate instead of fading into the background. */
+.hs-page[data-tone="light"] {
+  --hs-muted: color-mix(in srgb, var(--hs-fg) 45%, #334155);
+  --hs-subtle: color-mix(in srgb, var(--hs-fg) 40%, #475569);
+  --hs-ok-text: color-mix(in srgb, var(--hs-ok) 15%, #14532d);
+  --hs-danger-text: color-mix(in srgb, var(--hs-danger) 55%, #450a0a);
+  --hs-warn-text: color-mix(in srgb, var(--hs-warn) 15%, #713f12);
+  --hs-accent-soft: color-mix(in srgb, var(--hs-accent) 7%, transparent);
+}
+.hs-page[data-tone="light"] .hs-chip:not(.is-published),
+.hs-page[data-tone="light"] :is(.hs-choice, .hs-nav-item, .hs-tab, .hs-row-button, .hs-chip-button, .hs-post, .hs-piece).is-on {
+  color: color-mix(in srgb, var(--hs-fg) 72%, #0f172a);
 }
 .hs-page *, .hs-page *::before, .hs-page *::after { box-sizing: border-box; }
 .hs-page p { margin: 0; }
@@ -1068,7 +1082,8 @@ button.hs-bar-col { cursor: pointer; }
   border-radius: 999px;
   padding: 0 7px;
 }
-.hs-day.is-out { opacity: 0.45; }
+.hs-day.is-out { background: transparent; border-style: dashed; }
+.hs-day.is-out .hs-chip { color: var(--hs-muted); background: transparent; }
 .hs-day.is-over { border-color: var(--hs-ring); border-style: dashed; background: var(--hs-accent-soft); }
 .hs-day-head { display: flex; align-items: center; justify-content: space-between; gap: 4px; min-height: 22px; }
 .hs-day-num { font-size: 0.78rem; font-weight: 600; line-height: 20px; padding: 0 3px; }

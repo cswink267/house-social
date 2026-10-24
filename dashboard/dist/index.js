@@ -155,6 +155,37 @@
     }).join(" · ");
   }
 
+  function toneOf() {
+    try {
+      const root = window.getComputedStyle(document.documentElement);
+      const raw = root.getPropertyValue("--background-base").trim() || window.getComputedStyle(document.body).backgroundColor;
+      const probe = document.createElement("span");
+      probe.style.color = raw;
+      document.body.appendChild(probe);
+      const rgb = window.getComputedStyle(probe).color.match(/[\d.]+/g) || [];
+      probe.remove();
+      const channel = function (value) {
+        const unit = Number(value) / 255;
+        return unit <= 0.03928 ? unit / 12.92 : Math.pow((unit + 0.055) / 1.055, 2.4);
+      };
+      const light = 0.2126 * channel(rgb[0] || 0) + 0.7152 * channel(rgb[1] || 0) + 0.0722 * channel(rgb[2] || 0);
+      return light > 0.4 ? "light" : "dark";
+    } catch (err) {
+      return "dark";
+    }
+  }
+
+  function useTone() {
+    const [tone, setTone] = useState(toneOf);
+    useEffect(function () {
+      if (!window.MutationObserver) return undefined;
+      const watch = new MutationObserver(function () { setTone(toneOf()); });
+      watch.observe(document.documentElement, { attributes: true, attributeFilter: ["style", "class", "data-theme"] });
+      return function () { watch.disconnect(); };
+    }, []);
+    return tone;
+  }
+
   function Toasts(props) {
     return h("div", { className: "hs-toasts", role: "status", "aria-live": "polite" },
       props.items.map(function (item) {
@@ -274,6 +305,7 @@
     const [assist, setAssist] = useState(null);
     const [draftRead, setDraftRead] = useState(null);
     const [assistTarget, setAssistTarget] = useState("idea");
+    const tone = useTone();
     const brandRef = useRef(brandId);
     // Edits typed into a draft and not saved yet, by piece, platform, and field.
     // A refresh keeps them, so attaching an image does not wipe the words.
@@ -854,7 +886,7 @@
       }
     }
 
-    return h("div", { className: "hs-page" },
+    return h("div", { className: "hs-page", "data-tone": tone },
       h("header", { className: "hs-header" },
         h("div", null,
           h("h1", { className: "hs-title" }, "House Social"),
@@ -902,14 +934,14 @@
                 return h("option", { key: item.id, value: item.id }, item.label + (badge ? " (" + badge.n + ")" : ""));
               }));
           }))),
-        h("main", { className: "hs-desk", "aria-busy": busy ? "true" : "false" },
+        h("section", { className: "hs-desk", "aria-busy": busy ? "true" : "false", "aria-labelledby": "hs-desk-title" },
           busy ? h("div", { className: "hs-progress", "aria-hidden": "true" }) : null,
           adding ? h(AddBrand, { busy: busy, onAdd: addBrand, onCancel: function () { setAdding(false); } })
             : !loaded ? h("p", { className: "hs-note hs-loading" }, "Loading the desk…")
               : !brand ? h("div", { className: "hs-empty" }, "No brand on the roster yet. Add one to start.")
                 : h("div", { className: "hs-desk-body", key: brand.id + ":" + desk },
                   h("div", { className: "hs-desk-head" },
-                    h("h2", { className: "hs-desk-title" }, current ? current.label : ""),
+                    h("h2", { className: "hs-desk-title", id: "hs-desk-title" }, current ? current.label : ""),
                     DESK_NOTES[desk] ? h("p", { className: "hs-desk-note" }, DESK_NOTES[desk]) : null),
                   ready ? h(DeskBoundary, null, renderDesk()) : h("p", { className: "hs-note hs-loading" }, "Loading the desk…")))),
       h(Toasts, { items: toasts, onDismiss: dismiss }),
@@ -3806,7 +3838,7 @@
           recommendations.length ? h("p", { className: "hs-voice" }, recommendations[0]) : null,
           h("details", { className: "hs-more", open: index === 0 },
             h("summary", null, "The full report"),
-            h("pre", { className: "hs-report" }, row.markdown || "")),
+            h("pre", { className: "hs-report", tabIndex: 0, role: "region", "aria-label": "Full report, " + row.title }, row.markdown || "")),
           h("div", { className: "hs-row hs-gap-sm" },
             h("button", { type: "button", className: "hs-tab hs-tab-sm", onClick: function () { copy(row.id + ":md", row.markdown || ""); } }, copied === row.id + ":md" ? "Copied" : "Copy markdown"),
             h("button", { type: "button", className: "hs-tab hs-tab-sm", onClick: function () { downloadText(reportFileName(row.title, "md"), row.markdown || "", "text/markdown"); } }, "Download markdown"),
