@@ -556,3 +556,15 @@ Hermes may append items to this file when it encounters a problem that needs fix
 - This capability is off by default. It is enabled per brand or globally only after the user turns it on.
 
 Hermes adding to the TODO is a convenience for capturing real issues and small, evidence-based improvements. It does not give Hermes the ability to change behavior, schedule posts, or bypass any existing rule. The user remains the one who decides what is built.
+
+## Suggested improvements
+
+### Series fill is not on the desk
+
+2026-10-24. Desk: Series.
+
+What happened: fill_series and set_series_pause work, and the tests cover them. The Series desk does not show a control for either one.
+
+Why: A series can be paused, and a fill can use a pillar the brand already has. Without a control, that only happens from code.
+
+Next: Add pause and fill on the Series desk. Do not invent a topic. Nothing is sent.

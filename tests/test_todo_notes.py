@@ -54,3 +54,14 @@ def test_notes_are_off_until_enabled_and_a_repeat_is_refused(tmp_path: Path):
     assert held["added"] is False
     assert "held" in held["reason"]
     assert "### A third gap" not in todo.read_text(encoding="utf-8")
+
+
+def test_a_mention_inside_a_sentence_is_not_the_section(tmp_path: Path):
+    path = tmp_path / "state.json"
+    todo = tmp_path / "TODO.md"
+    todo.write_text('See "## Suggested improvements" in a sentence.\n', encoding="utf-8")
+    set_notes(empty_state(), "okay", True, "global", path)
+    append_note(load(path), "okay", _spec("A real gap"), path, todo)
+    lines = todo.read_text(encoding="utf-8").splitlines()
+    assert "## Suggested improvements" in lines
+    assert "### A real gap" in lines

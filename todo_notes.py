@@ -90,7 +90,7 @@ def append_note(state: dict, brand_id: str, spec: dict, path: Path | None = None
         f"Why: {why}\n\n"
         f"Next: {nxt}\n"
     )
-    if "## Suggested improvements" in text:
+    if any(line.strip() == "## Suggested improvements" for line in text.splitlines()):
         updated_text = text.rstrip() + "\n\n" + block
     else:
         updated_text = text.rstrip() + "\n\n## Suggested improvements\n\n" + block
