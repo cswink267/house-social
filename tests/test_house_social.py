@@ -25,6 +25,7 @@ from store import (  # noqa: E402
     set_site,
     studio,
     pull_brand,
+    _vault_env,
     save_apps,
     save_connection,
     save_voice,
@@ -358,6 +359,17 @@ def test_connection_stores_a_vault_name_not_the_token(tmp_path: Path):
     assert "fixture-token" not in str(saved)
     assert saved["token_vault"] == "vault:house-social.jamhaul.facebook.token"
     assert seen["value"] == "fixture-token"
+
+
+def test_the_vault_sign_in_is_read_when_the_process_has_none(tmp_path: Path):
+    env_file = tmp_path / "env"
+    env_file.write_text("AGENT_VAULT_URL=http://127.0.0.1:9\nAGENT_VAULT_TOKEN=fixture-token\n", encoding="utf-8")
+    found = _vault_env({}, env_file)
+    assert found["AGENT_VAULT_URL"] == "http://127.0.0.1:9"
+    assert found["AGENT_VAULT_TOKEN"] == "fixture-token"
+    kept = _vault_env({"AGENT_VAULT_URL": "http://keep", "AGENT_VAULT_TOKEN": "already"}, env_file)
+    assert kept["AGENT_VAULT_TOKEN"] == "already"
+    assert kept["AGENT_VAULT_URL"] == "http://keep"
 
 
 def test_house_apps_stay_global_and_the_secret_never_lands_in_state(tmp_path: Path):

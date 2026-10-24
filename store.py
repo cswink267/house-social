@@ -974,6 +974,27 @@ def _public_connection(connection: dict) -> dict:
     }
 
 
+def _vault_env(base: dict | None = None, env_file: Path | None = None) -> dict:
+    env = dict(os.environ if base is None else base)
+    if env.get("AGENT_VAULT_TOKEN") and env.get("AGENT_VAULT_URL"):
+        return env
+    path = env_file or (Path.home() / ".config" / "agent-vault" / "env")
+    try:
+        lines = path.read_text(encoding="utf-8").splitlines()
+    except OSError:
+        return env
+    for line in lines:
+        raw = line.strip()
+        if not raw or raw.startswith("#") or "=" not in raw:
+            continue
+        key, value = raw.split("=", 1)
+        key = key.removeprefix("export").strip()
+        value = value.strip().strip("'").strip('"')
+        if key in {"AGENT_VAULT_URL", "AGENT_VAULT_TOKEN"} and value and not env.get(key):
+            env[key] = value
+    return env
+
+
 def _write_vault(name: str, value: str) -> bool:
     import shutil
     import subprocess
@@ -991,6 +1012,7 @@ def _write_vault(name: str, value: str) -> bool:
             text=True,
             timeout=8,
             check=False,
+            env=_vault_env(),
         )
     except (OSError, subprocess.TimeoutExpired):
         return False
@@ -1008,7 +1030,14 @@ def _read_vault(name: str) -> str | None:
     if not binary:
         return None
     try:
-        result = subprocess.run([binary, name], capture_output=True, text=True, timeout=8, check=False)
+        result = subprocess.run(
+            [binary, name],
+            capture_output=True,
+            text=True,
+            timeout=8,
+            check=False,
+            env=_vault_env(),
+        )
     except (OSError, subprocess.TimeoutExpired):
         return None
     if result.returncode != 0:
