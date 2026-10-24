@@ -862,6 +862,30 @@
               if (saved) await refresh(brand.id);
             },
           }) : null,
+          section === "ingest" ? h(IngestDesk, {
+            studio: studio,
+            busy: busy,
+            onPreview: async function (body) {
+              return run(function () {
+                return SDK.fetchJSON("/api/plugins/house-social/brands/" + brand.id + "/ingest/preview", {
+                  method: "POST",
+                  headers: { "Content-Type": "application/json" },
+                  body: JSON.stringify(body),
+                });
+              });
+            },
+            onCommit: async function (body) {
+              const saved = await run(function () {
+                return SDK.fetchJSON("/api/plugins/house-social/brands/" + brand.id + "/ingest", {
+                  method: "POST",
+                  headers: { "Content-Type": "application/json" },
+                  body: JSON.stringify(body),
+                });
+              });
+              if (saved) await refresh(brand.id);
+              return saved;
+            },
+          }) : null,
           section === "hashtags" ? h(HashtagDesk, {
             studio: studio,
             piece: active && active.brand_id === brand.id ? active : null,
@@ -2157,6 +2181,77 @@
         onDrop: function (event) { dropOn(event, ""); },
       }, waiting.length ? waiting.map(chip) : h("p", { className: "hs-note" }, "Nothing waiting. Drag a piece here to take it off its day.")),
     );
+  }
+
+
+  function IngestDesk(props) {
+    const desk = (props.studio && props.studio.ingest) || { fields: [], mapping: {}, log: [], insights: [] };
+    const [text, setText] = useState("");
+    const [xlsx, setXlsx] = useState("");
+    const [filename, setFilename] = useState("paste");
+    const [preview, setPreview] = useState(null);
+    const [mapping, setMapping] = useState({});
+    const [result, setResult] = useState(null);
+    const fields = ["", "caption", "published_at", "platform", "likes", "comments", "shares", "saves", "impressions", "reach", "video_views", "permalink", "format", "pillar"];
+    async function previewFile() {
+      const found = await props.onPreview({ text: xlsx ? "" : text, xlsx: xlsx, filename: filename });
+      if (!found) return;
+      setPreview(found);
+      setMapping(found.suggested || {});
+      setResult(null);
+    }
+    async function commitFile(event) {
+      event.preventDefault();
+      const saved = await props.onCommit({ text: xlsx ? "" : text, xlsx: xlsx, filename: filename, mapping: mapping });
+      if (saved) setResult(saved);
+    }
+    return h("div", { className: "hs-main" },
+      h("p", { className: "hs-note" }, "Paste rows or choose a CSV, JSON, or Excel file. Map the columns, then import. A missing number stays missing. A row already here is skipped. Nothing is sent."),
+      h("textarea", { className: "hs-area", value: text, placeholder: "Paste CSV, tab-separated rows, or JSON", onChange: function (event) { setText(event.target.value); setXlsx(""); } }),
+      h("input", {
+        className: "hs-field", type: "file", accept: ".csv,.json,.xlsx,text/csv,application/json",
+        onChange: function (event) {
+          const file = event.target.files && event.target.files[0];
+          if (!file) return;
+          setFilename(file.name);
+          const reader = new FileReader();
+          if (/\.xlsx$/i.test(file.name)) {
+            reader.onload = function () {
+              const value = String(reader.result || "");
+              setXlsx(value.slice(value.indexOf(",") + 1));
+              setText("");
+            };
+            reader.readAsDataURL(file);
+          } else {
+            reader.onload = function () { setText(String(reader.result || "")); setXlsx(""); };
+            reader.readAsText(file);
+          }
+        },
+      }),
+      h("div", { className: "hs-row" },
+        h("button", { type: "button", className: "hs-button", disabled: props.busy || (!text.trim() && !xlsx), onClick: previewFile }, "Preview columns")),
+      preview ? h("form", { className: "hs-cols", onSubmit: commitFile },
+        h("p", { className: "hs-note" }, preview.rows + " rows. Map a column to the caption."),
+        (preview.columns || []).map(function (column) {
+          return h("label", { key: column, className: "hs-note" }, column,
+            h("select", {
+              className: "hs-field",
+              value: mapping[column] || "",
+              onChange: function (event) {
+                const value = event.target.value;
+                setMapping(function (current) { return Object.assign({}, current, { [column]: value }); });
+              },
+            }, fields.map(function (field) { return h("option", { key: field || "ignore", value: field }, field || "Ignore"); })));
+        }),
+        h("button", { type: "submit", className: "hs-button", disabled: props.busy }, "Import these rows")) : null,
+      result ? h("div", null,
+        h("p", { className: "hs-note" }, result.accepted + " added. " + result.skipped + " already here. " + result.incomplete + " missing a date or a count."),
+        (result.insights || []).map(function (line, index) { return h("p", { key: index, className: "hs-voice" }, line); })) : null,
+      (desk.insights || []).length && !result ? (desk.insights || []).map(function (line, index) { return h("p", { key: "old" + index, className: "hs-note" }, line); }) : null,
+      h("div", { className: "hs-name" }, "Imports"),
+      (desk.log || []).length ? (desk.log || []).map(function (item) {
+        return h("p", { key: item.id, className: "hs-note" }, item.filename + " · " + item.accepted + " added · " + item.skipped + " skipped · " + item.incomplete + " incomplete");
+      }) : h("p", { className: "hs-note" }, "No import yet."));
   }
 
   function Performance(props) {

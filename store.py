@@ -66,6 +66,8 @@ def empty_state() -> dict:
         "goals": [],
         "recurrences": [],
         "studio_reads": {},
+        "ingest_log": [],
+        "ingest_maps": {},
     }
 
 
@@ -100,6 +102,8 @@ def load(path: Path | None = None) -> dict:
     goals = raw.get("goals")
     recurrences = raw.get("recurrences")
     studio_reads = raw.get("studio_reads")
+    ingest_log = raw.get("ingest_log")
+    ingest_maps = raw.get("ingest_maps")
     return {
         "version": 1,
         "channels": channels if isinstance(channels, dict) else {},
@@ -126,6 +130,8 @@ def load(path: Path | None = None) -> dict:
         "goals": goals if isinstance(goals, list) else [],
         "recurrences": recurrences if isinstance(recurrences, list) else [],
         "studio_reads": studio_reads if isinstance(studio_reads, dict) else {},
+        "ingest_log": ingest_log if isinstance(ingest_log, list) else [],
+        "ingest_maps": ingest_maps if isinstance(ingest_maps, dict) else {},
     }
 
 
@@ -619,6 +625,7 @@ def studio(state: dict, brand_id: str, ledger: dict | None = None, today=None) -
         "inbox": _inbox_view(state, brand_id, posts),
         "reports": _reports_view(state, brand_id),
         "studio_read": _studio_read_view(state, brand_id),
+        "ingest": _ingest_view(state, brand_id),
     }
 
 
@@ -1040,6 +1047,12 @@ def _studio_read_view(state: dict, brand_id: str) -> dict:
     from studio_read import studio_view
 
     return studio_view(state, brand_id)
+
+
+def _ingest_view(state: dict, brand_id: str) -> dict:
+    from ingest import ingest_for
+
+    return ingest_for(state, brand_id)
 
 
 def resolve_brand(state: dict, brand_id: str) -> Brand:

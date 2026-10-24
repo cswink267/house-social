@@ -1,6 +1,8 @@
 # Later — do not start
 
-Chris, Oct 22 2026. These are extras. None of them are started. The order is locked. One at a time, when he asks. Do not pull the next one forward.
+Chris, Oct 22 2026. These are extras. The order is locked. One at a time, when he asks. Do not pull the next one forward.
+
+Item 1 is the Ingest desk. The rest are not started.
 
 Ingest history, then make the knowledge visible and correctable, then apply it while writing, then capture reusable formats and explicit feedback, then, only if he still wants it, look across brands.
 

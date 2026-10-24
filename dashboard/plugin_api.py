@@ -53,6 +53,7 @@ from hashtags import apply_set, save_set, save_trend, use_ahead
 from inbox import keep_inbox_idea, keep_inbox_voice, refresh_inbox, save_inbox_reply, suggest_inbox_reply
 from reports import generate_report, report_export, write_insight
 from ideas import draft_idea, idea_brief, keep_shape, revise_idea, save_idea
+from ingest import commit_ingest, preview_ingest
 from learn import read_ledger
 from studio_read import pull_studio
 
@@ -616,6 +617,28 @@ def post_inbox_voice(item_id: str, body: dict) -> dict:
 def post_history(brand_id: str, body: dict) -> dict:
     try:
         return import_history(load(), brand_id, str((body or {}).get("csv") or ""))
+    except DraftError as exc:
+        _fail(exc)
+
+
+@router.post("/brands/{brand_id}/ingest/preview")
+def post_ingest_preview(brand_id: str, body: dict) -> dict:
+    from store import resolve_brand
+
+    state = load()
+    try:
+        resolve_brand(state, brand_id)
+        spec = body if isinstance(body, dict) else {}
+        spec = {**spec, "saved": (state.get("ingest_maps") or {}).get(brand_id) or {}}
+        return preview_ingest(spec)
+    except DraftError as exc:
+        _fail(exc)
+
+
+@router.post("/brands/{brand_id}/ingest")
+def post_ingest(brand_id: str, body: dict) -> dict:
+    try:
+        return commit_ingest(load(), brand_id, body if isinstance(body, dict) else {})
     except DraftError as exc:
         _fail(exc)
 

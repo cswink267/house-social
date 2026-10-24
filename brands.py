@@ -231,6 +231,7 @@ SECTIONS = (
     {"id": "queue", "label": "Queue", "group": "Review"},
     # Learn — performance and audience
     {"id": "performance", "label": "Analytics", "group": "Learn"},
+    {"id": "ingest", "label": "Ingest", "group": "Learn"},
     {"id": "hashtags", "label": "Hashtags", "group": "Learn"},
     {"id": "inbox", "label": "Inbox", "group": "Learn"},
     {"id": "reports", "label": "Reports", "group": "Learn"},
