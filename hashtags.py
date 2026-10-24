@@ -39,6 +39,8 @@ def hashtags_for(state: dict, brand_id: str, posts: list[dict] | None = None) ->
     feed = [item for item in trends if _in_niche(item, words)]
     outside = [item for item in trends if item not in feed]
     blocked = _banned_words(brand.id, state)
+    from feedback import apply_tags
+
     return {
         "sets": sets,
         "tags": tags,
@@ -47,7 +49,7 @@ def hashtags_for(state: dict, brand_id: str, posts: list[dict] | None = None) ->
         "feed": feed,
         "outside": outside,
         "niche": _niche_line(words),
-        "suggestion": _suggestion(tags, blocked, "brand"),
+        "suggestion": apply_tags(_suggestion(tags, blocked, "brand"), state, brand.id),
         "by_pillar": _by_pillar(brand.id, sets, tags, blocked),
         "pillars": pillars_for(brand.id),
         "campaigns": [

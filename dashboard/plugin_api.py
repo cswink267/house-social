@@ -317,6 +317,9 @@ def post_assist(brand_id: str, body: dict) -> dict:
             brand_tags=tuple(brand.tags),
             misses=tuple(str(item) for item in misses[:6]),
         )
+        from feedback import apply_options
+
+        result["options"] = apply_options(list(result.get("options") or []), state, brand.id)
         for option in result.get("options") or []:
             option["reading"] = read_draft(str(option.get("text") or ""), posts)
         result["reading"] = read_draft(str(result.get("text") or body.get("text") or ""), posts)
@@ -425,13 +428,31 @@ def post_idea_suggest(brand_id: str) -> dict:
         )
     except DraftError as exc:
         _fail(exc)
-    return {"ideas": [item.get("text") or "" for item in result.get("options") or [] if item.get("text")]}
+    from feedback import apply_texts
+
+    return {"ideas": apply_texts([item.get("text") or "" for item in result.get("options") or [] if item.get("text")], state, brand.id, "ideas")}
 
 
 @router.post("/brands/{brand_id}/ideas/shapes/{post_id}")
 def post_keep_shape(brand_id: str, post_id: str) -> dict:
     try:
         return keep_shape(load(), brand_id, post_id)
+    except DraftError as exc:
+        _fail(exc)
+
+
+@router.post("/brands/{brand_id}/feedback")
+def post_feedback(brand_id: str, body: dict) -> dict:
+    from feedback import correct_feedback, delete_feedback, save_feedback
+
+    spec = body if isinstance(body, dict) else {}
+    action = str(spec.get("action") or "save").strip().lower()
+    try:
+        if action == "delete":
+            return delete_feedback(load(), brand_id, str(spec.get("id") or ""))
+        if action == "correct":
+            return correct_feedback(load(), brand_id, str(spec.get("id") or ""), spec)
+        return save_feedback(load(), brand_id, spec)
     except DraftError as exc:
         _fail(exc)
 

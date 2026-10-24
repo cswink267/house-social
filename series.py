@@ -46,7 +46,9 @@ def series_for(state: dict, brand_id: str, posts: list[dict] | None = None, q: s
         if needle and needle not in haystack:
             continue
         rows.append(card)
-    return {"items": rows, "suggestions": suggest_series(history), "tags": sorted({tag_name for card in rows for tag_name in card["tags"]})}
+    from feedback import apply_series
+
+    return {"items": rows, "suggestions": apply_series(suggest_series(history), state, brand.id), "tags": sorted({tag_name for card in rows for tag_name in card["tags"]})}
 
 
 def suggest_series(posts: list[dict]) -> list[dict]:

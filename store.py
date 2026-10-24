@@ -73,6 +73,7 @@ def empty_state() -> dict:
         "predictions": [],
         "prediction_hidden": {},
         "series": [],
+        "feedback": [],
     }
 
 
@@ -114,6 +115,7 @@ def load(path: Path | None = None) -> dict:
     predictions = raw.get("predictions")
     prediction_hidden = raw.get("prediction_hidden")
     series = raw.get("series")
+    feedback = raw.get("feedback")
     return {
         "version": 1,
         "channels": channels if isinstance(channels, dict) else {},
@@ -147,6 +149,7 @@ def load(path: Path | None = None) -> dict:
         "predictions": predictions if isinstance(predictions, list) else [],
         "prediction_hidden": prediction_hidden if isinstance(prediction_hidden, dict) else {},
         "series": series if isinstance(series, list) else [],
+        "feedback": feedback if isinstance(feedback, list) else [],
     }
 
 
@@ -366,6 +369,7 @@ def remove_brand(state: dict, brand_id: str, path: Path | None = None, root: Pat
         "memory_log",
         "predictions",
         "series",
+        "feedback",
     ):
         updated[key] = [item for item in updated.get(key) or [] if item.get("brand_id") != name]
     for key in ("channels", "pulls", "voices", "approval_steps", "inbox_errors", "voice_versions", "ingest_maps", "memory_marks", "studio_reads", "prediction_hidden"):

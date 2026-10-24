@@ -2,7 +2,7 @@
 
 Chris, Oct 22 2026. These are extras. The order is locked. One at a time, when he asks. Do not pull the next one forward. Do not delete an item. Mark it complete when it is done.
 
-Item 1 through item 4 are complete. The rest are not started.
+Item 1 through item 5 are complete. The rest are not started.
 
 Ingest history, then make the knowledge visible and correctable, then apply it while writing, then capture reusable formats and explicit feedback, then, only if he still wants it, look across brands.
 
@@ -81,7 +81,7 @@ Implementation notes:
 
 ## 5. Feedback Buttons
 
-**Status: not started.**
+**Status: complete.** Composer, Ideas, Hashtags, and Series suggestions take Used, Better, Worse, Off-brand, or Irrelevant, plus a note. Memory shows the counts. A later mark replaces the one on screen. Delete brings the earlier mark back. Off, worse, and irrelevant hide a suggestion the posts would have shown. Better can keep a suggestion the posts have not proved, and the line says it is not a gap. Nothing is sent.
 
 Explicit signals on suggestions, so judgment is not only the eventual post performance.
 

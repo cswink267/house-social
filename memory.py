@@ -63,7 +63,14 @@ def memory_for(state: dict, brand_id: str, posts: list[dict], pieces: list[dict]
         "timeline": _timeline(state, brand_id, posts),
         "marks": marks,
         "accuracy": _accuracy(state, brand_id),
+        "feedback": _feedback(state, brand_id),
     }
+
+
+def _feedback(state: dict, brand_id: str) -> dict:
+    from feedback import feedback_for
+
+    return feedback_for(state, brand_id)
 
 
 def _accuracy(state: dict, brand_id: str) -> list[dict]:

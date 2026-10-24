@@ -179,6 +179,17 @@
       return report;
     }
 
+    async function sendFeedback(body) {
+      const saved = await run(function () {
+        return SDK.fetchJSON("/api/plugins/house-social/brands/" + brand.id + "/feedback", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify(body || {}),
+        });
+      });
+      if (saved) await refresh(brand.id);
+    }
+
     async function askAssist(action, misses) {
       const fields = { action: action, text: action === "draft" ? idea : assistText() };
       if (active && active.brand_id === brand.id) fields.piece_id = active.id;
@@ -696,6 +707,7 @@
               });
               if (saved) await refresh(brand.id);
             },
+            onFeedback: sendFeedback,
             onApplySeries: async function (seriesId, topic) {
               const saved = await run(function () {
                 return SDK.fetchJSON("/api/plugins/house-social/brands/" + brand.id + "/series/" + encodeURIComponent(seriesId) + "/apply", {
@@ -751,6 +763,7 @@
             onRead: function () { readDraft(assistText()); },
             onImprove: improveDraft,
             onWhy: function (patternId) { setMemoryFocus(patternId || ""); setSection("memory"); },
+            onFeedback: sendFeedback,
             onUseChange: function (line) {
               const text = String(line || "").trim();
               if (!text) return;
@@ -812,6 +825,7 @@
           section === "series" ? h(SeriesDesk, {
             studio: studio,
             busy: busy,
+            onFeedback: sendFeedback,
             onSave: async function (body) {
               const saved = await run(function () {
                 return SDK.fetchJSON("/api/plugins/house-social/brands/" + brand.id + "/series", {
@@ -1001,6 +1015,7 @@
               });
               if (saved) await refresh(brand.id);
             },
+            onFeedback: sendFeedback,
             onExport: async function (kind) {
               return run(function () {
                 return SDK.fetchJSON("/api/plugins/house-social/brands/" + brand.id + "/memory/export?kind=" + encodeURIComponent(kind));
@@ -1011,6 +1026,7 @@
             studio: studio,
             piece: active && active.brand_id === brand.id ? active : null,
             busy: busy,
+            onFeedback: sendFeedback,
             onSaveSet: saveHashtagSet,
             onApply: applyHashtagSet,
             onUse: async function (pieceId, pillar) {
@@ -1426,6 +1442,7 @@
               else props.onApply(option.text);
             },
           }, label,
+          h(FeedbackButtons, { kind: "composer", target: option.text, busy: props.busy, pillar: props.pillar, format: props.format, onFeedback: props.onFeedback }),
           option.voice && option.voice.total ? h("span", { className: "hs-note" }, "  " + option.voice.passed + "/" + option.voice.total) : null,
           (option.reading && option.reading.lines || []).length
             ? (option.reading.lines || []).map(function (line, lineIndex) { return h("p", { key: lineIndex, className: "hs-note" }, line); })
@@ -1873,6 +1890,22 @@
   }
 
 
+
+  function FeedbackButtons(props) {
+    const [note, setNote] = useState("");
+    if (!props.onFeedback || !props.target) return null;
+    return h("div", { className: "hs-row" },
+      h("input", { className: "hs-field", value: note, placeholder: "Note", onChange: function (event) { setNote(event.target.value); } }),
+      ["used", "better", "worse", "off-brand", "irrelevant"].map(function (verdict) {
+        return h("button", {
+          key: verdict, type: "button", className: "hs-tab", disabled: props.busy,
+          onClick: function () {
+            props.onFeedback({ kind: props.kind, target: props.target, verdict: verdict, note: note, pillar: props.pillar || "", format: props.format || "" });
+          },
+        }, verdict);
+      }));
+  }
+
   function SeriesApply(props) {
     const rows = (props.series && props.series.items) || [];
     const [picked, setPicked] = useState(rows[0] ? rows[0].id : "");
@@ -1905,6 +1938,7 @@
       (desk.suggestions || []).map(function (item) {
         return h("div", { key: item.id, className: "hs-pillar" },
           h("p", { className: "hs-note" }, item.detail),
+          h(FeedbackButtons, { kind: "series", target: item.id, busy: props.busy, onFeedback: props.onFeedback }),
           h("button", { type: "button", className: "hs-tab", disabled: props.busy, onClick: function () { props.onKeep(item.id); } }, "Keep " + item.name));
       }),
       h("form", { className: "hs-cols", onSubmit: function (event) {
@@ -2004,7 +2038,11 @@
         (suggested || []).map(function (text, index) {
           return h("button", { key: index, type: "button", className: "hs-tab", disabled: props.busy, onClick: function () { props.onSave({ text: text, source: "spark", priority: "normal" }); } }, "Keep");
         })),
-      (suggested || []).map(function (text, index) { return h("p", { key: "s" + index, className: "hs-voice" }, text); }),
+      (suggested || []).map(function (text, index) {
+        return h("div", { key: "s" + index },
+          h("p", { className: "hs-voice" }, text),
+          h(FeedbackButtons, { kind: "ideas", target: text, busy: props.busy, onFeedback: props.onFeedback }));
+      }),
       h("p", { className: "hs-note" }, (board.lesson && board.lesson.detail) || ""),
       h("div", { className: "hs-name" }, "Ahead after a draft"),
       (board.archive || []).length ? (board.archive || []).map(card) : h("p", { className: "hs-note" }, "No drafted idea has a post that is at least 3× the others yet."),
@@ -2435,6 +2473,17 @@
       (desk.accuracy || []).length ? h("div", null,
         h("div", { className: "hs-name" }, "How the range held up"),
         desk.accuracy.map(function (item) { return h("p", { key: item.id, className: "hs-note" }, item.detail); })) : null,
+      h("div", { className: "hs-name" }, "Feedback"),
+      ((desk.feedback && desk.feedback.lines) || ["No feedback yet."]).map(function (line, index) { return h("p", { key: "fb" + index, className: "hs-note" }, line); }),
+      ((desk.feedback && desk.feedback.entries) || []).map(function (entry) {
+        return h("div", { key: entry.id, className: "hs-pillar" },
+          h("p", { className: "hs-note" }, entry.kind + " · " + entry.target + " · " + entry.verdict + (entry.note ? " · " + entry.note : "")),
+          h("div", { className: "hs-row" },
+            h("button", { type: "button", className: "hs-tab", disabled: props.busy, onClick: function () { props.onFeedback({ action: "delete", id: entry.id }); } }, "Delete"),
+            ["used", "better", "worse", "off-brand", "irrelevant"].map(function (verdict) {
+              return h("button", { key: verdict, type: "button", className: "hs-tab", disabled: props.busy || verdict === entry.verdict, onClick: function () { props.onFeedback({ action: "correct", id: entry.id, verdict: verdict, note: entry.note }); } }, verdict);
+            })));
+      }),
       h("div", { className: "hs-name" }, "Changes"),
       (desk.timeline || []).length ? (desk.timeline || []).map(function (item) {
         return h("p", { key: item.id, className: "hs-note" }, (item.kind || "") + (item.pattern_id ? " · " + item.pattern_id : "") + (item.after ? " · " + item.after : ""));
@@ -2697,7 +2746,9 @@
     return h("div", { className: "hs-main" },
       h("p", { className: "hs-note" }, "Five tags in a set, for a pillar or a campaign when you want one. A tag is suggested only when this brand's posts already show it ahead. Notes are filtered by this brand's own words. They are not a popularity chart."),
       h("p", { className: "hs-note" }, suggestion.detail || "No hashtag is clearly ahead for this brand."),
-      suggestion.tags && suggestion.tags.length ? h("p", { className: "hs-ok" }, suggestion.tags.map(function (tag) { return "#" + tag; }).join(" ")) : null,
+      suggestion.tags && suggestion.tags.length ? h("div", null,
+        h("p", { className: "hs-ok" }, suggestion.tags.map(function (tag) { return "#" + tag; }).join(" ")),
+        suggestion.tags.map(function (tag) { return h(FeedbackButtons, { key: tag, kind: "hashtags", target: tag, busy: props.busy, onFeedback: props.onFeedback }); })) : null,
       props.piece ? h("button", {
         type: "button", className: "hs-tab", disabled: props.busy || !(suggestion.tags || []).length,
         onClick: function () { props.onUse(props.piece.id, props.piece.pillar || ""); },
