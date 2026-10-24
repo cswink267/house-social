@@ -91,6 +91,7 @@ def empty_state() -> dict:
         "todo_notes_log": [],
         "todo_held": [],
         "apps": {},
+        "oauth_pending": [],
     }
 
 
@@ -150,6 +151,7 @@ def load(path: Path | None = None) -> dict:
     todo_notes_log = raw.get("todo_notes_log")
     todo_held = raw.get("todo_held")
     apps = raw.get("apps")
+    oauth_pending = raw.get("oauth_pending")
     return {
         "version": 1,
         "channels": channels if isinstance(channels, dict) else {},
@@ -201,6 +203,7 @@ def load(path: Path | None = None) -> dict:
         "todo_notes_log": todo_notes_log if isinstance(todo_notes_log, list) else [],
         "todo_held": todo_held if isinstance(todo_held, list) else [],
         "apps": apps if isinstance(apps, dict) else {},
+        "oauth_pending": oauth_pending if isinstance(oauth_pending, list) else [],
     }
 
 
@@ -882,10 +885,12 @@ def pull_brand(
     resolve_brand(state, brand_id)
     mine = [item for item in state.get("connections", []) if item.get("brand_id") == brand_id]
     if not mine:
-        raise DraftError("Add a Meta app for this brand first.")
+        raise DraftError("Connect this brand's Facebook Page, Instagram, or Threads account under Accounts first.")
     read = reader or _read_vault
     fetch = fetcher or pull_platform
     find_instagram = lookup_instagram if discover is None else discover
+    # An Instagram account picked on Accounts wins over the one the Page names.
+    chosen_instagram = any(item.get("platform") == "instagram" and item.get("via") != "facebook" for item in mine)
     posts: list[dict] = []
     errors: list[str] = []
     discovered: list[dict] = []
@@ -900,7 +905,7 @@ def pull_brand(
             errors.append(f"{connection['platform']}: no token in vault:{vault_name}")
             continue
         _pull_one(fetch, posts, seen, errors, connection["platform"], connection["external_id"], token)
-        if connection.get("platform") != "facebook":
+        if connection.get("platform") != "facebook" or chosen_instagram or connection.get("skip_instagram"):
             continue
         try:
             instagram = find_instagram(connection["external_id"], token)
@@ -927,7 +932,7 @@ def pull_brand(
     if discovered:
         others = [
             item for item in updated.get("connections", [])
-            if not (item.get("brand_id") == brand_id and item.get("platform") == "instagram")
+            if not (item.get("brand_id") == brand_id and item.get("platform") == "instagram" and item.get("via") == "facebook")
         ]
         updated["connections"] = [*others, *discovered]
     previous = dict((updated.get("pulls") or {}).get(brand_id) or {})
@@ -969,7 +974,11 @@ def _public_connection(connection: dict) -> dict:
         "app_id": connection.get("app_id"),
         "token_vault": connection.get("token_vault"),
         "username": connection.get("username") or "",
+        "name": connection.get("name") or "",
+        "page_id": connection.get("page_id") or "",
         "via": connection.get("via") or "",
+        "connected_at": connection.get("connected_at") or "",
+        "expires_at": connection.get("expires_at") or "",
         "connected": bool(connection.get("token_vault")),
     }
 

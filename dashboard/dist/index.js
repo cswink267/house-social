@@ -94,7 +94,7 @@
   const DESK_NOTES = {
     brief: "Who this brand speaks to, the rules it keeps, and how far the desk may act on its own.",
     voice: "The memory of this brand. Composer checks a draft against it. A suggestion is saved only when you accept it, and only when the posts actually show the gap.",
-    pages: "The Meta app and the Threads app are set once for the house. Each brand connects its own Page, Instagram, or Threads account. Tokens and app secrets go to the vault. Nothing is sent.",
+    pages: "Connect signs in through the house Meta or Threads app, then you pick this brand's Page, Instagram account, and Threads account. Tokens go to the vault. Pull only reads. Nothing is sent.",
     ideas: "Sparks, competitor notes, trends, questions, and comments. Make this a draft opens it in the composer. A pattern line appears only when the posts already show one. Nothing here is a predicted score.",
     create: "One idea becomes a Facebook, Instagram, and Threads version. The assistant stays inside the brand voice.",
     library: "Images, video, carousels, templates, logos, and copy for this brand. A new save of the words or the file keeps the older version. Files stay beside the desk, not in git.",
@@ -143,6 +143,11 @@
     if (attention) out.inbox = { n: attention, tone: "warn", label: attention + " need attention" };
     const failed = ((studio.queue && studio.queue.items) || []).filter(function (item) { return item.status === "failed"; }).length;
     if (failed) out.queue = { n: failed, tone: "danger", label: failed + " failed" };
+    const ending = (studio.connections || []).filter(function (item) {
+      const days = item.expires_at ? daysUntil(item.expires_at) : null;
+      return days != null && days <= 7;
+    }).length;
+    if (ending) out.pages = { n: ending, tone: "warn", label: ending === 1 ? "A sign-in ends soon" : ending + " sign-ins end soon" };
     return out;
   }
 
@@ -234,7 +239,7 @@
       },
     },
       h("div", { className: "hs-panel-head" },
-        h("h2", { className: "hs-h2" }, "Add a brand"),
+        h("h2", { className: "hs-h2", id: "hs-desk-title" }, "Add a brand"),
         h("p", { className: "hs-note" }, "A new brand starts empty. Its voice, pillars, and pages are written on its own desks.")),
       h("div", { className: "hs-grid-2" },
         h("label", { className: "hs-note" }, "Name",
@@ -275,6 +280,30 @@
     }
   }
 
+  // Facebook and Threads come back with ?code and ?state, or ?error when the
+  // person said no. Read it once, then take it off the address bar.
+  let signInRead = false;
+  function signInReturn() {
+    if (signInRead) return null;
+    signInRead = true;
+    let params;
+    try { params = new URLSearchParams(window.location.search); } catch (err) { return null; }
+    const state = params.get("state") || "";
+    const code = params.get("code") || "";
+    const error = params.get("error") || params.get("error_reason") || "";
+    if (!state || (!code && !error)) return null;
+    const said = params.get("error_description") || params.get("error_message") || "";
+    ["code", "state", "error", "error_reason", "error_code", "error_description", "error_message"].forEach(function (key) { params.delete(key); });
+    const rest = params.toString();
+    try { window.history.replaceState(window.history.state, "", window.location.pathname + (rest ? "?" + rest : "")); }
+    catch (err) { /* the code is single use, so leaving it in the address is harmless */ }
+    if (error) {
+      const cancelled = error === "access_denied" || error === "user_denied";
+      return { error: cancelled ? "The sign-in was cancelled. Nothing was connected." : "The sign-in did not finish" + (said ? ": " + said : ".") + " Nothing was connected." };
+    }
+    return { state: state, code: code };
+  }
+
   function HouseSocial() {
     const [brands, setBrands] = useState([]);
     const [pieces, setPieces] = useState([]);
@@ -297,7 +326,9 @@
     const [toasts, setToasts] = useState([]);
     const [busy, setBusy] = useState(false);
     const [loaded, setLoaded] = useState(false);
-    const [adding, setAdding] = useState(false);
+    const [panel, setPanel] = useState("");
+    const [apps, setApps] = useState({});
+    const [choice, setChoice] = useState(null);
     const [voiceCheck, setVoiceCheck] = useState(null);
     const [library, setLibrary] = useState({ assets: [], folders: [], tags: [] });
     const [limits, setLimits] = useState({ facebook: 5000, instagram: 2200, threads: 500 });
@@ -370,6 +401,7 @@
       setBrands(list);
       setLimits(roster.limits || { facebook: 5000, instagram: 2200, threads: 500 });
       setCardLimit(roster.card_limit || 240);
+      setApps(roster.apps || {});
       setPieces(withUnsaved((first[1] && first[1].pieces) || []));
       setStudio(desk[0]);
       setLibrary(desk[1] || { assets: [], folders: [], tags: [] });
@@ -606,7 +638,7 @@
     async function addBrand(body) {
       const created = await ask("POST", "/brands", body);
       if (!created) return;
-      setAdding(false);
+      setPanel("");
       setSection("brief");
       setBrandId(created.id);
       notify(created.name + " is on the roster.");
@@ -629,9 +661,79 @@
       setSection("create");
     }
 
+    function saveApps(body) {
+      const secret = body && ((body.meta && body.meta.secret) || (body.threads && body.threads.secret));
+      return act("POST", "/apps", body, secret ? "House settings saved. The secret went to the vault." : "House settings saved.");
+    }
+
+    function pullPosts(id) {
+      return act("POST", brandPath(id, "/pull"), undefined, function (pulled) {
+        return pulled && pulled.count != null ? pulled.count + " posts pulled." : "Pulled.";
+      });
+    }
+
+    // Leaves the dashboard for the Facebook or Threads sign-in. It comes back
+    // to this same address with a code, which the effect below picks up.
+    async function startConnect(kind) {
+      const started = await ask("POST", on("/connect"), { provider: kind, redirect_uri: returnAddress() });
+      if (!started || !started.url) return;
+      remember("brand", brand.id);
+      remember("section", "pages");
+      window.location.assign(started.url);
+    }
+
+    function openChoice(found) {
+      setChoice(found);
+      remember("choice", found.choice);
+      setPanel("");
+      setSection("pages");
+      if (found.brand_id && found.brand_id !== brandRef.current) setBrandId(found.brand_id);
+    }
+
+    function dropChoice() {
+      setChoice(null);
+      remember("choice", "");
+    }
+
+    async function chooseAccounts(body) {
+      if (!choice) return null;
+      const saved = await ask("POST", "/connect/choices/" + encodeURIComponent(choice.choice), body);
+      if (!saved) return null;
+      dropChoice();
+      const names = (saved.connections || []).map(function (item) { return platformName(item.platform); }).join(" and ");
+      notify((names || "The account") + " connected. The token went to the vault.");
+      await pullPosts(saved.brand_id);
+      return saved;
+    }
+
+    async function cancelChoice() {
+      if (choice) await ask("DELETE", "/connect/choices/" + encodeURIComponent(choice.choice));
+      dropChoice();
+    }
+
+    useEffect(function () {
+      const back = signInReturn();
+      if (back && back.error) {
+        setSection("pages");
+        notify(back.error, "error");
+        return;
+      }
+      if (back) {
+        ask("POST", "/connect/finish", { state: back.state, code: back.code }).then(function (found) {
+          if (found) openChoice(found);
+          else setSection("pages");
+        });
+        return;
+      }
+      // A reload while picking keeps the picker for as long as the sign-in lasts.
+      const waiting = recall("choice");
+      if (!waiting) return;
+      api("GET", "/connect/choices/" + encodeURIComponent(waiting)).then(setChoice, function () { remember("choice", ""); });
+    }, []);
+
     function pickBrand(id) {
       setBrandId(id);
-      setAdding(false);
+      setPanel("");
       setPickedDay("");
       setPickedPost("");
       setPickedHour("");
@@ -642,7 +744,7 @@
 
     function pickSection(id) {
       setSection(id);
-      setAdding(false);
+      setPanel("");
     }
 
     function explain(patternId) {
@@ -688,14 +790,17 @@
           onAccept: function (id) { return act("POST", on("/voice/accept"), { id: id }, "Suggestion accepted."); },
           onRestore: function (id) { return act("POST", on("/voice/restore"), { id: id }, "Version restored."); },
         });
-        case "pages": return h(Pages, {
-          brand: brand, studio: studio, busy: busy,
-          onSaveApps: function (body) {
-            const secret = body && ((body.meta && body.meta.secret) || (body.threads && body.threads.secret));
-            return act("POST", "/apps", body, secret ? "House apps saved. The secret went to the vault." : "House apps saved.");
+        case "pages": return h(Accounts, {
+          brand: brand, studio: studio, busy: busy, apps: apps, choice: choice,
+          onOpenHouse: function () { setPanel("house"); },
+          onConnect: startConnect,
+          onChoose: chooseAccounts,
+          onCancelChoice: cancelChoice,
+          onDisconnect: function (platform) {
+            return act("POST", on("/disconnect"), { platform: platform }, platformName(platform) + " disconnected. Its token is still in the vault.");
           },
           onSave: function (body) { return act("POST", "/connections", Object.assign({ brand_id: brand.id }, body), "Connection saved. The token went to the vault."); },
-          onPull: function () { return act("POST", on("/pull"), undefined, function (pulled) { return (pulled && pulled.count != null ? pulled.count + " posts pulled." : "Pulled."); }); },
+          onPull: function () { return pullPosts(brand.id); },
         });
         case "ideas": return h(IdeasBoard, {
           studio: studio, busy: busy,
@@ -919,7 +1024,9 @@
                   title: pair[1] + (channel.known ? " · " + (channel.handle || "known") : " · not set"),
                 }, pair[1]);
               })) : null,
-            h("button", { type: "button", className: "hs-link-button", onClick: function () { setAdding(!adding); } }, adding ? "Close" : "+ Add a brand")),
+            h("div", { className: "hs-rail-links" },
+              h("button", { type: "button", className: "hs-link-button", "aria-pressed": panel === "add", onClick: function () { setPanel(panel === "add" ? "" : "add"); } }, panel === "add" ? "Close" : "+ Add a brand"),
+              h("button", { type: "button", className: "hs-link-button", "aria-pressed": panel === "house", onClick: function () { setPanel(panel === "house" ? "" : "house"); } }, "House settings"))),
           h(DeskNav, {
             groups: groups, section: desk, badges: badges, closed: closedGroups,
             onPick: pickSection,
@@ -940,7 +1047,8 @@
           }))),
         h("section", { className: "hs-desk", "aria-busy": busy ? "true" : "false", "aria-labelledby": "hs-desk-title" },
           busy ? h("div", { className: "hs-progress", "aria-hidden": "true" }) : null,
-          adding ? h(AddBrand, { busy: busy, onAdd: addBrand, onCancel: function () { setAdding(false); } })
+          panel === "add" ? h(AddBrand, { busy: busy, onAdd: addBrand, onCancel: function () { setPanel(""); } })
+            : panel === "house" ? h(HouseSettings, { apps: apps, busy: busy, onSave: saveApps, onClose: function () { setPanel(""); } })
             : !loaded ? h("p", { className: "hs-note hs-loading" }, "Loading the desk…")
               : !brand ? h("div", { className: "hs-empty" }, "No brand on the roster yet. Add one to start.")
                 : h("div", { className: "hs-desk-body", key: brand.id + ":" + desk },
@@ -1188,7 +1296,55 @@
       rows.length > limit ? h("button", { type: "button", className: "hs-link-button", onClick: function () { setAll(!all); } }, all ? "Show fewer" : "Show all " + rows.length) : null);
   }
 
-  function HouseApps(props) {
+  // Where Facebook and Threads send the browser after a sign-in. Each app must
+  // list this exact address, so House settings shows it to copy.
+  function returnAddress() {
+    return window.location.origin + window.location.pathname;
+  }
+
+  function appReady(apps, kind) {
+    const row = (apps || {})[kind] || {};
+    return !!(row.app_id && row.secret_saved);
+  }
+
+  function daysUntil(iso) {
+    const when = Date.parse(iso || "");
+    if (isNaN(when)) return null;
+    return Math.ceil((when - Date.now()) / 86400000);
+  }
+
+  function CopyField(props) {
+    const [copied, setCopied] = useState(false);
+    const input = useRef(null);
+    function copy() {
+      if (input.current) input.current.select();
+      const done = function () {
+        setCopied(true);
+        window.setTimeout(function () { setCopied(false); }, 1800);
+      };
+      try {
+        if (navigator.clipboard && navigator.clipboard.writeText) {
+          navigator.clipboard.writeText(props.value).then(done, function () { /* the text stays selected to copy by hand */ });
+        }
+      } catch (err) { /* the text stays selected to copy by hand */ }
+    }
+    return h("div", { className: "hs-copy" },
+      h("input", {
+        ref: input, className: "hs-field hs-mono", readOnly: true, value: props.value, "aria-label": props.label,
+        onFocus: function (event) { event.target.select(); },
+      }),
+      h("button", { type: "button", className: "hs-tab hs-tab-sm", onClick: copy }, copied ? "Copied" : "Copy"));
+  }
+
+  function AppStatus(props) {
+    const row = props.row || {};
+    if (row.app_id && row.secret_saved) return h("span", { className: "hs-status is-published" }, "Ready");
+    if (row.app_id) return h("span", { className: "hs-status is-pending" }, "Needs the secret");
+    return h("span", { className: "hs-status is-planned" }, "Not set");
+  }
+
+  // The house apps, once for every brand. Brands sign in through them.
+  function HouseSettings(props) {
     const apps = props.apps || {};
     const meta = apps.meta || {};
     const threads = apps.threads || {};
@@ -1205,70 +1361,203 @@
         if (saved) { setMetaSecret(""); setThreadsSecret(""); }
       });
     }
-    return h(Section, {
-      title: "House apps",
-      note: "One Meta app for Facebook and Instagram. One app for Threads. These belong to the whole house, not this brand. A secret is written to the vault and is not shown again. Sending stays off.",
-    },
-      h("form", { className: "hs-stack", onSubmit: submit },
+    function secretHint(row) {
+      return row.secret_saved ? "Saved in the vault. Paste a new one only to replace it." : "Written to the vault, never to the dashboard.";
+    }
+    return h("form", { className: "hs-panel hs-panel-wide", onSubmit: submit },
+      h("div", { className: "hs-panel-head" },
+        h("h2", { className: "hs-h2", id: "hs-desk-title" }, "House settings"),
+        h("p", { className: "hs-note" }, "The Meta app and the Threads app belong to the whole house. Each brand signs in through them on its own Accounts desk. Nothing here sends a post.")),
+      h(Section, { title: "Meta app", note: "Facebook Pages and Instagram professional accounts sign in through this app.", actions: [h(AppStatus, { key: "s", row: meta })] },
         h("div", { className: "hs-grid-2" },
-          field("Meta app id", h("input", { className: "hs-field", value: metaId, inputMode: "numeric", autoComplete: "off", onChange: function (event) { setMetaId(event.target.value); } }), meta.secret_saved ? "Secret saved in the vault." : "No secret yet."),
-          field("Meta app secret", h("input", { className: "hs-field", type: "password", value: metaSecret, autoComplete: "new-password", placeholder: meta.secret_saved ? "Saved. Paste a new one to replace it." : "Paste once", onChange: function (event) { setMetaSecret(event.target.value); } })),
-          field("Threads app id", h("input", { className: "hs-field", value: threadsId, inputMode: "numeric", autoComplete: "off", onChange: function (event) { setThreadsId(event.target.value); } }), threads.secret_saved ? "Secret saved in the vault." : "No secret yet."),
-          field("Threads app secret", h("input", { className: "hs-field", type: "password", value: threadsSecret, autoComplete: "new-password", placeholder: threads.secret_saved ? "Saved. Paste a new one to replace it." : "Paste once", onChange: function (event) { setThreadsSecret(event.target.value); } }))),
-        h("div", { className: "hs-row" },
-          h("button", { type: "submit", className: "hs-button", disabled: props.busy }, "Save house apps"))));
+          field("App id", h("input", { className: "hs-field", value: metaId, inputMode: "numeric", autoComplete: "off", onChange: function (event) { setMetaId(event.target.value); } })),
+          field("App secret", h("input", { className: "hs-field", type: "password", value: metaSecret, autoComplete: "new-password", placeholder: meta.secret_saved ? "Saved" : "Paste once", onChange: function (event) { setMetaSecret(event.target.value); } }), secretHint(meta)))),
+      h(Section, { title: "Threads app", note: "Threads accounts sign in through their own app id and secret, from the Threads use case.", actions: [h(AppStatus, { key: "s", row: threads })] },
+        h("div", { className: "hs-grid-2" },
+          field("App id", h("input", { className: "hs-field", value: threadsId, inputMode: "numeric", autoComplete: "off", onChange: function (event) { setThreadsId(event.target.value); } })),
+          field("App secret", h("input", { className: "hs-field", type: "password", value: threadsSecret, autoComplete: "new-password", placeholder: threads.secret_saved ? "Saved" : "Paste once", onChange: function (event) { setThreadsSecret(event.target.value); } }), secretHint(threads)))),
+      h(Section, { title: "Sign-in address", note: "Facebook and Threads only return a sign-in to an address the app lists. Add this one to both apps." },
+        h(CopyField, { value: returnAddress(), label: "Sign-in address" }),
+        h("ul", { className: "hs-steps" },
+          h("li", null, "Meta app: Facebook Login, then Settings, then Valid OAuth Redirect URIs."),
+          h("li", null, "Threads app: the Threads use case, then Settings, then Redirect Callback URLs."),
+          h("li", null, "Open the dashboard at this same address when you connect. Meta expects https; plain http is only accepted for localhost, and Threads may refuse it."))),
+      h("div", { className: "hs-row" },
+        h("button", { type: "submit", className: "hs-button", disabled: props.busy }, "Save house settings"),
+        h("button", { type: "button", className: "hs-tab", onClick: props.onClose }, "Close")));
   }
 
-  function Pages(props) {
-    const connections = (props.studio && props.studio.connections) || [];
-    const pull = (props.studio && props.studio.pull) || {};
-    const feed = (props.studio && props.studio.feed) || [];
-    const apps = (props.studio && props.studio.apps) || {};
+  const ACCOUNT_ROWS = [
+    { platform: "facebook", label: "Facebook Page", app: "meta", button: "Connect with Facebook", empty: "Sign in with Facebook, then pick this brand's Page." },
+    { platform: "instagram", label: "Instagram", app: "meta", button: "Connect with Facebook", empty: "Instagram signs in through Facebook. The account must be a professional account linked to a Page." },
+    { platform: "threads", label: "Threads", app: "threads", button: "Connect with Threads", empty: "Sign in with this brand's Threads account." },
+  ];
+
+  function accountLine(item) {
+    const who = item.platform === "facebook" ? (item.name || "Page") : (item.username ? "@" + item.username : (item.name || "Account"));
+    const parts = [who, "id " + item.external_id];
+    if (item.via === "facebook") parts.push("found on the Facebook Page");
+    else if (item.page_id) parts.push("through Page " + item.page_id);
+    if (item.connected_at) parts.push("since " + String(item.connected_at).slice(0, 10));
+    return parts.join(" · ");
+  }
+
+  function AccountRow(props) {
+    const row = props.row;
+    const item = props.item;
+    const days = item && item.expires_at ? daysUntil(item.expires_at) : null;
+    return h("li", { className: "hs-list-row hs-account" },
+      h("div", { className: "hs-list-main" },
+        h("div", { className: "hs-row hs-gap-xs" },
+          h("strong", null, row.label),
+          h("span", { className: "hs-status " + (item ? "is-published" : "is-planned") }, item ? "Connected" : "Not connected")),
+        h("div", { className: "hs-meta" }, item ? accountLine(item) : row.empty),
+        item ? h("div", { className: "hs-meta" }, "Token in ", h("code", { className: "hs-code" }, item.token_vault)) : null,
+        days != null && days <= 14 ? h("p", { className: days <= 0 ? "hs-error" : "hs-warn" },
+          days <= 0 ? "This sign-in has ended. Connect again." : "This sign-in ends in " + days + (days === 1 ? " day" : " days") + ". Connect again to renew it.") : null,
+        props.leaving ? h("div", { className: "hs-danger-zone is-open", role: "alertdialog", "aria-label": "Disconnect " + row.label },
+          h("p", null, row.platform === "facebook" && props.foundInstagram
+            ? "Disconnect the Page and the Instagram account it found? Pulls stop for both. The token stays in the vault until you remove it there."
+            : "Disconnect " + row.label + "? Pulls stop for it. The token stays in the vault until you remove it there."),
+          h("div", { className: "hs-row" },
+            h("button", { type: "button", className: "hs-button is-danger", disabled: props.busy, onClick: props.onDisconnect }, "Disconnect"),
+            h("button", { type: "button", className: "hs-tab", onClick: props.onKeep }, "Keep it"))) : null),
+      h("div", { className: "hs-row hs-gap-xs" },
+        h("button", {
+          type: "button", className: item || props.quiet ? "hs-tab hs-tab-sm" : "hs-button",
+          disabled: props.busy || !props.ready,
+          title: props.ready ? "" : "Set the house app in House settings first",
+          onClick: function () { props.onConnect(row.app); },
+        }, item ? "Change" : row.button),
+        item && !props.leaving ? h("button", { type: "button", className: "hs-chip-button", disabled: props.busy, onClick: props.onLeave }, "Disconnect") : null));
+  }
+
+  // After Facebook or Threads signs in: which of what came back is this brand's.
+  function AccountPicker(props) {
+    const choice = props.choice;
+    const pages = choice.pages || [];
+    const accounts = choice.instagram || [];
+    const startPage = (pages.find(function (page) { return page.current; })
+      || (pages.length === 1 ? pages[0] : null)
+      || pages.find(function (page) { return page.likely; }) || {}).id || "";
+    const [pageId, setPageId] = useState(startPage);
+    const [picked, setPicked] = useState(null);
+    if (choice.provider === "threads") {
+      const account = choice.threads || {};
+      const who = account.username ? "@" + account.username : account.name || "this account";
+      return h(Section, { title: "Connect Threads to " + choice.brand_name, note: "Threads signed you in as the account below. Its token goes to the vault." },
+        h("p", { className: "hs-voice" }, who + (account.name && account.username ? " · " + account.name : "") + (account.current ? " · already on this brand" : "")),
+        h("p", { className: "hs-hint" }, (choice.expires_at ? "Threads asks for a new sign-in by " + String(choice.expires_at).slice(0, 10) + ". " : "") + "Wrong account? Cancel, sign out of Threads in this browser, and connect again."),
+        h("div", { className: "hs-row" },
+          h("button", { type: "button", className: "hs-button", disabled: props.busy, onClick: function () { props.onChoose({}); } }, "Connect " + who),
+          h("button", { type: "button", className: "hs-tab", disabled: props.busy, onClick: props.onCancel }, "Cancel")));
+    }
+    const page = pages.find(function (item) { return item.id === pageId; }) || null;
+    const linked = page ? page.instagram_id : "";
+    const current = (accounts.find(function (item) { return item.current; }) || {}).id || "";
+    const likely = (accounts.find(function (item) { return item.likely; }) || {}).id || "";
+    const instagramId = picked === null ? (linked || likely || (pageId ? "" : current)) : picked;
+    const account = accounts.find(function (item) { return item.id === instagramId; }) || null;
+    const summary = [page ? page.name : "", account ? "@" + (account.username || account.id) : ""].filter(Boolean).join(" and ");
+    function option(name, value, on, title, note, onPick) {
+      return h("label", { key: value || "none", className: "hs-choice" + (on ? " is-on" : "") },
+        h("input", { type: "radio", name: name, value: value, checked: on, onChange: onPick }),
+        h("span", { className: "hs-choice-body" },
+          h("span", { className: "hs-choice-title" }, title),
+          note ? h("span", { className: "hs-note" }, note) : null));
+    }
+    return h(Section, { title: "Pick " + choice.brand_name + "'s accounts", note: "Facebook shared these for this sign-in. Only what you pick is saved, and its token goes to the vault." },
+      h("fieldset", { className: "hs-pick" },
+        h("legend", { className: "hs-name" }, "Facebook Page"),
+        h("div", { className: "hs-choices" },
+          pages.map(function (item) {
+            const note = [item.category, item.username ? "@" + item.username : "", item.current ? "on this brand now" : item.likely ? "matches this brand" : ""].filter(Boolean).join(" · ");
+            return option("hs-pick-page", item.id, pageId === item.id, item.name, note, function () { setPageId(item.id); setPicked(null); });
+          }),
+          option("hs-pick-page", "", pageId === "", "No Page", "Leave Facebook as it is.", function () { setPageId(""); setPicked(null); }))),
+      h("fieldset", { className: "hs-pick" },
+        h("legend", { className: "hs-name" }, "Instagram"),
+        accounts.length ? h("div", { className: "hs-choices" },
+          accounts.map(function (item) {
+            const note = ["on " + item.page_name, item.id === linked ? "linked to the Page you picked" : "", item.current ? "on this brand now" : item.likely ? "matches this brand" : ""].filter(Boolean).join(" · ");
+            return option("hs-pick-instagram", item.id, instagramId === item.id, "@" + (item.username || item.id), note, function () { setPicked(item.id); });
+          }),
+          option("hs-pick-instagram", "", instagramId === "", "No Instagram", "Leave Instagram as it is.", function () { setPicked(""); }))
+          : h("p", { className: "hs-note" }, "None of these Pages has a linked Instagram professional account. Link one in the Page's settings, then connect again.")),
+      pages.length > 1 ? h("p", { className: "hs-hint" }, "Missing a Page? Connect again and choose it when Facebook asks which Pages to share.") : null,
+      h("div", { className: "hs-row" },
+        h("button", {
+          type: "button", className: "hs-button", disabled: props.busy || !summary,
+          onClick: function () { props.onChoose({ page_id: pageId, instagram_id: instagramId }); },
+        }, summary ? "Connect " + summary : "Pick a Page or an account"),
+        h("button", { type: "button", className: "hs-tab", disabled: props.busy, onClick: props.onCancel }, "Cancel")));
+  }
+
+  function Accounts(props) {
+    const studio = props.studio || {};
+    const connections = studio.connections || [];
+    const pull = studio.pull || {};
+    const feed = studio.feed || [];
+    const apps = props.apps || {};
+    const choice = props.choice && props.choice.brand_id === props.brand.id ? props.choice : null;
+    const [leaving, setLeaving] = useState("");
     const [form, setForm] = useState({ platform: "facebook", external_id: "", token: "" });
+    const byPlatform = {};
+    connections.forEach(function (item) { byPlatform[item.platform] = item; });
+    const metaReady = appReady(apps, "meta");
+    const threadsReady = appReady(apps, "threads");
+    const missing = [!metaReady ? "Meta" : "", !threadsReady ? "Threads" : ""].filter(Boolean);
     function setField(name, value) {
       setForm(function (current) { return Object.assign({}, current, { [name]: value }); });
     }
-    const houseId = form.platform === "threads" ? ((apps.threads && apps.threads.app_id) || "") : ((apps.meta && apps.meta.app_id) || "");
+    const houseRow = form.platform === "threads" ? (apps.threads || {}) : (apps.meta || {});
     const houseName = form.platform === "threads" ? "Threads" : "Meta";
-    async function submit(event) {
+    async function paste(event) {
       event.preventDefault();
-      const saved = await props.onSave({
-        platform: form.platform,
-        external_id: form.external_id,
-        token: form.token,
-      });
+      const saved = await props.onSave({ platform: form.platform, external_id: form.external_id, token: form.token });
       if (saved) setForm({ platform: form.platform, external_id: "", token: "" });
     }
     return h("div", { className: "hs-main" },
-      h(HouseApps, { apps: apps, busy: props.busy, onSave: props.onSaveApps }),
+      missing.length ? h("div", { className: "hs-callout hs-row hs-spread" },
+        h("span", null, "The house " + missing.join(" and ") + " app" + (missing.length > 1 ? "s are" : " is") + " not set yet. Connect needs an app id and its secret."),
+        h("button", { type: "button", className: "hs-tab hs-tab-sm", onClick: props.onOpenHouse }, "Open House settings")) : null,
+      choice ? h(AccountPicker, { key: choice.choice, choice: choice, busy: props.busy, onChoose: props.onChoose, onCancel: props.onCancelChoice }) : null,
       h(Section, {
-        title: "Connections",
-        actions: connections.length ? [h("button", { key: "pull", type: "button", className: "hs-button", disabled: props.busy, onClick: props.onPull }, "Pull posts")] : null,
+        title: "Connected accounts",
+        note: "Connect opens the Facebook or Threads sign-in. You come back here to pick what belongs to " + props.brand.name + ".",
+        actions: connections.length ? [h("button", { key: "pull", type: "button", className: choice ? "hs-tab" : "hs-button", disabled: props.busy, onClick: props.onPull }, "Pull posts")] : null,
       },
-        connections.length ? h("ul", { className: "hs-rows" }, connections.map(function (item) {
-          return h("li", { key: item.id, className: "hs-list-row" },
-            h("div", { className: "hs-list-main" },
-              h("div", null, h("strong", null, platformName(item.platform)), item.username ? " · @" + item.username : "", " · " + item.external_id),
-              h("div", { className: "hs-meta" }, "App " + item.app_id + (item.via === "facebook" ? " · found on the Facebook Page" : "") + " · ", h("code", { className: "hs-code" }, item.token_vault))));
-        })) : h("p", { className: "hs-note" }, "No Meta app on this brand yet. Connect one below, then pull."),
+        h("ul", { className: "hs-rows" }, ACCOUNT_ROWS.map(function (row) {
+          return h(AccountRow, {
+            key: row.platform, row: row, item: byPlatform[row.platform], busy: props.busy,
+            ready: row.app === "meta" ? metaReady : threadsReady,
+            leaving: leaving === row.platform,
+            quiet: !!choice,
+            foundInstagram: !!(byPlatform.instagram && byPlatform.instagram.via === "facebook"),
+            onConnect: props.onConnect,
+            onLeave: function () { setLeaving(row.platform); },
+            onKeep: function () { setLeaving(""); },
+            onDisconnect: async function () {
+              const gone = await props.onDisconnect(row.platform);
+              if (gone) setLeaving("");
+            },
+          });
+        })),
         pull.pulled_at ? h("p", { className: "hs-note" }, "Last pull " + String(pull.pulled_at).replace("T", " ").slice(0, 16) + " · " + pull.count + " posts.") : null,
         (pull.errors || []).map(function (item) { return h("p", { key: item, className: "hs-error" }, item); })),
-      h(Section, { title: "Connect a platform" },
-        h("p", { className: "hs-callout" },
-          "Facebook and Instagram are one Meta app. Save the Page, then Pull: the Page names its Instagram account, and that account uses the same token. Threads is a separate login. Its username often matches Instagram; its id does not, and the Facebook token cannot read it. Studio still writes the week."),
-        h("form", { className: "hs-stack", onSubmit: submit },
+      h(Section, { title: "Paste a token instead", collapsible: true, note: "For a token made by hand, such as a system user's Page token." },
+        h("form", { className: "hs-stack", onSubmit: paste },
           h("div", { className: "hs-grid-2" },
             field("Platform", h("select", { className: "hs-field", value: form.platform, onChange: function (event) { setField("platform", event.target.value); } },
               PLATFORMS.map(function (pair) { return h("option", { key: pair[0], value: pair[0] }, pair[1]); }))),
             field(form.platform === "facebook" ? "Page id" : "Account id", h("input", { className: "hs-field", value: form.external_id, autoComplete: "off", onChange: function (event) { setField("external_id", event.target.value); } })),
-            field(form.platform === "facebook" ? "Page token" : "User token", h("input", { className: "hs-field", type: "password", value: form.token, autoComplete: "off", onChange: function (event) { setField("token", event.target.value); } }),
+            field(form.platform === "facebook" ? "Page token" : "Token", h("input", { className: "hs-field", type: "password", value: form.token, autoComplete: "off", onChange: function (event) { setField("token", event.target.value); } }),
               "Written to the vault. Leave it empty to keep the saved one.")),
-          h("p", { className: "hs-hint" }, houseId ? "Uses the house " + houseName + " app " + houseId + ". Nothing is sent." : "Set the house " + houseName + " app above before connecting."),
-          form.platform === "instagram" ? h("p", { className: "hs-hint" }, "Pulling the Facebook Page finds a linked Instagram account and uses that Page token. Connect Instagram here when you already have its id.") : null,
+          h("p", { className: "hs-hint" }, houseRow.app_id ? "Uses the house " + houseName + " app " + houseRow.app_id + "." : "Add the house " + houseName + " app id in House settings first."),
           h("div", { className: "hs-row" },
-            h("button", { type: "submit", className: connections.length ? "hs-tab" : "hs-button", disabled: props.busy || !houseId || !form.external_id.trim() }, "Save connection")))),
+            h("button", { type: "submit", className: "hs-tab", disabled: props.busy || !houseRow.app_id || !form.external_id.trim() }, "Save connection")))),
       h(Section, { title: "On the page", note: "What already went out, newest first." },
-        h(PostRows, { posts: feed, empty: "Pull the page to see what already went out." })),
+        h(PostRows, { posts: feed, empty: connections.length ? "Pull to see what already went out." : "Connect an account, then pull to see what already went out." })),
     );
   }
 
@@ -1629,7 +1918,7 @@
               item.note ? h("p", { className: "hs-note" }, item.note) : null);
           }))) : null),
       h(StudioRead, { read: studio.studio_read, busy: props.busy, onPull: props.onPull }),
-      h(Section, { title: "Profile", note: "Public handles and the website. A handle is not a credential; tokens are saved on the Pages desk." },
+      h(Section, { title: "Profile", note: "Public handles and the website. A handle is not a credential; accounts connect on the Accounts desk." },
         h(ProfileForm, { brand: brand, handles: props.handles, setHandles: props.setHandles, busy: props.busy, onSave: props.onSave, onSaveSite: props.onSaveSite })),
       h(Section, { title: "How far the desk acts", note: "The mode decides what starts without you. Nothing is sent in any mode." },
         h(ModePanel, { mode: studio.modes, busy: props.busy, onMode: props.onMode })),

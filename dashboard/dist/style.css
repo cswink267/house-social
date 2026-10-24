@@ -267,6 +267,18 @@ button.hs-badge:hover { border-color: var(--hs-border-strong); color: var(--hs-f
 .hs-panel-head { display: flex; flex-direction: column; gap: 2px; }
 .hs-h2 { font-size: 1.05rem; font-weight: 600; }
 .hs-panel { gap: 14px; padding: 16px 18px; max-width: 720px; }
+.hs-panel-wide { max-width: 860px; }
+.hs-rail-links { display: flex; flex-wrap: wrap; gap: 4px 14px; }
+.hs-rail-links .hs-link-button[aria-pressed="true"] { color: var(--hs-fg); text-decoration: underline; text-underline-offset: 3px; }
+
+/* ---- Accounts -------------------------------------------------------- */
+
+.hs-copy { display: flex; gap: 8px; align-items: center; }
+.hs-copy .hs-field { flex: 1 1 auto; min-width: 0; }
+.hs-pick { border: 0; margin: 0; padding: 0; min-width: 0; display: flex; flex-direction: column; gap: 8px; }
+.hs-pick + .hs-pick { margin-top: 6px; }
+.hs-pick legend { padding: 0; margin-bottom: 8px; }
+.hs-account .hs-danger-zone { margin-top: 8px; }
 .hs-grid-2 { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 12px; }
 .hs-hint { color: var(--hs-subtle); font-size: 0.76rem; font-weight: 400; }
 .hs-callout {

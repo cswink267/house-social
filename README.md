@@ -14,7 +14,7 @@ Each brand has the same desks.
 | --- | --- |
 | Brief | Health first: the mode, the last ingest, the posts with numbers, and the channels. Then the audience, voice line, guards, pillars, website, and public handles. The mode, a pause, content mix targets, pace limits, mail settings, and the activity log sit below. Misfit Mindset also shows the last read from Studio. Removing a brand is at the bottom and asks for its name. |
 | Voice | Tone, personality, formality, humor, point of view, do and don't, visual notes, banned lines, preferred lines, required lines, and competitor notes. Pillars keep the angles you write. On-brand and off-brand examples can be written, pasted, or taken from posts when the gap is real. Create scores a draft and can ask for a rewrite. Each save keeps a version. |
-| Pages | The Meta app and the Threads app are set once for the house. The ids stay on the desk. The secrets stay in the vault. Each brand connects its own Page, Instagram, or Threads account, and a token is pasted once into the vault. Pull reads. Nothing is sent. |
+| Accounts | Connect with Facebook or Connect with Threads signs in through the house app. Back on the desk you pick this brand's Page and Instagram account, or confirm its Threads account. The tokens go to the vault. Change, disconnect, or paste a token by hand. Pull reads. Nothing is sent. |
 | Ideas | A board or a list of sparks, competitor notes, trends, questions, and comments. One click makes a draft and opens the composer. A pattern line appears only when the posts already show it. An idea is archived as ahead only when its draft has a post at least 3× the others. Suggest uses the voice, the pillars, those posts, and the trend notes you saved. |
 | Approval | Draft, then needs review, then approved, then scheduled. One name is a single step. Extra names are optional and go in order. Comments, the lines that changed between versions, and a trail that stays after a notice is marked read. Nothing is mailed and nothing is sent. |
 | Composer | The creation hub. Start from a subject, an idea, an image, or a post that is at least 3× the others. Facebook, Instagram, and Threads each get a preview and a count. The assistant stays inside the brand voice. A variation shows the historical pattern it matches, and only when that pattern is clear. Improve this draft asks for a rewrite from those misses. What the posts say lists similar posts with the engagements they earned. Hold a day on the calendar, or save the words to the library. Nothing is sent. |
@@ -60,9 +60,22 @@ State is not in this repository. Drafts, connections, and pull results live in `
 
 The assistant calls a local OpenAI-compatible endpoint. `HOUSE_SOCIAL_AI_URL` defaults to `http://127.0.0.1:11434/v1/chat/completions`. `HOUSE_SOCIAL_AI_MODEL` defaults to `qwen3.5:9b`. Captions use `HOUSE_SOCIAL_VISION_MODEL`, default `moondream`. No key lives in this repository. If the endpoint is down, the composer says the assistant is offline.
 
-## Tokens
+## Connecting accounts
 
-Paste a token once, in the Pages desk. The plugin runs `vault set` and stores `vault:house-social.<brand>.<platform>.token` on the connection. The token is not a field in `state.json`. Saving the connection again without a token keeps the old vault name.
+The Meta app and the Threads app are set once for the whole house. Each brand then signs in through them.
+
+1. Open **House settings** under the brand picker. Add the Meta app id and secret, and the Threads app id and secret. Each secret goes to the vault as `house-social.meta.app_secret` or `house-social.threads.app_secret`. Only the ids stay in `state.json`.
+2. Copy the sign-in address shown there. Add it to the Meta app under Facebook Login, Settings, Valid OAuth Redirect URIs. Add it to the Threads app under the Threads use case, Settings, Redirect Callback URLs. Open the dashboard at that same address when you connect.
+3. On a brand's **Accounts** desk, press **Connect with Facebook**. Facebook asks which Pages to share. Back on the desk, pick the brand's Page and its Instagram account. A Page named like the brand, or already on the brand, is picked for you.
+4. Press **Connect with Threads** and sign in as the brand's Threads account. Confirm it on the desk.
+
+The sign-in asks only to read: Pages, their posts and insights, Instagram media, insights, comments, and messages, and Threads posts, replies, and insights. Nothing asks to publish. While a Meta app is in development mode, only people with a role on the app can sign in. That covers your own Pages.
+
+The Page token comes from a long-lived sign-in and does not expire. The Instagram account reads with the token of the Page it is linked to. A Threads token lasts 60 days. The desk warns two weeks ahead, the rail marks the desk a week ahead, and connecting again renews it.
+
+While you pick, the tokens wait in the dashboard's memory for up to 20 minutes. Only the chosen ones are written, with `vault set`, to `vault:house-social.<brand>.<platform>.token`. `state.json` keeps the vault name, never the token. A sign-in that is not finished in 30 minutes expires. Disconnect forgets the connection; the vault entry stays until you remove it there.
+
+**Paste a token instead**, on the same desk, still saves a hand-made token. Saving it again without a token keeps the old vault name.
 
 There is no token, app secret, or page token in this repository. `brands.py` may include a public handle or a public page id. That is not a credential.
 
@@ -106,6 +119,7 @@ reports.py               weekly and monthly reports, markdown and JSON |
 voice.py                 the brand profile, the checklist, and lessons from posts
 library.py               assets, versions, and use
 store.py                 state, connections, calendar, pulls
+connect.py               sign-in through the house apps, and the account picker
 learn.py                 performance and lessons
 analytics_desk.py        patterns, goals, and imported history
 calendar_desk.py         gaps, slots, and the mix for the next 7 days
