@@ -12,7 +12,7 @@ Each brand has the same desks.
 
 | Desk | What it holds |
 | --- | --- |
-| Brief | Audience, voice line, guards, pillars, and the public handles. Misfit Mindset also shows the last read from Studio. |
+| Brief | Health first: the mode, the last ingest, the posts with numbers, and the channels. Then the audience, voice line, guards, pillars, website, and public handles. The mode, a pause, content mix targets, pace limits, mail settings, and the activity log sit below. Misfit Mindset also shows the last read from Studio. Removing a brand is at the bottom and asks for its name. |
 | Voice | Tone, personality, formality, humor, point of view, do and don't, visual notes, banned lines, preferred lines, required lines, and competitor notes. Pillars keep the angles you write. On-brand and off-brand examples can be written, pasted, or taken from posts when the gap is real. Create scores a draft and can ask for a rewrite. Each save keeps a version. |
 | Pages | The Meta app id, the page or account id, and a token. The token is written to a vault. The saved record stores the vault name. |
 | Ideas | A board or a list of sparks, competitor notes, trends, questions, and comments. One click makes a draft and opens the composer. A pattern line appears only when the posts already show it. An idea is archived as ahead only when its draft has a post at least 3× the others. Suggest uses the voice, the pillars, those posts, and the trend notes you saved. |
@@ -53,6 +53,8 @@ git clone https://github.com/cswink267/house-social.git ~/.hermes/plugins/house-
 Add `house-social` to `plugins.enabled` in `~/.hermes/config.yaml`. Restart the Hermes dashboard so the new Python routes load. Restart the gateway only when you also want the `house_social_roster` and `house_social_draft` tools. Those tools list brands and save a draft. They do not post.
 
 The web tab is `House Social`. The desktop pane lists the roster. Both talk to `/api/plugins/house-social/`.
+
+The rail on the left picks the brand and the desk, and the tab remembers both. Every save says what happened. The tab follows the Hermes theme, light or dark. On a narrow screen the rail becomes two selects.
 
 State is not in this repository. Drafts, connections, and pull results live in `~/.hermes/plugin-data/house-social/state.json`. Override that with `HOUSE_SOCIAL_STATE`. Library files live in a sibling `assets` directory. Override that with `HOUSE_SOCIAL_ASSETS`. Neither directory belongs in git.
 
