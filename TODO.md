@@ -615,6 +615,8 @@ Engagement is still read-only. The inbox pulls comments, mentions, and messages,
 4. Hermes TODO writer.  
    Implement the capability already specified in section 10 so runtime issues and small evidence-based improvements are appended to this file. Off by default, rate-limited, append-only, duplicate-checked, token in the vault.
 
+   **Status (2026-10-24):** A publish failure, an inbox pull failure, and an assistant that is offline or returns nothing usable are written to the activity log with the piece id, the platform, and a redacted error. When the todo-note switch is on, the same failure is appended. A repeat heading is refused. Two notes a day. The switch still starts off. The worker appends the file and does not make its own git commit.
+
 ### How to implement
 
 - Autonomous engagement: add a send path in inbox.py that checks mode, guards, and limits; extend the existing worker tick (or add a sibling tick) to process approved reply drafts; reuse approval_mail for the approval mode; log every outcome.
@@ -622,4 +624,4 @@ Engagement is still read-only. The inbox pulls comments, mentions, and messages,
 - Hermes TODO writer: follow the notes already in section 10; call it from failure paths in publish.py, inbox.py, and the generation path.
 - Keep every existing rule: three posts on both sides for comparisons, missing numbers stay missing, nothing is sent until the mode and the posting switches allow it, tokens stay in the vault.
 
-These items are the remaining distance between the current plugin and the master social media manager described in the request. Original-content autonomy is largely in place. Comment replies can follow the mode. A boost is a copy suggestion on Analytics. A sent reply can teach from a later count. Mentions, messages, and failure-path notes are still open.
+These items are the remaining distance between the current plugin and the master social media manager described in the request. Original-content autonomy is largely in place. Comment replies can follow the mode. A boost is a copy suggestion on Analytics. A sent reply can teach from a later count. A real failure can land in the activity log and, when the switch is on, in this file. Mentions and messages are still open.

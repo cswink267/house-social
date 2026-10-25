@@ -617,10 +617,11 @@ def post_assist(brand_id: str, body: dict) -> dict:
             mark_assisted(state, piece_id)
         return result
     except DraftError as exc:
+        from todo_notes import note_failure, runtime_failure
+
+        if runtime_failure(str(exc)):
+            note_failure(load(), brand_id, str(body.get("piece_id") or ""), "", str(exc), "Generate")
         _fail(exc)
-
-
-@router.post("/brands/{brand_id}/queue")
 def post_queue(brand_id: str, body: dict) -> dict:
     if not isinstance(body, dict):
         _fail(DraftError("The queue needs an action."))
@@ -717,6 +718,10 @@ def post_idea_suggest(brand_id: str) -> dict:
             brand_tags=tuple(brand.tags),
         )
     except DraftError as exc:
+        from todo_notes import note_failure, runtime_failure
+
+        if runtime_failure(str(exc)):
+            note_failure(load(), brand_id, "", "", str(exc), "Generate")
         _fail(exc)
     from feedback import apply_texts
 
@@ -968,6 +973,10 @@ def post_inbox_suggest(item_id: str) -> dict:
         guide = guide_for(brand_id, (state.get("voices") or {}).get(brand_id))
         return suggest_inbox_reply(state, item_id, guide, ollama_complete)
     except DraftError as exc:
+        from todo_notes import note_failure, runtime_failure
+
+        if runtime_failure(str(exc)):
+            note_failure(load(), str(item.get("brand_id") or ""), item_id, str(item.get("platform") or ""), str(exc), "Generate")
         _fail(exc)
 
 

@@ -166,6 +166,9 @@ def run_due(
             done = publish_piece(state, piece["id"], path, reader=reader, http=http, now=moment, sleep=sleep, root=root)
         except DraftError as exc:
             result["failed"].append({"id": piece["id"], "error": str(exc)})
+            from todo_notes import note_failure
+
+            note_failure(load(path) if path else state, str(piece.get("brand_id") or ""), str(piece.get("id") or ""), "", str(exc), "Publish", path)
             state = load(path) if path else load()
             continue
         (result["posted"] if done["status"] == "published" else result["failed"]).append(
@@ -644,6 +647,11 @@ def _settle(path: Path | None, piece_id: str, moment: datetime, done: dict, erro
             message = f"{_title(piece)} posted to {names or 'nothing new'}."
         current = _notify(current, piece, message[:300])
         save(current, path)
+        if errors:
+            from todo_notes import note_failure
+
+            for platform, text in errors.items():
+                current = note_failure(load(path) if path else current, str(piece.get("brand_id") or ""), piece_id, platform, text, "Publish", path)
     return {
         "id": piece_id,
         "status": piece["status"],

@@ -102,6 +102,53 @@ def append_note(state: dict, brand_id: str, spec: dict, path: Path | None = None
     return {"added": True, "reason": "Added.", "heading": heading, **notes_view(updated, brand.id)}
 
 
+def note_failure(
+    state: dict,
+    brand_id: str,
+    piece_id: str,
+    platform: str,
+    error: str,
+    desk: str,
+    path: Path | None = None,
+    todo_file: Path | None = None,
+) -> dict:
+    """Log a real failure. Append a note when the switch is on. Never raises.
+
+    Callers: publish, the inbox pull, and generation. The user said: continue.
+    """
+    from modes import _log, _mode
+    from store import load, save
+
+    text = redact_memory(str(error or ""))[:240]
+    mode = _mode(state, brand_id) if brand_id else "manual"
+    updated = _log(state, brand_id, mode, "fail", str(piece_id or ""), str(platform or desk or ""), text)
+    save(updated, path)
+    heading = redact_memory(f"{desk}: {text}")[:80]
+    try:
+        append_note(
+            load(path) if path else updated,
+            brand_id,
+            {
+                "heading": heading,
+                "happened": f"{piece_id or 'no piece'} on {platform or desk}. {text}",
+                "why": "A failure that only lives in a log is easy to lose.",
+                "next": "Fix the cause. Do not invent a number. Nothing is sent until the mode and the posting switches allow it.",
+                "desk": desk,
+            },
+            path,
+            todo_file,
+        )
+    except DraftError:
+        return load(path) if path else updated
+    return load(path) if path else updated
+
+
+def runtime_failure(error: str) -> bool:
+    """Generation notes are for the assistant going quiet, not for a blank form."""
+    text = str(error or "").lower()
+    return "offline" in text or "nothing usable" in text
+
+
 def _book(state: dict) -> dict:
     raw = state.get("todo_notes") if isinstance(state.get("todo_notes"), dict) else {}
     limit = raw.get("limit") or _LIMIT

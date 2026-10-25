@@ -13,7 +13,7 @@ from pathlib import Path
 from adapt import DraftError
 from assist import assist
 from meta import redact
-from store import resolve_brand, save
+from store import load, resolve_brand, save
 
 
 def inbox_for(state: dict, brand_id: str, posts: list[dict] | None = None) -> dict:
@@ -68,7 +68,13 @@ def refresh_inbox(state: dict, brand_id: str, path: Path | None = None, reader=N
         "inbox_errors": {**(state.get("inbox_errors") or {}), brand.id: errors[:12]},
     }, merged)
     save(updated, path)
-    return inbox_for(updated, brand.id)
+    if errors:
+        from todo_notes import note_failure
+
+        for error in errors:
+            platform = str(error).split(":", 1)[0].strip().split(" ")[0][:40]
+            updated = note_failure(load(path) if path else updated, brand.id, "", platform, error, "Inbox", path)
+    return inbox_for(load(path) if path else updated, brand.id)
 
 
 def save_inbox_reply(state: dict, item_id: str, spec: dict, path: Path | None = None) -> dict:

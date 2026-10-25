@@ -65,3 +65,28 @@ def test_a_mention_inside_a_sentence_is_not_the_section(tmp_path: Path):
     lines = todo.read_text(encoding="utf-8").splitlines()
     assert "## Suggested improvements" in lines
     assert "### A real gap" in lines
+
+
+def test_a_failure_is_logged_and_a_note_is_appended_only_when_the_switch_is_on(tmp_path: Path):
+    path = tmp_path / "state.json"
+    todo = tmp_path / "TODO.md"
+    todo.write_text("# Later\n\n## 1. Already\n", encoding="utf-8")
+    from todo_notes import note_failure
+
+    quiet = note_failure(empty_state(), "okay", "piece-1", "facebook", "No token in vault:house.secret", "Publish", path, todo)
+    assert quiet["mode_log"][0]["action"] == "fail"
+    assert quiet["mode_log"][0]["piece_id"] == "piece-1"
+    assert quiet["mode_log"][0]["reason"] == "facebook"
+    assert "house.secret" not in quiet["mode_log"][0]["outcome"]
+    assert "### Publish" not in todo.read_text(encoding="utf-8")
+    set_notes(load(path), "okay", True, "global", path)
+    noted = note_failure(load(path), "okay", "piece-1", "facebook", "No token in vault:house.secret", "Publish", path, todo)
+    text = todo.read_text(encoding="utf-8")
+    assert "Already" in text
+    assert "### Publish:" in text
+    assert "house.secret" not in text
+    assert "vault:redacted" in text
+    again = note_failure(load(path), "okay", "piece-2", "facebook", "No token in vault:house.secret", "Publish", path, todo)
+    assert again["mode_log"][0]["piece_id"] == "piece-2"
+    assert text.count("### Publish:") == todo.read_text(encoding="utf-8").count("### Publish:")
+    assert noted["mode_log"][0]["action"] == "fail"
