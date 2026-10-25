@@ -598,9 +598,11 @@ Engagement is still read-only. The inbox pulls comments, mentions, and messages,
 ### Features to add
 
 1. Autonomous engagement (highest priority).  
-   Mode-aware replies to comments and mentions. Manual suggests only. Autonomous-with-approval generates drafts and emails them for approval (reuse the existing approval-mail path). Fully Autonomous posts replies that stay inside the voice guide and hard guards, subject to a per-day reply limit, and writes every send or failure to the activity log. Direct messages stay draft-only or require an extra explicit confirmation.
+   Mode-aware replies to comments and mentions. Manual suggests only. Autonomous-with-approval generates drafts and emails them for approval (reuse the existing approval-mail path). Fully Autonomous posts replies that stay inside the voice guide and hard guards, subject to a per-day reply limit, and writes every send or failure to the activity log.    Direct messages stay draft-only or require an extra explicit confirmation.
 
-2. Boost / ad suggestion surface.  
+   **Status (2026-10-24):** Comment replies follow the mode. Manual only suggests. Approval emails the draft, and APPROVE lets the worker send it. Fully autonomous sends a comment when both posting switches are on, refuses a banned phrase, stops at 8 replies a day, and logs every attempt. Direct messages stay drafts. Mentions stay drafts until there is a real reply call for them. Nothing sends while either posting switch is off.
+
+2. Boost / ad suggestion surface.
    A function that selects posts which are at least 3× the brand average, have a clear format or pillar, and meet a minimum engagement count the user sets. Show them on the Brief or Analytics desk with the reason and a “Copy suggestion” action. Never call any ads or boosting API.
 
 3. Engagement outcome learning.  
@@ -616,4 +618,4 @@ Engagement is still read-only. The inbox pulls comments, mentions, and messages,
 - Hermes TODO writer: follow the notes already in section 10; call it from failure paths in publish.py, inbox.py, and the generation path.
 - Keep every existing rule: three posts on both sides for comparisons, missing numbers stay missing, nothing is sent until the mode and the posting switches allow it, tokens stay in the vault.
 
-These items are the remaining distance between the current plugin and the master social media manager described in the request. Original-content autonomy is largely in place; follower engagement autonomy is not.
+These items are the remaining distance between the current plugin and the master social media manager described in the request. Original-content autonomy is largely in place. Comment replies can follow the mode. Mentions, messages, boost suggestions, reply learning, and failure-path notes are still open.

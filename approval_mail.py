@@ -202,7 +202,9 @@ def poll_replies(state: dict, path: Path | None = None, *, reader=None, http=Non
     result = {"read": 0, "decided": [], "ignored": []}
     if not (agentmail.get("inbox") and agentmail.get("key_vault")):
         return result
-    if not any(((item.get("approval") or {}).get("mail") or {}).get("code") for item in state.get("pieces") or [] if item.get("status") == "pending"):
+    waiting_posts = any(((item.get("approval") or {}).get("mail") or {}).get("code") for item in state.get("pieces") or [] if item.get("status") == "pending")
+    waiting_replies = any(item.get("reply_state") == "pending" and item.get("reply_code") for item in state.get("inbox") or [])
+    if not (waiting_posts or waiting_replies):
         return result
     key = (reader or _read_vault)(KEYS["agentmail"])
     if not key:
@@ -236,6 +238,28 @@ def poll_replies(state: dict, path: Path | None = None, *, reader=None, http=Non
             None,
         )
         if not piece:
+            pending = next(
+                (item for item in current.get("inbox") or []
+                 if item.get("reply_code") == found.group(1) and item.get("reply_state") == "pending"),
+                None,
+            )
+            if not pending:
+                continue
+            result["read"] += 1
+            try:
+                body = call("GET", f"{AGENTMAIL}/inboxes/{quote(inbox)}/messages/{quote(message_id)}", key, None)
+            except MailError as exc:
+                seen.discard(message_id)
+                result["ignored"].append({"id": message_id, "why": str(exc)})
+                continue
+            from inbox_send import take_reply_mail
+
+            text = str(body.get("extracted_text") or body.get("text") or body.get("preview") or "")
+            taken = take_reply_mail(current, found.group(1), sender, text, path)
+            if taken and taken.get("decision"):
+                result["decided"].append(taken)
+            else:
+                result["ignored"].append({"id": message_id, "why": "That reply email was not counted."})
             continue
         result["read"] += 1
         if piece.get("status") != "pending":

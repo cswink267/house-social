@@ -1,7 +1,8 @@
-"""A short inbox for one brand. Replies stay drafts.
+"""A short inbox for one brand.
 
 Comments, mentions, and messages come from a pull. A missing
-permission is an error line, not an invented message. Nothing is sent.
+permission is an error line, not an invented message. A pull never
+sends. Offering a saved reply is a separate step.
 """
 
 from __future__ import annotations
@@ -146,6 +147,11 @@ def _merge(previous: list[dict], fresh: list[dict], brand_id: str) -> list[dict]
             "text": redact(str(item.get("text") or ""))[:500],
             "reply": old.get("reply") or "",
             "dismissed": bool(old.get("dismissed")),
+            "reply_state": old.get("reply_state") or "",
+            "reply_code": old.get("reply_code") or "",
+            "reply_hold": old.get("reply_hold") or "",
+            "reply_note": old.get("reply_note") or "",
+            "sent_at": old.get("sent_at") or "",
             "pulled_at": datetime.now(timezone.utc).isoformat(),
         })
     return rows
@@ -182,6 +188,7 @@ def _public(item: dict) -> dict:
         "dismissed": dismissed,
         "needs_attention": needs,
         "post_id": str(item.get("post_id") or ""),
+        "reply_state": item.get("reply_state") or "",
         "sending": False,
     }
 

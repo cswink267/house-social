@@ -1031,6 +1031,13 @@
           studio: studio, busy: busy,
           onRefresh: function () { return act("POST", on("/inbox"), undefined, "Inbox refreshed."); },
           onReply: function (id, body) { return act("POST", "/inbox/" + encodeURIComponent(id) + "/reply", body, body && body.dismissed ? "Dismissed." : "Reply draft saved. Nothing is sent."); },
+          onOffer: function (id, body) {
+            return act("POST", "/inbox/" + encodeURIComponent(id) + "/offer", body, function (saved) {
+              if (saved && saved.sent) return "Reply sent.";
+              if (saved && saved.reply_state === "pending") return "Emailed for approval. Nothing was sent.";
+              return "Nothing was sent.";
+            });
+          },
           onSuggest: function (id) { return act("POST", "/inbox/" + encodeURIComponent(id) + "/suggest"); },
           onIdea: function (id) { return act("POST", "/inbox/" + encodeURIComponent(id) + "/idea", undefined, "Kept as an idea."); },
           onVoice: function (id, reply) { return act("POST", "/inbox/" + encodeURIComponent(id) + "/voice", { reply: reply || "" }, "Reply kept in the voice."); },
@@ -4443,10 +4450,11 @@
               const next = event.target.value;
               setDrafts(function (current) { return Object.assign({}, current, { [item.id]: next }); });
             },
-          }), "Saved here only. Nothing is sent."),
+          }), "A draft stays here. Offer follows the mode: Manual only suggests, approval emails it, and fully autonomous sends a comment when posting is on. Messages stay drafts."),
           h("div", { className: "hs-row hs-spread" },
             h("div", { className: "hs-row hs-gap-sm" },
               h("button", { type: "button", className: "hs-button", disabled: props.busy || value === (item.reply || ""), onClick: function () { props.onReply(item.id, { reply: value }); } }, "Save draft"),
+              item.kind === "comment" ? h("button", { type: "button", className: "hs-button", disabled: props.busy || !value.trim() || item.reply_state === "sent" || item.reply_state === "pending" || item.reply_state === "approved", onClick: function () { props.onOffer(item.id, { reply: value }); } }, item.reply_state === "sent" ? "Sent" : item.reply_state === "pending" ? "Emailed" : "Offer this reply") : null,
               h("button", { type: "button", className: "hs-tab hs-tab-sm", disabled: props.busy, onClick: function () { props.onSuggest(item.id); } }, "Suggest a reply"),
               canIdea ? h("button", { type: "button", className: "hs-tab hs-tab-sm", disabled: props.busy, onClick: function () { props.onIdea(item.id); } }, "Keep as an idea") : null,
               h("button", { type: "button", className: "hs-tab hs-tab-sm", disabled: props.busy || !value.trim(), title: "Keeps your reply as an on-brand example, not their words", onClick: function () { props.onVoice(item.id, value); } }, "Keep this reply in the voice")),

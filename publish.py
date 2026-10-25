@@ -396,6 +396,9 @@ def tick(path: Path | None = None) -> dict | None:
         # Approvals by email can schedule a piece, so read them after posting.
         result["mail"] = poll_replies(load(path) if path else load(), path)
         result["mail"]["sent"] = send_waiting(load(path) if path else load(), path)
+        from inbox_send import send_approved_replies
+
+        result["replies"] = send_approved_replies(load(path) if path else load(), path)
         return result
 
 

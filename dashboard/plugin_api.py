@@ -901,6 +901,16 @@ def post_inbox_reply(item_id: str, body: dict) -> dict:
         _fail(exc)
 
 
+@router.post("/inbox/{item_id}/offer")
+def post_inbox_offer(item_id: str, body: dict) -> dict:
+    from inbox_send import offer_reply
+
+    try:
+        return offer_reply(load(), item_id, spec=body or {})
+    except DraftError as exc:
+        _fail(exc)
+
+
 @router.post("/brands/{brand_id}/recurrences")
 def post_recurrence(brand_id: str, body: dict) -> dict:
     try:
