@@ -610,6 +610,8 @@ Engagement is still read-only. The inbox pulls comments, mentions, and messages,
 3. Engagement outcome learning.  
    Once replies can be sent, record whether the reply received further likes, replies, or other engagement. Feed that signal into the same learning path used for posts (three-post rule still applies).
 
+   **Status (2026-10-24):** A sent comment reply keeps the like and reply counts from that moment. A later inbox pull writes the new counts only when the pull includes them. Learning compares the change, and only when three replies sit on each side of a trait and the gap is real. A missing count stays missing. The first number after a send is the baseline, not a gain.
+
 4. Hermes TODO writer.  
    Implement the capability already specified in section 10 so runtime issues and small evidence-based improvements are appended to this file. Off by default, rate-limited, append-only, duplicate-checked, token in the vault.
 
@@ -620,4 +622,4 @@ Engagement is still read-only. The inbox pulls comments, mentions, and messages,
 - Hermes TODO writer: follow the notes already in section 10; call it from failure paths in publish.py, inbox.py, and the generation path.
 - Keep every existing rule: three posts on both sides for comparisons, missing numbers stay missing, nothing is sent until the mode and the posting switches allow it, tokens stay in the vault.
 
-These items are the remaining distance between the current plugin and the master social media manager described in the request. Original-content autonomy is largely in place. Comment replies can follow the mode. A boost is a copy suggestion on Analytics. Mentions, messages, reply learning, and failure-path notes are still open.
+These items are the remaining distance between the current plugin and the master social media manager described in the request. Original-content autonomy is largely in place. Comment replies can follow the mode. A boost is a copy suggestion on Analytics. A sent reply can teach from a later count. Mentions, messages, and failure-path notes are still open.

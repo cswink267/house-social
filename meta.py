@@ -277,10 +277,10 @@ def gather_inbox(platform: str, external_id: str, token: str, post_ids: list[str
 
 def _comments(platform: str, post_id: str, token: str, fetch) -> list[dict]:
     if platform == "facebook":
-        payload = fetch(f"{GRAPH}/{post_id}/comments", token, {"fields": "id,message,created_time,permalink_url", "limit": "5"})
+        payload = fetch(f"{GRAPH}/{post_id}/comments", token, {"fields": "id,message,created_time,permalink_url,like_count,comment_count", "limit": "5"})
         return [_item(row, platform=platform, kind="comment", text=row.get("message"), when=row.get("created_time"), link=row.get("permalink_url"), post_id=post_id) for row in _rows(payload)]
     if platform == "instagram":
-        payload = fetch(f"{GRAPH}/{post_id}/comments", token, {"fields": "id,text,timestamp,username", "limit": "5"})
+        payload = fetch(f"{GRAPH}/{post_id}/comments", token, {"fields": "id,text,timestamp,username,like_count", "limit": "5"})
         return [_item(row, platform=platform, kind="comment", text=row.get("text"), when=row.get("timestamp"), author=row.get("username"), post_id=post_id) for row in _rows(payload)]
     if platform == "threads":
         payload = fetch(f"{THREADS}/{post_id}/replies", token, {"fields": "id,text,timestamp,username,permalink", "limit": "5"})
@@ -330,13 +330,32 @@ def _item(row: dict, *, platform: str, kind: str, text, when, author=None, link=
     who = author or ""
     if not who and isinstance(row.get("from"), dict):
         who = str(row["from"].get("name") or "")
-    return {
+    built = {
         "id": f"{platform}:{kind}:{identity}",
         "kind": kind,
         "platform": platform,
         "author": str(who or "Someone")[:80],
-            "text": redact(str(text or ""))[:500],
+        "text": redact(str(text or ""))[:500],
         "at": _iso(str(when or "")),
         "permalink": str(link or "")[:300],
         "post_id": str(post_id or "")[:80],
     }
+    if "like_count" in row:
+        built["likes"] = _optional_count(row.get("like_count"))
+    if "comment_count" in row:
+        built["replies"] = _optional_count(row.get("comment_count"))
+    return built
+
+
+def _optional_count(value: object) -> int | None:
+    if value is None or isinstance(value, bool):
+        return None
+    if isinstance(value, dict):
+        if "count" not in value:
+            return None
+        return _optional_count(value.get("count"))
+    try:
+        number = int(value)  # type: ignore[arg-type]
+    except (TypeError, ValueError):
+        return None
+    return number if number >= 0 else None

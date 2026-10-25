@@ -60,11 +60,13 @@ def refresh_inbox(state: dict, brand_id: str, path: Path | None = None, reader=N
         errors.extend(redact(str(item)) for item in found.get("errors") or [])
     merged = _merge([item for item in state.get("inbox") or [] if item.get("brand_id") == brand.id], fresh, brand.id)
     kept = [item for item in state.get("inbox") or [] if item.get("brand_id") != brand.id]
-    updated = {
+    from reply_learn import apply_counts
+
+    updated = apply_counts({
         **state,
         "inbox": [*merged, *kept][:200],
         "inbox_errors": {**(state.get("inbox_errors") or {}), brand.id: errors[:12]},
-    }
+    }, merged)
     save(updated, path)
     return inbox_for(updated, brand.id)
 
@@ -152,6 +154,8 @@ def _merge(previous: list[dict], fresh: list[dict], brand_id: str) -> list[dict]
             "reply_hold": old.get("reply_hold") or "",
             "reply_note": old.get("reply_note") or "",
             "sent_at": old.get("sent_at") or "",
+            "likes": item["likes"] if "likes" in item else old.get("likes"),
+            "replies": item["replies"] if "replies" in item else old.get("replies"),
             "pulled_at": datetime.now(timezone.utc).isoformat(),
         })
     return rows

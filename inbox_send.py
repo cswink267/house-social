@@ -152,6 +152,9 @@ def _send(state: dict, item: dict, path: Path | None, *, http, reader, mode: str
     _post(http, state, item, token, text)
     stamp = datetime.now(_ZONE).isoformat(timespec="seconds")
     updated = _mark(state, item["id"], {"reply_state": "sent", "sent_at": stamp, "reply_hold": ""}, path)
+    from reply_learn import note_sent
+
+    updated = note_sent(updated, {**fresh, "reply": text, "brand_id": brand_id}, stamp)
     logged = _record(updated, brand_id, mode, item, f"Sent on {item.get('platform')}.", path)
     return _view(_item(logged, item["id"]))
 

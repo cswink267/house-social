@@ -97,6 +97,7 @@ def empty_state() -> dict:
         "mail": {},
         "approval_emails": {},
         "boost_minimums": {},
+        "reply_outcomes": [],
     }
 
 
@@ -162,6 +163,7 @@ def load(path: Path | None = None) -> dict:
     mail = raw.get("mail")
     approval_emails = raw.get("approval_emails")
     boost_minimums = raw.get("boost_minimums")
+    reply_outcomes = raw.get("reply_outcomes")
     return {
         "version": 1,
         "channels": channels if isinstance(channels, dict) else {},
@@ -219,6 +221,7 @@ def load(path: Path | None = None) -> dict:
         "mail": mail if isinstance(mail, dict) else {},
         "approval_emails": approval_emails if isinstance(approval_emails, dict) else {},
         "boost_minimums": boost_minimums if isinstance(boost_minimums, dict) else {},
+        "reply_outcomes": reply_outcomes if isinstance(reply_outcomes, list) else [],
     }
 
 
@@ -740,6 +743,9 @@ def studio(state: dict, brand_id: str, ledger: dict | None = None, today=None) -
                 "clear": False,
             }
         )
+    from reply_learn import reply_lessons
+
+    found.extend(reply_lessons(state.get("reply_outcomes") or [], brand_id))
     found.append(next_step(found, len(unscheduled)))
     when = today or datetime.now(ZoneInfo("America/New_York")).date()
     row = next(item for item in roster(state) if item["id"] == brand_id)
