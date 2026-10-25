@@ -96,6 +96,7 @@ def empty_state() -> dict:
         "test_posts": [],
         "mail": {},
         "approval_emails": {},
+        "boost_minimums": {},
     }
 
 
@@ -160,6 +161,7 @@ def load(path: Path | None = None) -> dict:
     test_posts = raw.get("test_posts")
     mail = raw.get("mail")
     approval_emails = raw.get("approval_emails")
+    boost_minimums = raw.get("boost_minimums")
     return {
         "version": 1,
         "channels": channels if isinstance(channels, dict) else {},
@@ -216,6 +218,7 @@ def load(path: Path | None = None) -> dict:
         "test_posts": test_posts if isinstance(test_posts, list) else [],
         "mail": mail if isinstance(mail, dict) else {},
         "approval_emails": approval_emails if isinstance(approval_emails, dict) else {},
+        "boost_minimums": boost_minimums if isinstance(boost_minimums, dict) else {},
     }
 
 
@@ -679,6 +682,12 @@ def _with_history(state: dict, brand_id: str, posts: list[dict]) -> list[dict]:
     return list(posts) + extra
 
 
+def _boost_view(state: dict, brand_id: str, posts: list[dict]) -> dict:
+    from boost import boost_for
+
+    return boost_for(state, brand_id, posts)
+
+
 def _goal_view(state: dict, brand_id: str, posts: list[dict], page_days: list[dict], today) -> list[dict]:
     from analytics_desk import goal_line
 
@@ -748,6 +757,7 @@ def studio(state: dict, brand_id: str, ledger: dict | None = None, today=None) -
         "brand": row,
         "calendar": _calendar_view(state, brand_id, pieces, posts, when),
         "performance": desk,
+        "boost": _boost_view(state, brand_id, posts),
         "feed": sorted(posts, key=lambda post: str(post.get("published_at") or ""), reverse=True)[:50],
         "lessons": found,
         "experiments": open_experiments,

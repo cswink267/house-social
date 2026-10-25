@@ -1060,6 +1060,16 @@ def post_goal(brand_id: str, body: dict) -> dict:
         _fail(exc)
 
 
+@router.post("/brands/{brand_id}/boost")
+def post_boost(brand_id: str, body: dict) -> dict:
+    from boost import save_boost_minimum
+
+    try:
+        return save_boost_minimum(load(), brand_id, body or {})
+    except DraftError as exc:
+        _fail(exc)
+
+
 @router.post("/stats")
 def post_stat(body: dict) -> dict:
     try:

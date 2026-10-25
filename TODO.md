@@ -605,6 +605,8 @@ Engagement is still read-only. The inbox pulls comments, mentions, and messages,
 2. Boost / ad suggestion surface.
    A function that selects posts which are at least 3× the brand average, have a clear format or pillar, and meet a minimum engagement count the user sets. Show them on the Brief or Analytics desk with the reason and a “Copy suggestion” action. Never call any ads or boosting API.
 
+   **Status (2026-10-24):** Analytics shows Worth a boost. A post is suggested when three other posts have a count, it is at least 3× their average, the gap is at least 3, it has a format or a pillar, and it meets the minimum the brand saved. Copy suggestion puts that reason on the clipboard. No ads call. A missing count stays out of the average. No minimum means no suggestion.
+
 3. Engagement outcome learning.  
    Once replies can be sent, record whether the reply received further likes, replies, or other engagement. Feed that signal into the same learning path used for posts (three-post rule still applies).
 
@@ -618,4 +620,4 @@ Engagement is still read-only. The inbox pulls comments, mentions, and messages,
 - Hermes TODO writer: follow the notes already in section 10; call it from failure paths in publish.py, inbox.py, and the generation path.
 - Keep every existing rule: three posts on both sides for comparisons, missing numbers stay missing, nothing is sent until the mode and the posting switches allow it, tokens stay in the vault.
 
-These items are the remaining distance between the current plugin and the master social media manager described in the request. Original-content autonomy is largely in place. Comment replies can follow the mode. Mentions, messages, boost suggestions, reply learning, and failure-path notes are still open.
+These items are the remaining distance between the current plugin and the master social media manager described in the request. Original-content autonomy is largely in place. Comment replies can follow the mode. A boost is a copy suggestion on Analytics. Mentions, messages, reply learning, and failure-path notes are still open.

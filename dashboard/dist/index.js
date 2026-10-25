@@ -1001,6 +1001,7 @@
           onRecorded: function (body) { return act("POST", "/stats", Object.assign({ brand_id: brand.id }, body), "Result saved."); },
           onHistory: function (csv) { return act("POST", on("/history"), { csv: csv }, "History imported."); },
           onGoal: function (body) { return act("POST", on("/goals"), body, "Goal saved."); },
+          onBoost: function (body) { return act("POST", on("/boost"), body, body && body.minimum === "" ? "Minimum cleared." : "Minimum saved. Nothing was spent."); },
         });
         case "ingest": return h(IngestDesk, {
           studio: studio, busy: busy,
@@ -4037,6 +4038,8 @@
               h("p", { className: "hs-note" }, formatNumber(post.reactions) + " reactions · " + formatNumber(post.comments) + " comments · " + formatNumber(post.shares) + " shares"),
               post.permalink ? h("a", { href: post.permalink, target: "_blank", rel: "noopener noreferrer" }, "Open the post") : null) : null);
         })) : h("p", { className: "hs-note" }, "No posts in this window.")),
+      h(Section, { title: "Worth a boost", note: "A suggestion you can copy. Nothing here spends money." },
+        h(BoostPanel, { boost: props.studio && props.studio.boost, busy: props.busy, onMinimum: props.onBoost })),
       h(Section, { title: "Goals", note: (perf.imported || 0) + " imported posts with a date and an engagement count are in these numbers." },
         (perf.goals || []).length ? h("ul", { className: "hs-list" }, perf.goals.map(function (item) { return h("li", { key: item.id, className: "hs-voice" }, item.detail); })) : h("p", { className: "hs-note" }, "No goal yet."),
         h(GoalForm, { busy: props.busy, onGoal: props.onGoal })),
@@ -4054,6 +4057,42 @@
         }), "The Ingest desk maps columns for you, if the CSV has other names."),
         h(RecordForm, { busy: props.busy, onRecorded: props.onRecorded })),
     );
+  }
+
+
+  function BoostPanel(props) {
+    const boost = props.boost || { minimum: null, items: [], note: "" };
+    const [minimum, setMinimum] = useState(boost.minimum == null ? "" : String(boost.minimum));
+    const [copied, setCopied] = useState("");
+    return h("div", { className: "hs-stack" },
+      boost.note ? h("p", { className: "hs-note" }, boost.note) : null,
+      (boost.items || []).map(function (item) {
+        return h("div", { key: item.id, className: "hs-stack hs-gap-xs" },
+          h("p", { className: "hs-voice" }, item.preview),
+          h("p", { className: "hs-note" }, item.copy),
+          h("button", {
+            type: "button", className: "hs-tab hs-tab-sm", disabled: props.busy,
+            onClick: function () {
+              const text = item.copy || "";
+              if (navigator.clipboard && navigator.clipboard.writeText) {
+                navigator.clipboard.writeText(text).then(function () { setCopied(item.id); }, function () { setCopied(""); });
+              }
+            },
+          }, copied === item.id ? "Copied" : "Copy suggestion"));
+      }),
+      h("form", {
+        className: "hs-row hs-gap-sm",
+        onSubmit: function (event) {
+          event.preventDefault();
+          if (props.onMinimum) props.onMinimum({ minimum: minimum === "" ? "" : Number(minimum) });
+        },
+      },
+        field("Minimum engagements", h("input", {
+          className: "hs-field hs-w-sm", type: "number", min: "0", step: "1", inputMode: "numeric",
+          value: minimum,
+          onChange: function (event) { setMinimum(event.target.value); },
+        }), "A post also has to clear three other posts and be at least 3× them."),
+        h("button", { type: "submit", className: "hs-button", disabled: props.busy }, minimum === "" ? "Clear minimum" : "Save minimum")));
   }
 
   function GoalForm(props) {
