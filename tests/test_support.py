@@ -7,7 +7,8 @@ The user said continue.
 from __future__ import annotations
 
 import sys
-from datetime import date, timedelta
+from datetime import datetime, timedelta
+from zoneinfo import ZoneInfo
 from pathlib import Path
 
 import pytest
@@ -40,7 +41,8 @@ def test_health_preview_pause_and_a_hard_mix_hold(tmp_path: Path):
     assert card["posts"] == 6
     assert "thin" in card["rate"]
     assert card["hint"] == ""
-    save_pause(state, "okay", {"start": date.today().isoformat(), "end": (date.today() + timedelta(days=2)).isoformat()}, path)
+    today = datetime.now(ZoneInfo("America/New_York")).date()
+    save_pause(state, "okay", {"start": today.isoformat(), "end": (today + timedelta(days=2)).isoformat()}, path)
     set_mode(load(path), "okay", "approval", path=path)
     with pytest.raises(DraftError, match="paused"):
         prepare_batch(load(path), "okay", path)
