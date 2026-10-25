@@ -622,6 +622,9 @@ def post_assist(brand_id: str, body: dict) -> dict:
         if runtime_failure(str(exc)):
             note_failure(load(), brand_id, str(body.get("piece_id") or ""), "", str(exc), "Generate")
         _fail(exc)
+
+
+@router.post("/brands/{brand_id}/queue")
 def post_queue(brand_id: str, body: dict) -> dict:
     if not isinstance(body, dict):
         _fail(DraftError("The queue needs an action."))

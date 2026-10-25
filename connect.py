@@ -36,6 +36,7 @@ META_SCOPES = (
     "pages_read_engagement",
     "pages_read_user_content",
     "pages_manage_posts",
+    "pages_manage_engagement",
     "read_insights",
     "pages_messaging",
     "business_management",
@@ -50,6 +51,7 @@ THREADS_SCOPES = (
     "threads_content_publish",
     "threads_delete",
     "threads_read_replies",
+    "threads_manage_replies",
     "threads_manage_insights",
 )
 

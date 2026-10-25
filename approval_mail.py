@@ -34,7 +34,7 @@ RESEND = "https://api.resend.com/emails"
 KEYS = {"agentmail": "house-social.agentmail.api_key", "resend": "house-social.resend.api_key"}
 NAMES = {"facebook": "Facebook", "instagram": "Instagram", "threads": "Threads"}
 _ADDRESS = re.compile(r"[^@\s<>\"']+@[^@\s<>\"']+\.[^@\s<>\"']+")
-_CODE = re.compile(r"\bHS-([A-Z0-9]{6})\b")
+_CODE = re.compile(r"\bHS-([A-Z0-9]{6})\b", re.I)
 # Strict on purpose: "yes, but change the hook" must not read as approval.
 _APPROVE = re.compile(r"^(approve|approved)\b", re.I)
 _CHANGES = re.compile(r"^(changes|change|reject|rejected)\b", re.I)
@@ -234,13 +234,13 @@ def poll_replies(state: dict, path: Path | None = None, *, reader=None, http=Non
         current = load(path) if path else load()
         piece = next(
             (item for item in current.get("pieces") or []
-             if ((item.get("approval") or {}).get("mail") or {}).get("code") == found.group(1)),
+             if str(((item.get("approval") or {}).get("mail") or {}).get("code") or "").upper() == found.group(1).upper()),
             None,
         )
         if not piece:
             pending = next(
                 (item for item in current.get("inbox") or []
-                 if item.get("reply_code") == found.group(1) and item.get("reply_state") == "pending"),
+                 if str(item.get("reply_code") or "").upper() == found.group(1).upper() and item.get("reply_state") == "pending"),
                 None,
             )
             if not pending:
@@ -337,6 +337,11 @@ def _code(approval: dict) -> str:
     mail = approval.get("mail") or {}
     if mail.get("code"):
         return str(mail["code"])
+    return new_code()
+
+
+def new_code() -> str:
+    """Six letters and digits for the subject, such as K7QX2M. Read back without regard to case."""
     alphabet = "ABCDEFGHJKLMNPQRSTUVWXYZ23456789"
     return "".join(secrets.choice(alphabet) for _ in range(6))
 
