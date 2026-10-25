@@ -98,6 +98,7 @@ def empty_state() -> dict:
         "approval_emails": {},
         "boost_minimums": {},
         "reply_outcomes": [],
+        "mode_runs": {},
     }
 
 
@@ -164,6 +165,7 @@ def load(path: Path | None = None) -> dict:
     approval_emails = raw.get("approval_emails")
     boost_minimums = raw.get("boost_minimums")
     reply_outcomes = raw.get("reply_outcomes")
+    mode_runs = raw.get("mode_runs")
     return {
         "version": 1,
         "channels": channels if isinstance(channels, dict) else {},
@@ -222,6 +224,7 @@ def load(path: Path | None = None) -> dict:
         "approval_emails": approval_emails if isinstance(approval_emails, dict) else {},
         "boost_minimums": boost_minimums if isinstance(boost_minimums, dict) else {},
         "reply_outcomes": reply_outcomes if isinstance(reply_outcomes, list) else [],
+        "mode_runs": mode_runs if isinstance(mode_runs, dict) else {},
     }
 
 

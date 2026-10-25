@@ -393,7 +393,10 @@ def tick(path: Path | None = None) -> dict | None:
         if not held:
             return None
         state = load(path) if path else load()
-        result = run_due(state, path)
+        from autonomy import run_daily
+
+        daily = run_daily(state, path)
+        result = run_due(load(path) if path else load(), path)
         from approval_mail import poll_replies, send_waiting
 
         # Approvals by email can schedule a piece, so read them after posting.
@@ -402,6 +405,7 @@ def tick(path: Path | None = None) -> dict | None:
         from inbox_send import send_approved_replies
 
         result["replies"] = send_approved_replies(load(path) if path else load(), path)
+        result["daily"] = daily
         return result
 
 
