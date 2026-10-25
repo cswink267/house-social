@@ -98,6 +98,21 @@ def test_josie_facebook_stays_a_quote_card_until_the_image_is_ready(tmp_path: Pa
     assert ready["status"] == "ready"
 
 
+def test_a_variant_patch_says_what_it_does_not_take(tmp_path: Path):
+    path = tmp_path / "state.json"
+    piece = create_piece(empty_state(), "josie-blackthorn", "Stay. The rest can wait.", path)
+    with pytest.raises(DraftError, match="A variant edit is body"):
+        update_piece(load(path), piece["id"], variants={"facebook": {"text": "quiet"}}, path=path)
+    saved = update_piece(
+        load(path),
+        piece["id"],
+        variants={"facebook": {"body": "Stay.", "image_ready": True}},
+        path=path,
+    )
+    assert saved["variants"]["facebook"]["body"] == "Stay."
+    assert saved["variants"]["facebook"]["image_ready"] is True
+
+
 def test_jamhaul_requires_the_site_and_a_real_question(tmp_path: Path):
     path = tmp_path / "state.json"
     piece = create_piece(empty_state(), "jamhaul", "What is a haul?", path)

@@ -9,6 +9,7 @@ from __future__ import annotations
 
 import base64
 import os
+import re
 import uuid
 from datetime import datetime, timezone
 from pathlib import Path
@@ -452,6 +453,11 @@ def read_asset_tags(state: dict, asset_id: str, complete, path: Path | None = No
         if word and word.lower() not in {item.lower() for item in found}:
             found.append(word)
     if not found:
+        # A describing model still names what it saw. Mine the words it used.
+        for option in result.get("options") or []:
+            text = option.get("text") if isinstance(option, dict) else option
+            found.extend(word for word in _described_tags(text) if word.lower() not in {item.lower() for item in found})
+    if not found:
         raise DraftError("The assistant did not return tags.")
     tags = _tags([*(asset.get("tags") or []), *similar_tags(state, str(asset.get("brand_id") or ""), asset.get("name") or ""), *found])
     return revise_asset(state, asset_id, {"tags": tags}, path, root)
@@ -565,6 +571,30 @@ def _one_tag(value: object) -> str:
     if not cleaned.isalnum():
         return ""
     return text[:24]
+
+
+_DESCRIBE_STOP = frozenset(
+    "a an and any are as at be been by for from has have in into is it its of on "
+    "or that the their them these this those to was were with without above below "
+    "behind beside center middle top bottom front back appears appear feature "
+    "features featuring shows show shown showing displays display displaying "
+    "depicts depicting describes describing image imagery picture photo "
+    "photograph scene style styled also which while very more most much many "
+    "making makes made giving gives given drawing draws look looks looking "
+    "word words reads read outlined outline surrounding surrounded holding "
+    "holds held sitting standing stands set setting against across being "
+    "seems seem there here".split()
+)
+
+
+def _described_tags(text: object) -> list[str]:
+    """One-word tags mined from a sentence that names what is visible."""
+    found: list[str] = []
+    for token in re.split(r"[^A-Za-z0-9#_-]+", str(text or "")):
+        word = _one_tag(token)
+        if word and word.lower() not in _DESCRIBE_STOP and word.lower() not in {item.lower() for item in found}:
+            found.append(word)
+    return found[:5]
 
 
 def _asset(state: dict, asset_id: str) -> tuple[int, dict]:

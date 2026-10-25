@@ -1629,11 +1629,17 @@ def _find(state: dict, piece_id: str) -> tuple[int, dict]:
     raise DraftError("That piece is not in the queue.")
 
 
+_VARIANT_KEYS = frozenset({"body", "hashtags", "image_ready", "first_comment", "needs_image", "note"})
+
+
 def _merge_variants(current: dict, updates: dict) -> dict:
     merged = copy.deepcopy(current)
     for platform, payload in updates.items():
         if platform not in PLATFORMS or not isinstance(payload, dict):
             raise DraftError("Channels are facebook, instagram, and threads.")
+        unknown = sorted(str(key) for key in payload if key not in _VARIANT_KEYS)
+        if unknown:
+            raise DraftError(f"A variant edit is body, hashtags, image_ready, or first_comment — not {unknown[0]}.")
         variant = dict(merged.get(platform) or {})
         if "body" in payload:
             body = str(payload["body"])

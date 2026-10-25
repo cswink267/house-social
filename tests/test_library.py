@@ -156,3 +156,24 @@ def test_library_pairs_versions_and_keeps_tags_honest(tmp_path, monkeypatch):
     again = next(asset for asset in library_for(load(path), "misfit-mindset")["assets"] if asset["id"] == image["id"])
     assert again["tags"] == tagged["tags"]
 
+
+def test_tag_reading_mines_words_from_a_describing_model(tmp_path, monkeypatch):
+    monkeypatch.setenv("HOUSE_SOCIAL_ASSETS", str(tmp_path / "files"))
+    path = tmp_path / "state.json"
+    image = save_asset(
+        empty_state(),
+        "misfit-mindset",
+        {"kind": "image", "name": "Mark", "data": PNG, "file_name": "mark.png"},
+        path,
+    )
+
+    def describing(_messages):
+        return "The image features a red and black graffiti-style font with spikes and the word mm in the center."
+
+    mined = read_asset_tags(load(path), image["id"], describing, path, root=tmp_path / "files")
+    lowered = [tag.lower() for tag in mined["tags"]]
+    for word in ("red", "black", "graffiti-style", "font", "spikes"):
+        assert word in lowered
+    for filler in ("the", "image", "features", "word", "center", "and"):
+        assert filler not in lowered
+
