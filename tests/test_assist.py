@@ -75,3 +75,27 @@ def test_variations_hashtags_first_comment_and_offline(tmp_path, monkeypatch):
     monkeypatch.setattr("urllib.request.urlopen", down)
     with pytest.raises(DraftError, match="offline"):
         ollama_complete([{"role": "user", "content": "hi"}])
+
+
+def test_a_slow_endpoint_is_not_an_offline_one(monkeypatch):
+    seen = {}
+
+    def down(*_args, **kwargs):
+        seen["timeout"] = kwargs.get("timeout")
+        raise urllib.error.URLError("down")
+
+    monkeypatch.setattr("urllib.request.urlopen", down)
+    monkeypatch.setenv("HOUSE_SOCIAL_AI_TIMEOUT", "180")
+    with pytest.raises(DraftError, match="offline"):
+        ollama_complete([{"role": "user", "content": "hi"}])
+    assert seen["timeout"] == 180
+
+    monkeypatch.setenv("HOUSE_SOCIAL_AI_TIMEOUT", "slow")
+    with pytest.raises(DraftError, match="offline"):
+        ollama_complete([{"role": "user", "content": "hi"}])
+    assert seen["timeout"] == 60
+
+    monkeypatch.setenv("HOUSE_SOCIAL_AI_TIMEOUT", "")
+    with pytest.raises(DraftError, match="offline"):
+        ollama_complete([{"role": "user", "content": "hi"}])
+    assert seen["timeout"] == 60

@@ -625,3 +625,13 @@ Engagement is still read-only. The inbox pulls comments, mentions, and messages,
 - Keep every existing rule: three posts on both sides for comparisons, missing numbers stay missing, nothing is sent until the mode and the posting switches allow it, tokens stay in the vault.
 
 These items are the remaining distance between the current plugin and the master social media manager described in the request. Original-content autonomy is largely in place. Comment replies can follow the mode. A boost is a copy suggestion on Analytics. A sent reply can teach from a later count. A real failure can land in the activity log and, when the switch is on, in this file. Mentions and messages are still open.
+
+### Generate: The assistant is offline.
+
+2026-10-24. Desk: Generate.
+
+What happened: no piece on Generate. The assistant is offline.
+
+Why: A failure that only lives in a log is easy to lose.
+
+Next: Fix the cause. Do not invent a number. Nothing is sent until the mode and the posting switches allow it.

@@ -70,7 +70,7 @@ The rail on the left picks the brand and the desk, and the tab remembers both. E
 
 State is not in this repository. Drafts, connections, and pull results live in `~/.hermes/plugin-data/house-social/state.json`. Override that with `HOUSE_SOCIAL_STATE`. Library files live in a sibling `assets` directory. Override that with `HOUSE_SOCIAL_ASSETS`. Neither directory belongs in git.
 
-The assistant calls a local OpenAI-compatible endpoint. `HOUSE_SOCIAL_AI_URL` defaults to `http://127.0.0.1:11434/v1/chat/completions`. `HOUSE_SOCIAL_AI_MODEL` defaults to `qwen3.5:9b`. Captions use `HOUSE_SOCIAL_VISION_MODEL`, default `moondream`. No key lives in this repository. If the endpoint is down, the composer says the assistant is offline.
+The assistant calls a local OpenAI-compatible endpoint. `HOUSE_SOCIAL_AI_URL` defaults to `http://127.0.0.1:11434/v1/chat/completions`. `HOUSE_SOCIAL_AI_MODEL` defaults to `qwen3.5:9b`. Captions use `HOUSE_SOCIAL_VISION_MODEL`, default `moondream`. `HOUSE_SOCIAL_AI_TIMEOUT` sets how long a call may take, in seconds; the default is 60, and a deployment whose model needs longer can raise it instead of reading "offline". No key lives in this repository. If the endpoint is down, the composer says the assistant is offline.
 
 ## Connecting accounts
 

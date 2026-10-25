@@ -70,6 +70,20 @@ def assist(
     return {"action": name, "text": cleaned, "options": [_option(guide, cleaned)], "source": "assistant"}
 
 
+def _timeout() -> int:
+    """How long the assistant waits for the endpoint, in seconds.
+
+    A deployment on slow hardware is a slow endpoint, not a broken one.
+    ``HOUSE_SOCIAL_AI_TIMEOUT`` lets it say so instead of going "offline".
+    """
+    raw = os.environ.get("HOUSE_SOCIAL_AI_TIMEOUT", "").strip()
+    try:
+        value = int(raw)
+    except ValueError:
+        return 60
+    return value if value > 0 else 60
+
+
 def ollama_complete(messages: list) -> str:
     url = os.environ.get("HOUSE_SOCIAL_AI_URL", "http://127.0.0.1:11434/v1/chat/completions").strip()
     model = os.environ.get("HOUSE_SOCIAL_AI_MODEL", "qwen3.5:9b").strip()
@@ -78,7 +92,7 @@ def ollama_complete(messages: list) -> str:
     payload = json.dumps({"model": model, "messages": messages, "stream": False, "temperature": 0.4}).encode()
     request = urllib.request.Request(url, data=payload, headers={"Content-Type": "application/json"})
     try:
-        with urllib.request.urlopen(request, timeout=60) as response:
+        with urllib.request.urlopen(request, timeout=_timeout()) as response:
             data = json.loads(response.read().decode())
     except (urllib.error.URLError, TimeoutError, json.JSONDecodeError, OSError) as exc:
         raise DraftError("The assistant is offline.") from exc
