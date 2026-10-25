@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+import io
 import sys
 import urllib.error
 from pathlib import Path
@@ -74,6 +75,16 @@ def test_variations_hashtags_first_comment_and_offline(tmp_path, monkeypatch):
 
     monkeypatch.setattr("urllib.request.urlopen", down)
     with pytest.raises(DraftError, match="offline"):
+        ollama_complete([{"role": "user", "content": "hi"}])
+
+    def limited(*_args, **_kwargs):
+        raise urllib.error.HTTPError(
+            "http://127.0.0.1:11434/v1/chat/completions", 429, "limit", None, io.BytesIO(b"{}"),
+        )
+
+    monkeypatch.setattr("urllib.request.urlopen", limited)
+    monkeypatch.setenv("HOUSE_SOCIAL_AI_MODEL", "glm-5.3:cloud")
+    with pytest.raises(DraftError, match="session limit"):
         ollama_complete([{"role": "user", "content": "hi"}])
 
 

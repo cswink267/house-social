@@ -94,6 +94,12 @@ def ollama_complete(messages: list) -> str:
     try:
         with urllib.request.urlopen(request, timeout=_timeout()) as response:
             data = json.loads(response.read().decode())
+    except urllib.error.HTTPError as exc:
+        if exc.code == 429:
+            raise DraftError(f"{model} hit the session limit. It is not offline.") from exc
+        if exc.code == 402:
+            raise DraftError(f"{model} is not available on this key.") from exc
+        raise DraftError("The assistant is offline.") from exc
     except (urllib.error.URLError, TimeoutError, json.JSONDecodeError, OSError) as exc:
         raise DraftError("The assistant is offline.") from exc
     try:
