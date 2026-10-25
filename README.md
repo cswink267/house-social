@@ -91,7 +91,7 @@ While you pick, the tokens wait in the dashboard's memory for up to 20 minutes. 
 
 ## Posting
 
-Turn on **Let the desk post** in House settings, then **Post from** the brand on its Accounts desk. Press **Check posting** first: Facebook makes a hidden post and deletes it, and Instagram and Threads read their daily posting allowance. A connection made before posting existed needs **Change** once, so the sign-in grants posting.
+Turn on **Let the desk post** in House settings, then **Post from** the brand on its Accounts desk. Press **Check posting** first: Facebook makes a hidden post and deletes it, and Instagram and Threads read their daily posting allowance. A connection made before posting, or before comment replies, needs **Change** once, so the sign-in grants posting (`pages_manage_posts`, `instagram_content_publish`, `threads_content_publish`) and replying (`pages_manage_engagement`, `instagram_manage_comments`, `threads_manage_replies`).
 
 While the dashboard runs, it checks once a minute and posts each scheduled piece whose time has come. A piece posts only when it is approved, it is not the desk's placeholder, it passes the brand rules, the brand is not paused, and both switches are on. A piece more than six hours past its time does not post late; it is marked failed and waits for a new time. Two runs never post the same piece: a lock file beside `state.json` and a claim on the piece keep them apart.
 

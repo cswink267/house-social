@@ -124,3 +124,40 @@ def test_approval_emails_the_draft_and_a_yes_lets_the_worker_send(tmp_path: Path
     send_approved_replies(load(path), path, http=poster, reader=lambda _name: "fixture-token")
     assert poster.calls
     assert load(path)["inbox"][0]["reply_state"] == "sent"
+
+
+def test_an_emailed_reply_approval_is_read_back_and_sent(tmp_path: Path, monkeypatch):
+    import approval_mail
+    from approval import save_steps
+    from approval_mail import poll_replies
+
+    path = tmp_path / "state.json"
+    save(_state("approval"), path)
+    save_steps(load(path), "okay", [{"name": "Chris", "email": "chris@example.com"}], path)
+    sent, inbox = [], []
+
+    def mail(method, url, key, payload):
+        if url.endswith("/inboxes"):
+            return {"inboxes": [{"inbox_id": "approvals@agentmail.to"}]}
+        if method == "POST":
+            sent.append(payload)
+            return {"message_id": "m1"}
+        if url.endswith("/messages"):
+            return {"messages": inbox}
+        return {"extracted_text": "approve"}
+
+    monkeypatch.setattr(approval_mail, "_call", mail)
+    monkeypatch.setattr(approval_mail, "_read_vault", lambda _name: "am-fixture-key")
+    offered = offer_reply(load(path), "facebook:comment:55", path, reader=lambda _name: "fixture-token")
+    assert offered["reply_state"] == "pending"
+    code = load(path)["inbox"][0]["reply_code"]
+    assert code == code.upper() and len(code) == 6
+    assert f"[HS-{code}]" in sent[0]["subject"]
+    # Mail clients sometimes change the case of a subject. It still counts.
+    inbox.append({"message_id": "x1", "from": "Chris <chris@example.com>", "subject": f"Re: [hs-{code.lower()}] Reply", "labels": ["received"]})
+    read = poll_replies(load(path), path)
+    assert read["decided"][0]["decision"] == "approved"
+    assert load(path)["inbox"][0]["reply_state"] == "approved"
+    poster = Poster()
+    send_approved_replies(load(path), path, http=poster, reader=lambda _name: "fixture-token")
+    assert load(path)["inbox"][0]["reply_state"] == "sent"

@@ -10,7 +10,6 @@ the posting worker, take_reply_mail from the approval-mail poll.
 
 from __future__ import annotations
 
-import secrets
 from datetime import datetime
 from pathlib import Path
 from zoneinfo import ZoneInfo
@@ -83,7 +82,10 @@ def take_reply_mail(state: dict, code: str, sender: str, text: str, path: Path |
     from approval import _steps
     from approval_mail import _same, approver_email, read_reply
 
-    item = next((row for row in state.get("inbox") or [] if row.get("reply_code") == code and row.get("reply_state") == "pending"), None)
+    item = next(
+        (row for row in state.get("inbox") or [] if str(row.get("reply_code") or "").upper() == str(code or "").upper() and row.get("reply_state") == "pending"),
+        None,
+    )
     if not item:
         return None
     brand_id = str(item.get("brand_id") or "")
@@ -108,7 +110,7 @@ def take_reply_mail(state: dict, code: str, sender: str, text: str, path: Path |
 
 def send_reply_mail(state: dict, item: dict, text: str, path: Path | None = None, reader=None, http=None) -> dict:
     from approval import _steps
-    from approval_mail import _html, _ready, _send, approver_email
+    from approval_mail import _html, _ready, _send, approver_email, new_code
 
     book = state.get("mail") if isinstance(state.get("mail"), dict) else {}
     if not _ready(book):
@@ -118,7 +120,7 @@ def send_reply_mail(state: dict, item: dict, text: str, path: Path | None = None
     to = approver_email(state, brand_id, name)
     if not to:
         raise DraftError("The first approver needs an email. The reply stays a draft.")
-    code = secrets.token_hex(3)
+    code = new_code()
     body = (
         f"Reply for {brand_id} on {item.get('platform')}.\n\n"
         f"They wrote: {item.get('text')}\n\n"
